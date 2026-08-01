@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iranexpedia.ir</title>
+  <link
+    href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
+    rel="stylesheet"
+    type="text/css"
+  />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">iranexpedia.ir</div>
+    <div class="subtitle">پاسخ خودکار واتساپ با کلمه کلیدی</div>
+    <div id="ext-version" class="version">v?</div>
+  </header>
+
+  <section class="help">
+    <p>۱. واتساپ وب را باز بگذارید</p>
+    <p>۲. دکمه شناور <strong>فعال · همه چت‌ها</strong> را روشن کنید</p>
+    <p>۳. روی چت باز، و نیز چت/گروه‌های بسته با پیام خوانده‌نشده نظارت می‌شود</p>
+  </section>
+
+  <form id="rule-form">
+    <label>
+      کلمه کلیدی
+      <input id="keyword" type="text" placeholder="مثلاً hi یا قیمت" required />
+    </label>
+    <label>
+      پاسخ
+      <textarea id="reply" rows="3" placeholder="متن پاسخی که باید ارسال شود" required></textarea>
+    </label>
+    <button type="submit" id="add-btn">افزودن قانون</button>
+  </form>
+
+  <section>
+    <div class="section-title">
+      <h2>قوانین ذخیره‌شده</h2>
+      <span id="count">0</span>
+    </div>
+    <ul id="rules-list"></ul>
+    <p id="empty" class="empty">هنوز قانونی نیست.</p>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>
