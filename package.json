@@ -1,14 +1,14 @@
 {
-  "name": "whatsapp-ai-backend",
-  "version": "1.0.0",
+  "name": "iranexpedia-whatsapp-extension-build",
+  "version": "5.3.1",
+  "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "build:ext": "node scripts/obfuscate-extension.mjs",
+    "obfuscate": "npm run build:ext",
+    "license:gen": "node scripts/generate-license-key.mjs"
   },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "groq-sdk": "^0.8.0"
+  "devDependencies": {
+    "javascript-obfuscator": "^4.2.2"
   }
 }

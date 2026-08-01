@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>iranexpedia.ir</title>
+  <title>پاسخ خودکار واتساپ</title>
   <link
     href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
     rel="stylesheet"
@@ -13,39 +13,64 @@
 </head>
 <body>
   <header>
-    <div class="brand">iranexpedia.ir</div>
-    <div class="subtitle">پاسخ خودکار واتساپ با کلمه کلیدی</div>
+    <div class="brand">پاسخ خودکار واتساپ</div>
+    <div class="subtitle">تنظیم پاسخ‌ها و فعال‌سازی برنامه</div>
     <div id="ext-version" class="version">v?</div>
   </header>
 
+  <section class="license-card">
+    <div class="section-title">
+      <h2>فعال‌سازی</h2>
+      <span id="license-badge" class="license-badge off">غیرفعال</span>
+    </div>
+    <p id="license-message" class="license-message">برای استفاده، کلید فعال‌سازی را وارد کنید.</p>
+    <p id="license-expiry" class="license-expiry"></p>
+    <form id="license-form">
+      <label>
+        کلید فعال‌سازی
+        <input id="license-key" type="text" placeholder="کلید خود را وارد کنید" required />
+      </label>
+      <div class="license-actions">
+        <button type="submit" id="license-btn">فعال‌سازی</button>
+        <button type="button" id="license-clear" class="secondary-btn">حذف کلید</button>
+      </div>
+    </form>
+  </section>
+
   <section class="help">
-    <p>۱. واتساپ وب را باز بگذارید</p>
-    <p>۲. دکمه شناور <strong>فعال · همه چت‌ها</strong> را روشن کنید</p>
-    <p>۳. روی چت باز، و نیز چت/گروه‌های بسته با پیام خوانده‌نشده نظارت می‌شود</p>
-    <p>۴. برای دانلود اعضا: گروه را باز کنید و دکمه <strong>دانلود اعضای گروه</strong> را بزنید</p>
+    <p>۱. کلید فعال‌سازی را وارد کنید</p>
+    <p>۲. واتساپ وب را باز کنید و دکمه <strong>فعال</strong> را بزنید</p>
+    <p>۳. برای خروجی اعضای گروه، روی دکمه مربوطه در واتساپ کلیک کنید</p>
   </section>
 
   <form id="rule-form">
     <label>
       کلمه کلیدی
-      <input id="keyword" type="text" placeholder="مثلاً hi یا قیمت" required />
+      <input id="keyword" type="text" placeholder="مثلاً قیمت" required />
     </label>
     <label>
       پاسخ
-      <textarea id="reply" rows="3" placeholder="متن پاسخی که باید ارسال شود" required></textarea>
+      <textarea id="reply" rows="3" placeholder="متنی که باید ارسال شود" required></textarea>
     </label>
-    <button type="submit" id="add-btn">افزودن قانون</button>
+    <button type="submit" id="add-btn">افزودن</button>
   </form>
 
   <section>
     <div class="section-title">
-      <h2>قوانین ذخیره‌شده</h2>
+      <h2>پاسخ‌های ذخیره‌شده</h2>
       <span id="count">0</span>
     </div>
     <ul id="rules-list"></ul>
-    <p id="empty" class="empty">هنوز قانونی نیست.</p>
+    <p id="empty" class="empty">هنوز موردی ثبت نشده است.</p>
   </section>
 
+  <footer class="app-footer">
+    <div>نسخه <span id="footer-version">?</span></div>
+    <a href="https://iranexpedia.ir" target="_blank" rel="noopener noreferrer">iranexpedia.ir</a>
+  </footer>
+
+  <script src="license-config.js"></script>
+  <script src="license-lib.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

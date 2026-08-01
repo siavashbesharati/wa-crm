@@ -1,16 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "iranexpedia.ir — پاسخ خودکار واتساپ",
-  "description": "پاسخ خودکار واتساپ وب با کلمه کلیدی | دانلود اعضای گروه | iranexpedia.ir",
-  "version": "5.2.1",
+  "name": "پاسخ خودکار واتساپ",
+  "description": "پاسخ خودکار پیام‌های واتساپ وب با کلمه کلیدی. توسعه: iranexpedia.ir",
+  "version": "5.3.1",
   "permissions": ["storage"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
-    "https://cdn.jsdelivr.net/*"
+    "https://cdn.jsdelivr.net/*",
+    "https://worldtimeapi.org/*",
+    "https://timeapi.io/*",
+    "https://www.cloudflare.com/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "iranexpedia.ir v5.2.1",
+    "default_title": "پاسخ خودکار واتساپ",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -27,7 +33,7 @@
   "content_scripts": [
     {
       "matches": ["https://web.whatsapp.com/*"],
-      "js": ["content.js"],
+      "js": ["license-config.js", "license-lib.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

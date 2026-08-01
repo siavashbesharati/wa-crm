@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Built / obfuscated extension (generate with npm run build:ext)
+WAchromeExtension-dist/
+
 # Environment / secrets
 .env
 .env.*

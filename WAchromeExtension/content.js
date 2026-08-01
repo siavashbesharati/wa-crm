@@ -1,4 +1,4 @@
-const EXT_VERSION = "5.2.1";
+const EXT_VERSION = "5.3.1";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -20,6 +20,8 @@ const DEFAULT_RULES = [
 
 /* ================= STATE ================= */
 let isEnabled = false;
+let licenseValid = false;
+let licenseMessage = "هنوز بررسی نشده";
 let keywordRules = DEFAULT_RULES.slice();
 let busy = false;
 
@@ -97,6 +99,45 @@ function log() {
     const args = Array.prototype.slice.call(arguments);
     args.unshift("[" + BRAND + " v" + EXT_VERSION + "]");
     console.log.apply(console, args);
+}
+
+/* ================= LICENSE (hashed key + expiry + web time) ================= */
+async function refreshLicenseStatus() {
+    try {
+        if (!globalThis.IranexpediaLicense) {
+            licenseValid = false;
+            licenseMessage = "خطا در بارگذاری. صفحه را تازه کنید.";
+            return false;
+        }
+        const status = await IranexpediaLicense.getStoredLicenseStatus();
+        licenseValid = !!status.valid;
+        licenseMessage = status.message || (licenseValid ? "فعال" : "غیرفعال");
+        if (!licenseValid && isEnabled) {
+            isEnabled = false;
+            log("فعال‌سازی نامعتبر/منقضی — پاسخ خودکار خاموش شد");
+        }
+        return licenseValid;
+    } catch (err) {
+        licenseValid = false;
+        licenseMessage = err.message || "خطا در بررسی فعال‌سازی";
+        isEnabled = false;
+        return false;
+    }
+}
+
+async function requireLicense(featureName) {
+    const ok = await refreshLicenseStatus();
+    if (!ok) {
+        alert(
+            "برای استفاده از «" +
+                featureName +
+                "» ابتدا برنامه را فعال کنید.\n\n" +
+                (licenseMessage || "") +
+                "\n\nکلید را از آیکون افزونه وارد کنید."
+        );
+        return false;
+    }
+    return true;
 }
 
 /* ================= RULES ================= */
@@ -310,6 +351,13 @@ async function waitForChatReady(expectedName, timeoutMs) {
 
 /* ================= TOGGLE (fixed — works with no chat open) ================= */
 function paintButton(btn) {
+    if (!licenseValid) {
+        btn.className = "is-off";
+        btn.textContent = "نیاز به فعال‌سازی · v" + EXT_VERSION;
+        btn.title = licenseMessage || "ابتدا کلید را از آیکون افزونه وارد کنید";
+        return;
+    }
+
     if (isEnabled) {
         btn.className = "is-on";
         btn.textContent = "فعال · همه چت‌ها · v" + EXT_VERSION;
@@ -317,7 +365,7 @@ function paintButton(btn) {
             BRAND +
             " v" +
             EXT_VERSION +
-            " — نظارت روی همه چت‌ها و گروه‌ها (حتی بسته)";
+            " — پاسخ خودکار روی همه چت‌ها و گروه‌ها";
     } else {
         btn.className = "is-off";
         btn.textContent = "خاموش · v" + EXT_VERSION;
@@ -345,9 +393,15 @@ function ensureButton() {
         btn.type = "button";
         document.documentElement.appendChild(btn);
 
-        btn.addEventListener("click", function (e) {
+        btn.addEventListener("click", async function (e) {
             e.preventDefault();
             e.stopPropagation();
+
+            if (!isEnabled) {
+                const ok = await requireLicense("پاسخ خودکار");
+                paintButton(btn);
+                if (!ok) return;
+            }
 
             isEnabled = !isEnabled;
             busy = false;
@@ -381,9 +435,11 @@ function ensureMembersButton() {
             " — دانلود لیست اعضای گروه باز به‌صورت CSV";
         document.documentElement.appendChild(btn);
 
-        btn.addEventListener("click", function (e) {
+        btn.addEventListener("click", async function (e) {
             e.preventDefault();
             e.stopPropagation();
+            const ok = await requireLicense("دانلود اعضای گروه");
+            if (!ok) return;
             downloadGroupMembers(btn);
         });
     }
@@ -957,4 +1013,27 @@ setInterval(function () {
 }, SIDEBAR_SCAN_MS);
 
 loadRules();
-ensureButton();
+refreshLicenseStatus().then(function () {
+    ensureButton();
+    log("وضعیت فعال‌سازی:", licenseValid ? "فعال" : "غیرفعال", "-", licenseMessage);
+});
+
+chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== "local") return;
+    if (
+        changes.licenseActivated ||
+        changes.licenseHash ||
+        changes.licenseExpiresAt
+    ) {
+        refreshLicenseStatus().then(function () {
+            ensureButton();
+        });
+    }
+});
+
+// Re-check expiry periodically with network time
+setInterval(function () {
+    refreshLicenseStatus().then(function () {
+        ensureButton();
+    });
+}, 5 * 60 * 1000);
