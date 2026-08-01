@@ -1,4 +1,4 @@
-const EXT_VERSION = "6.0.0";
+const EXT_VERSION = "6.0.1";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -39,14 +39,9 @@ const handledSidebarKeys = {};
 
 /* ================= FONT + STYLES ================= */
 function injectUiAssets() {
-    if (!document.getElementById("iranexpedia-font")) {
-        const font = document.createElement("link");
-        font.id = "iranexpedia-font";
-        font.rel = "stylesheet";
-        font.href =
-            "https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css";
-        document.documentElement.appendChild(font);
-    }
+    // Do not load external fonts on WhatsApp — CSP blocks cdn.jsdelivr.net
+    const oldFont = document.getElementById("iranexpedia-font");
+    if (oldFont) oldFont.remove();
 
     let style = document.getElementById("iranexpedia-style");
     if (!style) {
@@ -58,7 +53,7 @@ function injectUiAssets() {
     style.textContent = `
       #iranexpedia-toggle,
       #iranexpedia-members {
-        font-family: Vazirmatn, Tahoma, sans-serif !important;
+        font-family: Tahoma, "Segoe UI", sans-serif !important;
         direction: rtl;
         min-width: 140px;
         height: 40px;
@@ -70,15 +65,11 @@ function injectUiAssets() {
         font-size: 12px !important;
         font-weight: 700 !important;
         position: fixed;
-        left: 20px;
+        left: 20px !important;
+        right: auto !important;
         z-index: 999999;
         box-shadow: 0 4px 14px rgba(0,0,0,.25);
         transition: background .15s ease, opacity .15s ease;
-      }
-      #iranexpedia-toggle,
-      #iranexpedia-members {
-        left: auto !important;
-        right: 20px !important;
       }
       #iranexpedia-toggle { bottom: 20px; }
       #iranexpedia-members { bottom: 70px; background: #0f766e !important; }
@@ -87,6 +78,46 @@ function injectUiAssets() {
       #iranexpedia-toggle.is-on { background: #0b8457 !important; }
     `;
 }
+
+function persistAutoReplyEnabled(enabled) {
+    try {
+        chrome.storage.local.set({ autoReplyEnabled: !!enabled });
+    } catch (_err) {
+        // ignore
+    }
+}
+
+async function applyAutoReplyEnabled(enabled, source) {
+    const want = !!enabled;
+    if (want) {
+        const ok = await refreshLicenseStatus();
+        if (!ok) {
+            isEnabled = false;
+            persistAutoReplyEnabled(false);
+            log("روشن نشد — نیاز به فعال‌سازی (", source || "ui", ")");
+            ensureButton();
+            return false;
+        }
+    }
+    isEnabled = want;
+    persistAutoReplyEnabled(isEnabled);
+    busy = false;
+    if (isEnabled) resetMessageCache();
+    log(
+        isEnabled
+            ? "روشن شد — نظارت روی چت باز + لیست کناری (" + (source || "ui") + ")"
+            : "خاموش شد (" + (source || "ui") + ")"
+    );
+    ensureButton();
+    return isEnabled;
+}
+
+window.__iranexpediaGetAutoReplyEnabled = function () {
+    return !!isEnabled;
+};
+window.__iranexpediaSetAutoReplyEnabled = function (enabled) {
+    return applyAutoReplyEnabled(enabled, "crm-panel");
+};
 
 async function refreshCrmSettings() {
     if (!globalThis.IranexpediaCrm) return;
@@ -585,23 +616,7 @@ function ensureButton() {
         btn.addEventListener("click", async function (e) {
             e.preventDefault();
             e.stopPropagation();
-
-            if (!isEnabled) {
-                const ok = await requireLicense("پاسخ خودکار");
-                paintButton(btn);
-                if (!ok) return;
-            }
-
-            isEnabled = !isEnabled;
-            busy = false;
-            resetMessageCache();
-            paintButton(btn);
-
-            if (isEnabled) {
-                log("روشن شد — نظارت روی چت باز + لیست کناری (گروه و خصوصی)");
-            } else {
-                log("خاموش شد");
-            }
+            await applyAutoReplyEnabled(!isEnabled, "floating-button");
         });
     }
 
@@ -1150,19 +1165,83 @@ async function scanSidebarAndReply() {
 }
 
 /* ================= OPEN CHAT LOOP ================= */
+function collectMessageNodes() {
+    const main = document.querySelector("#main");
+    if (!main) return [];
+
+    const nodes = [];
+    const seen = new Set();
+
+    function pushNode(el) {
+        if (!el || seen.has(el)) return;
+        const text = (el.innerText || el.textContent || "").trim();
+        if (!text) return;
+        seen.add(el);
+        nodes.push(el);
+    }
+
+    main
+        .querySelectorAll(
+            'div[data-testid="msg-container"] span[data-testid="selectable-text"], ' +
+                'div.message-in span[data-testid="selectable-text"], ' +
+                'div.message-in span.selectable-text, ' +
+                'span[data-testid="selectable-text"], ' +
+                "span.selectable-text.copyable-text, " +
+                'div.copyable-text span.selectable-text'
+        )
+        .forEach(pushNode);
+
+    // Fallback: rows that look like incoming bubbles
+    if (!nodes.length) {
+        main
+            .querySelectorAll(
+                'div[role="row"] span[dir="auto"], div[role="row"] span[dir="ltr"], div[role="row"] span[dir="rtl"]'
+            )
+            .forEach(function (el) {
+                const t = (el.innerText || "").trim();
+                if (!t || t.length > 500) return;
+                if (/^\d{1,2}:\d{2}/.test(t)) return;
+                if (isStatusText(t)) return;
+                pushNode(el);
+            });
+    }
+
+    return nodes;
+}
+
+function getLastIncomingText() {
+    const nodes = collectMessageNodes();
+    if (!nodes.length) return "";
+
+    // Prefer last node inside an incoming container
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        const el = nodes[i];
+        const wrap =
+            el.closest('div[data-testid="msg-container"]') ||
+            el.closest("div.message-in") ||
+            el.closest("div.message-out") ||
+            el.parentElement;
+        const cls = ((wrap && wrap.className) || "").toString();
+        const isOut = cls.indexOf("message-out") !== -1;
+        // Prefer incoming; skip clear outgoing when older messages exist
+        if (isOut && i > 0) continue;
+        const text = (el.innerText || el.textContent || "").trim();
+        if (text) return text.replace(/\s+/g, " ");
+    }
+
+    const last = nodes[nodes.length - 1];
+    return ((last && (last.innerText || last.textContent)) || "")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
 function handleOpenChatMessages() {
     if (!isEnabled || busy || taskRunnerBusy) return;
     if (!document.querySelector("#main")) return;
 
-    const spans = document.querySelectorAll(
-        '#main span[data-testid="selectable-text"]'
-    );
-    if (!spans.length) return;
-
-    const lastSpan = spans[spans.length - 1];
-    const text = (lastSpan.innerText || "").trim();
+    const text = getLastIncomingText();
     if (!text) return;
-    if (/^\d{1,2}:\d{2}\s?(am|pm)$/i.test(text)) return;
+    if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
     if (text === lastBotReply) return;
     if (text === lastHandledText) return;
 
@@ -1218,6 +1297,12 @@ function handleOpenChatMessages() {
                 if (insertReply(reply)) {
                     setTimeout(function () {
                         if (sendWhatsAppMessage()) {
+                            log(
+                                "پاسخ خودکار ارسال شد به",
+                                chatName || "(بدون نام)",
+                                "←",
+                                reply
+                            );
                             logCrmEvent(
                                 "auto_reply",
                                 "پاسخ خودکار به «" + chatName + "»",
@@ -1226,8 +1311,12 @@ function handleOpenChatMessages() {
                             if (globalThis.IranexpediaCrm && chatName) {
                                 IranexpediaCrm.upsertContact({ name: chatName });
                             }
+                        } else {
+                            log("دکمه ارسال پیدا نشد");
                         }
                     }, 700);
+                } else {
+                    log("باکس پیام برای ارسال پیدا نشد");
                 }
             }, delay);
         }, BATCH_WAIT_MS);
@@ -1259,6 +1348,17 @@ refreshCrmSettings();
 refreshLicenseStatus().then(function () {
     ensureButton();
     log("وضعیت فعال‌سازی:", licenseValid ? "فعال" : "غیرفعال", "-", licenseMessage);
+
+    chrome.storage.local.get({ autoReplyEnabled: false }, function (data) {
+        if (data.autoReplyEnabled && licenseValid) {
+            applyAutoReplyEnabled(true, "restore");
+        } else if (data.autoReplyEnabled && !licenseValid) {
+            persistAutoReplyEnabled(false);
+            log("پاسخ خودکار ذخیره شده بود اما لایسنس فعال نیست");
+        } else {
+            log("پاسخ خودکار خاموش است — از دکمه سبز یا پنل CRM روشن کنید");
+        }
+    });
 });
 
 chrome.storage.onChanged.addListener(function (changes, area) {
@@ -1270,10 +1370,19 @@ chrome.storage.onChanged.addListener(function (changes, area) {
     ) {
         refreshLicenseStatus().then(function () {
             ensureButton();
+            if (!licenseValid && isEnabled) {
+                applyAutoReplyEnabled(false, "license-lost");
+            }
         });
     }
     if (changes.crmSettings) {
         refreshCrmSettings();
+    }
+    if (changes.autoReplyEnabled) {
+        const want = !!changes.autoReplyEnabled.newValue;
+        if (want !== isEnabled) {
+            applyAutoReplyEnabled(want, "storage");
+        }
     }
 });
 

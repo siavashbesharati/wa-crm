@@ -10,6 +10,7 @@
   var templates = [];
   var queuedCount = 0;
   var lastRenderKey = "";
+  var autoReplyOn = false;
 
   function isTypingInPanel() {
     if (!root) return false;
@@ -24,6 +25,7 @@
       currentName || "",
       queuedCount,
       templates.length,
+      autoReplyOn ? "1" : "0",
       currentContact
         ? [
             currentContact.stage,
@@ -40,13 +42,9 @@
   }
 
   function ensureFont() {
-    if (document.getElementById("iranexpedia-font")) return;
-    var font = document.createElement("link");
-    font.id = "iranexpedia-font";
-    font.rel = "stylesheet";
-    font.href =
-      "https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css";
-    document.documentElement.appendChild(font);
+    // WhatsApp CSP blocks external fonts — use system fonts from CSS
+    var oldFont = document.getElementById("iranexpedia-font");
+    if (oldFont) oldFont.remove();
   }
 
   function injectCss() {
@@ -165,13 +163,25 @@
       '<div class="crm-health">' +
       '<span class="crm-chip ok" id="crm-chip-wa">واتساپ متصل</span>' +
       '<span class="crm-chip' +
+      (autoReplyOn ? " ok" : " bad") +
+      '" id="crm-chip-bot">' +
+      (autoReplyOn ? "پاسخ خودکار روشن" : "پاسخ خودکار خاموش") +
+      "</span>" +
+      '<span class="crm-chip' +
       (queuedCount ? " warn" : "") +
       '" id="crm-chip-q">' +
       queuedCount +
       " در صف</span>" +
       "</div></div>" +
-      '<div class="crm-banner">برای اجرای زمان‌بندی، واتساپ وب باید باز بماند.</div>' +
+      '<div class="crm-banner">برای پاسخ خودکار، دکمه زیر را روشن کنید. برای زمان‌بندی، واتساپ وب باید باز بماند.</div>' +
       '<div class="crm-body">' +
+      '<div class="crm-card"><h3>پاسخ خودکار</h3>' +
+      '<button type="button" class="crm-btn crm-global-toggle' +
+      (autoReplyOn ? "" : " secondary") +
+      '" id="crm-global-toggle">' +
+      (autoReplyOn ? "خاموش کردن پاسخ خودکار" : "روشن کردن پاسخ خودکار") +
+      "</button>" +
+      '<p class="crm-empty">بدون این دکمه، فقط مخاطب ذخیره می‌شود و پاسخی ارسال نمی‌شود.</p></div>' +
       '<div class="crm-card"><h3>مخاطب فعلی</h3>' +
       contactHtml +
       "</div>" +
@@ -214,6 +224,22 @@
 
     $("#crm-open-dash", panel).onclick = openDashboard;
     $("#crm-schedule", panel).onclick = scheduleLater;
+    var globalBtn = $("#crm-global-toggle", panel);
+    if (globalBtn) {
+      globalBtn.onclick = async function () {
+        var next = !autoReplyOn;
+        if (typeof window.__iranexpediaSetAutoReplyEnabled === "function") {
+          autoReplyOn = !!(await window.__iranexpediaSetAutoReplyEnabled(next));
+        } else {
+          await new Promise(function (resolve) {
+            chrome.storage.local.set({ autoReplyEnabled: next }, resolve);
+          });
+          autoReplyOn = next;
+        }
+        lastRenderKey = "";
+        render();
+      };
+    }
 
     var later = $("#crm-later-at", panel);
     if (later && !later.value) {
@@ -235,6 +261,15 @@
   }
 
   async function refreshData() {
+    if (typeof window.__iranexpediaGetAutoReplyEnabled === "function") {
+      autoReplyOn = !!window.__iranexpediaGetAutoReplyEnabled();
+    } else {
+      autoReplyOn = await new Promise(function (resolve) {
+        chrome.storage.local.get({ autoReplyEnabled: false }, function (data) {
+          resolve(!!data.autoReplyEnabled);
+        });
+      });
+    }
     if (!globalThis.IranexpediaCrm) return;
     templates = await IranexpediaCrm.getTemplates();
     queuedCount = await IranexpediaCrm.getQueuedCount();
@@ -409,7 +444,8 @@
       changes.crmTasks ||
       changes.crmSettings ||
       changes.licenseActivated ||
-      changes.licenseHash
+      changes.licenseHash ||
+      changes.autoReplyEnabled
     ) {
       tick();
     }
