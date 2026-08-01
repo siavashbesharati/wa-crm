@@ -185,6 +185,75 @@
     );
   }
 
+  async function getContactById(id) {
+    var list = await getContacts();
+    return (
+      list.find(function (c) {
+        return c.id === id;
+      }) || null
+    );
+  }
+
+  async function getEventsForContact(name) {
+    var key = normalizeContactKey(name);
+    if (!key) return [];
+    var list = await getEvents();
+    return list.filter(function (e) {
+      var metaName = e.meta && e.meta.contactName ? e.meta.contactName : "";
+      var msg = String(e.message || "");
+      if (metaName && normalizeContactKey(metaName) === key) return true;
+      if (msg.indexOf(String(name || "").trim()) !== -1) return true;
+      // Farsi-normalized contains check against message
+      return normalizeContactKey(msg).indexOf(key) !== -1;
+    });
+  }
+
+  async function setContactStage(id, stage) {
+    var contact = await getContactById(id);
+    if (!contact) return null;
+    var nextStage = String(stage || "").trim() || STAGES[0];
+    if (contact.stage === nextStage) return contact;
+    var updated = await updateContact(id, { stage: nextStage });
+    await addEvent(
+      "stage_change",
+      "مرحله «" + contact.name + "»: " + (contact.stage || "-") + " ← " + nextStage,
+      { contactName: contact.name, contactId: id, from: contact.stage, to: nextStage }
+    );
+    return updated;
+  }
+
+  async function saveContactDetails(id, patch) {
+    var contact = await getContactById(id);
+    if (!contact) return null;
+    var next = {
+      stage: patch.stage != null ? patch.stage : contact.stage,
+      tags: Array.isArray(patch.tags) ? patch.tags : contact.tags,
+      notes: patch.notes != null ? String(patch.notes) : contact.notes,
+      botPaused: patch.botPaused != null ? !!patch.botPaused : contact.botPaused,
+      phone: patch.phone != null ? String(patch.phone) : contact.phone
+    };
+    var stageChanged = next.stage && next.stage !== contact.stage;
+    var updated = await updateContact(id, next);
+    if (stageChanged) {
+      await addEvent(
+        "stage_change",
+        "مرحله «" + contact.name + "»: " + (contact.stage || "-") + " ← " + next.stage,
+        {
+          contactName: contact.name,
+          contactId: id,
+          from: contact.stage,
+          to: next.stage
+        }
+      );
+    } else {
+      await addEvent("contact_update", "به‌روزرسانی مخاطب: " + contact.name, {
+        contactName: contact.name,
+        contactId: id
+      });
+    }
+    return updated;
+  }
+
   async function getTemplates() {
     var data = await storageGet({ crmTemplates: [] });
     return Array.isArray(data.crmTemplates) ? data.crmTemplates : [];
@@ -355,6 +424,10 @@
     updateContact: updateContact,
     deleteContact: deleteContact,
     getContactByName: getContactByName,
+    getContactById: getContactById,
+    getEventsForContact: getEventsForContact,
+    setContactStage: setContactStage,
+    saveContactDetails: saveContactDetails,
     getTemplates: getTemplates,
     saveTemplates: saveTemplates,
     addTemplate: addTemplate,

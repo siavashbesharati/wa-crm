@@ -57,6 +57,77 @@ async function findWhatsAppTab() {
   return tabs[0];
 }
 
+async function openContactChat(targetName) {
+  var name = String(targetName || "").trim();
+  if (!name) return { ok: false, error: "نام مخاطب خالی است." };
+  var tab = await findWhatsAppTab();
+  if (!tab) {
+    return { ok: false, error: "واتساپ وب باز نیست. ابتدا web.whatsapp.com را باز کنید." };
+  }
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    var res = await chrome.tabs.sendMessage(tab.id, {
+      type: "openContactChat",
+      targetName: name
+    });
+    if (res && res.ok) {
+      await addEvent("contact_open", "باز کردن چت: " + name, { contactName: name });
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error: (res && res.error) || "چت پیدا نشد یا باز نشد."
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: "ارتباط با صفحه واتساپ برقرار نشد. صفحه را تازه کنید."
+    };
+  }
+}
+
+async function sendTemplateNow(targetName, message) {
+  var name = String(targetName || "").trim();
+  var msg = String(message || "").trim();
+  if (!name || !msg) {
+    return { ok: false, error: "نام مخاطب و متن پیام الزامی است." };
+  }
+  var tab = await findWhatsAppTab();
+  if (!tab) {
+    return { ok: false, error: "واتساپ وب باز نیست. ابتدا web.whatsapp.com را باز کنید." };
+  }
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    var res = await chrome.tabs.sendMessage(tab.id, {
+      type: "sendTemplateNow",
+      targetName: name,
+      message: msg
+    });
+    if (res && res.ok) {
+      await addEvent("manual_sent", "ارسال قالب به «" + name + "»", {
+        contactName: name,
+        text: msg.slice(0, 120)
+      });
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error: (res && res.error) || "ارسال انجام نشد."
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: "ارتباط با صفحه واتساپ برقرار نشد. صفحه را تازه کنید."
+    };
+  }
+}
+
 async function getRunnerHealth() {
   var tab = await findWhatsAppTab();
   var tasks = await getTasks();
@@ -338,6 +409,16 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
 
   if (message.type === "getRunnerHealth") {
     getRunnerHealth().then(sendResponse);
+    return true;
+  }
+
+  if (message.type === "openContactChat") {
+    openContactChat(message.targetName).then(sendResponse);
+    return true;
+  }
+
+  if (message.type === "sendTemplateNow") {
+    sendTemplateNow(message.targetName, message.message).then(sendResponse);
     return true;
   }
 });

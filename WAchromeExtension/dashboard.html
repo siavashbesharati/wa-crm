@@ -48,26 +48,101 @@
       <div class="banner">برای اجرای زمان‌بندی، Chrome و واتساپ وب باید باز بمانند. ارسال گروهی/کانال با پذیرش خطر محدودیت توسط کاربر انجام می‌شود.</div>
 
       <section class="tab active" id="tab-contacts">
-        <div class="toolbar">
+        <div class="toolbar contacts-toolbar">
           <input id="contact-search" type="search" placeholder="جستجوی نام یا برچسب" />
+          <select id="filter-stage">
+            <option value="">همه مراحل</option>
+          </select>
+          <select id="filter-tag">
+            <option value="">همه برچسب‌ها</option>
+          </select>
+          <div class="view-toggle">
+            <button type="button" class="btn secondary active" id="view-list" data-view="list">لیست</button>
+            <button type="button" class="btn secondary" id="view-pipeline" data-view="pipeline">پایپلاین</button>
+          </div>
           <button type="button" class="btn secondary" id="export-contacts">خروجی CSV</button>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>نام</th>
-                <th>مرحله</th>
-                <th>برچسب</th>
-                <th>ربات</th>
-                <th>یادداشت</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="contacts-body"></tbody>
-          </table>
+        <div id="contacts-list-view">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>نام</th>
+                  <th>مرحله</th>
+                  <th>برچسب</th>
+                  <th>ربات</th>
+                  <th>یادداشت</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="contacts-body"></tbody>
+            </table>
+          </div>
         </div>
+        <div id="contacts-pipeline-view" class="pipeline hidden"></div>
       </section>
+
+      <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+      <aside id="contact-drawer" class="contact-drawer hidden" aria-hidden="true">
+        <div class="drawer-head">
+          <div>
+            <h2 id="drawer-name">مخاطب</h2>
+            <p class="hint" id="drawer-meta"></p>
+          </div>
+          <button type="button" class="btn secondary" id="drawer-close">بستن</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-actions">
+            <button type="button" class="btn" id="drawer-open-wa">باز کردن در واتساپ</button>
+            <button type="button" class="btn secondary" id="drawer-send-tpl">ارسال قالب</button>
+            <button type="button" class="btn secondary" id="drawer-schedule">زمان‌بندی پیگیری</button>
+          </div>
+          <form id="drawer-form" class="card form-grid drawer-form">
+            <label>مرحله
+              <select id="drawer-stage"></select>
+            </label>
+            <label>برچسب‌ها (با ویرگول)
+              <input id="drawer-tags" type="text" />
+            </label>
+            <label>تلفن
+              <input id="drawer-phone" type="text" />
+            </label>
+            <label class="check">
+              <input id="drawer-bot-paused" type="checkbox" />
+              توقف ربات برای این مخاطب
+            </label>
+            <label>یادداشت
+              <textarea id="drawer-notes" rows="3"></textarea>
+            </label>
+            <button type="submit" class="btn">ذخیره تغییرات</button>
+          </form>
+          <div class="card drawer-send-box hidden" id="drawer-tpl-box">
+            <h3>ارسال قالب الان</h3>
+            <label>قالب
+              <select id="drawer-tpl-select"></select>
+            </label>
+            <label>متن
+              <textarea id="drawer-tpl-body" rows="3"></textarea>
+            </label>
+            <button type="button" class="btn" id="drawer-tpl-confirm">ارسال الان</button>
+          </div>
+          <div class="card drawer-send-box hidden" id="drawer-sched-box">
+            <h3>زمان‌بندی پیگیری</h3>
+            <label>زمان
+              <input id="drawer-sched-at" type="datetime-local" />
+            </label>
+            <label>پیام
+              <textarea id="drawer-sched-msg" rows="3"></textarea>
+            </label>
+            <button type="button" class="btn" id="drawer-sched-confirm">ثبت در صف</button>
+          </div>
+          <div class="card">
+            <h3>تاریخچه</h3>
+            <ul class="timeline" id="drawer-timeline"></ul>
+          </div>
+        </div>
+        <p class="toast hidden" id="drawer-toast"></p>
+      </aside>
 
       <section class="tab" id="tab-templates">
         <form id="template-form" class="card form-grid">

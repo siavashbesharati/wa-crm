@@ -136,7 +136,8 @@
         '<button type="button" class="crm-btn" id="crm-save">ذخیره</button>' +
         '<button type="button" class="crm-btn secondary" id="crm-toggle-bot">' +
         (c.botPaused ? "فعال‌سازی ربات" : "توقف ربات این چت") +
-        "</button></div>";
+        "</button>" +
+        '<button type="button" class="crm-btn secondary" id="crm-open-contact-dash">جزئیات در داشبورد</button></div>';
     }
 
     var tplHtml =
@@ -224,6 +225,18 @@
       $("#crm-notes", panel).value = (currentContact && currentContact.notes) || "";
       $("#crm-save", panel).onclick = saveCurrent;
       $("#crm-toggle-bot", panel).onclick = toggleBot;
+      var stageSel = $("#crm-stage", panel);
+      if (stageSel) {
+        stageSel.onchange = async function () {
+          await ensureContact();
+          if (currentContact && currentContact.id) {
+            await IranexpediaCrm.setContactStage(currentContact.id, stageSel.value);
+            currentContact = await IranexpediaCrm.getContactById(currentContact.id);
+          }
+        };
+      }
+      var openDashContact = $("#crm-open-contact-dash", panel);
+      if (openDashContact) openDashContact.onclick = openDashboard;
     }
 
     var items = panel.querySelectorAll(".crm-template-item");
@@ -318,21 +331,31 @@
 
   async function saveCurrent() {
     if (!currentName) return;
+    await ensureContact();
     var tags = ($("#crm-tags", root).value || "")
       .split(/[,،]/)
       .map(function (t) {
         return t.trim();
       })
       .filter(Boolean);
-    currentContact = await IranexpediaCrm.upsertContact({
-      name: currentName,
-      stage: $("#crm-stage", root).value,
-      tags: tags,
-      notes: $("#crm-notes", root).value || "",
-      botPaused: !!(currentContact && currentContact.botPaused),
-      chatType: (currentContact && currentContact.chatType) || "pv"
-    });
-    await IranexpediaCrm.addEvent("contact_update", "مخاطب به‌روزرسانی شد: " + currentName);
+    if (currentContact && currentContact.id && IranexpediaCrm.saveContactDetails) {
+      currentContact = await IranexpediaCrm.saveContactDetails(currentContact.id, {
+        stage: $("#crm-stage", root).value,
+        tags: tags,
+        notes: $("#crm-notes", root).value || "",
+        botPaused: !!(currentContact && currentContact.botPaused)
+      });
+    } else {
+      currentContact = await IranexpediaCrm.upsertContact({
+        name: currentName,
+        stage: $("#crm-stage", root).value,
+        tags: tags,
+        notes: $("#crm-notes", root).value || "",
+        botPaused: !!(currentContact && currentContact.botPaused),
+        chatType: (currentContact && currentContact.chatType) || "pv"
+      });
+    }
+    lastRenderKey = "";
     render();
   }
 

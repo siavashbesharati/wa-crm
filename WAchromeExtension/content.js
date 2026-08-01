@@ -1,4 +1,4 @@
-const EXT_VERSION = "6.0.3";
+const EXT_VERSION = "6.1.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -490,21 +490,33 @@ function clickSidebarCell(cell) {
     clickable.click();
 }
 
+function chatNamesEqual(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (
+        globalThis.IranexpediaCrm &&
+        typeof IranexpediaCrm.namesMatch === "function"
+    ) {
+        return IranexpediaCrm.namesMatch(a, b);
+    }
+    return cleanChatLabel(a) === cleanChatLabel(b);
+}
+
 async function openChatByName(targetName, timeoutMs) {
     const want = String(targetName || "").trim();
     if (!want) return false;
 
     const current = getChatName();
-    if (current && current === want) {
-        return waitForChatReady(want, timeoutMs || 8000);
+    if (current && chatNamesEqual(current, want)) {
+        return waitForChatReady(current, timeoutMs || 8000);
     }
 
     const cells = getSidebarCells();
     for (let i = 0; i < cells.length; i++) {
         const name = getCellChatName(cells[i]);
-        if (name === want) {
+        if (name && chatNamesEqual(name, want)) {
             clickSidebarCell(cells[i]);
-            return waitForChatReady(want, timeoutMs || 12000);
+            return waitForChatReady(name, timeoutMs || 12000);
         }
     }
 
@@ -521,9 +533,9 @@ async function openChatByName(targetName, timeoutMs) {
         const afterSearch = getSidebarCells();
         for (let j = 0; j < afterSearch.length; j++) {
             const name2 = getCellChatName(afterSearch[j]);
-            if (name2 === want) {
+            if (name2 && chatNamesEqual(name2, want)) {
                 clickSidebarCell(afterSearch[j]);
-                return waitForChatReady(want, timeoutMs || 12000);
+                return waitForChatReady(name2, timeoutMs || 12000);
             }
         }
     }
@@ -544,10 +556,75 @@ async function sendTextNow(text) {
     if (ok) {
         lastBotReply = msg;
         await logCrmEvent("manual_sent", "ارسال دستی/قالب: " + (getChatName() || ""), {
-            text: msg
+            text: msg,
+            contactName: getChatName() || ""
         });
     }
     return ok;
+}
+
+async function openContactChatAction(targetName) {
+    const name = String(targetName || "").trim();
+    if (!name) return { ok: false, error: "نام مخاطب مشخص نیست." };
+    const opened = await openChatByName(name, 14000);
+    if (!opened) {
+        return {
+            ok: false,
+            error: "چت «" + name + "» پیدا نشد. نام باید دقیقاً مثل واتساپ باشد."
+        };
+    }
+    return { ok: true };
+}
+
+async function sendTemplateNowAction(targetName, message) {
+    const name = String(targetName || "").trim();
+    const msg = String(message || "").trim();
+    if (!name || !msg) {
+        return { ok: false, error: "مخاطب و متن پیام الزامی است." };
+    }
+    if (taskRunnerBusy || busy) {
+        return { ok: false, error: "سیستم مشغول است. کمی بعد دوباره تلاش کنید." };
+    }
+
+    taskRunnerBusy = true;
+    busy = true;
+    try {
+        await refreshCrmSettings();
+        if (globalThis.IranexpediaCrm) {
+            const sentHour = await IranexpediaCrm.countSendsInLastHour();
+            const max = (crmSettingsCache && crmSettingsCache.maxPerHour) || 20;
+            if (sentHour >= max) {
+                return {
+                    ok: false,
+                    error: "سقف ارسال ساعتی (" + max + ") پر شده است."
+                };
+            }
+        }
+
+        const opened = await openChatByName(name, 14000);
+        if (!opened) {
+            return {
+                ok: false,
+                error: "چت «" + name + "» پیدا نشد یا باز نشد."
+            };
+        }
+        await sleep(800);
+        resetMessageCache();
+        const ok = await sendTextNow(msg);
+        if (!ok) return { ok: false, error: "ارسال پیام انجام نشد." };
+        if (globalThis.IranexpediaCrm) {
+            await IranexpediaCrm.upsertContact({
+                name: name,
+                lastMessageAt: Date.now()
+            });
+        }
+        return { ok: true };
+    } catch (err) {
+        return { ok: false, error: String((err && err.message) || err) };
+    } finally {
+        taskRunnerBusy = false;
+        busy = false;
+    }
 }
 
 async function runScheduledTask(task) {
@@ -624,6 +701,14 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (!message || !message.type) return;
     if (message.type === "runScheduledTask") {
         runScheduledTask(message.task || {}).then(sendResponse);
+        return true;
+    }
+    if (message.type === "openContactChat") {
+        openContactChatAction(message.targetName).then(sendResponse);
+        return true;
+    }
+    if (message.type === "sendTemplateNow") {
+        sendTemplateNowAction(message.targetName, message.message).then(sendResponse);
         return true;
     }
     if (message.type === "pingRunner") {
