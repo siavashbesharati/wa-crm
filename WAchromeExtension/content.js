@@ -1,4 +1,4 @@
-const EXT_VERSION = "6.0.1";
+const EXT_VERSION = "6.0.3";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -31,52 +31,29 @@ let lastHandledText = "";
 let lastBotReply = "";
 let lastReplyTime = 0;
 let lastStableChat = "";
+let lastCapturedMsgKey = "";
+const sidebarContactSaved = {};
 
 let replyTimeout = null;
 let batchTimeout = null;
 
 const handledSidebarKeys = {};
 
-/* ================= FONT + STYLES ================= */
-function injectUiAssets() {
-    // Do not load external fonts on WhatsApp — CSP blocks cdn.jsdelivr.net
-    const oldFont = document.getElementById("iranexpedia-font");
-    if (oldFont) oldFont.remove();
-
-    let style = document.getElementById("iranexpedia-style");
-    if (!style) {
-        style = document.createElement("style");
-        style.id = "iranexpedia-style";
-        document.documentElement.appendChild(style);
-    }
-
-    style.textContent = `
-      #iranexpedia-toggle,
-      #iranexpedia-members {
-        font-family: Tahoma, "Segoe UI", sans-serif !important;
-        direction: rtl;
-        min-width: 140px;
-        height: 40px;
-        padding: 0 14px;
-        border: none;
-        border-radius: 20px;
-        cursor: pointer;
-        color: #fff !important;
-        font-size: 12px !important;
-        font-weight: 700 !important;
-        position: fixed;
-        left: 20px !important;
-        right: auto !important;
-        z-index: 999999;
-        box-shadow: 0 4px 14px rgba(0,0,0,.25);
-        transition: background .15s ease, opacity .15s ease;
-      }
-      #iranexpedia-toggle { bottom: 20px; }
-      #iranexpedia-members { bottom: 70px; background: #0f766e !important; }
-      #iranexpedia-members:disabled { opacity: .6; cursor: wait; }
-      #iranexpedia-toggle.is-off { background: #6b7280 !important; }
-      #iranexpedia-toggle.is-on { background: #0b8457 !important; }
-    `;
+/* ================= UI (controls live in CRM side panel) ================= */
+function removeLegacyFloatingButtons() {
+    [
+        "iranexpedia-toggle",
+        "iranexpedia-members",
+        "keyword-toggle-btn",
+        "ai-toggle-btn",
+        "kw-toggle-btn",
+        "keyword-autoreply-version",
+        "iranexpedia-style",
+        "iranexpedia-font"
+    ].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
 }
 
 function persistAutoReplyEnabled(enabled) {
@@ -95,7 +72,7 @@ async function applyAutoReplyEnabled(enabled, source) {
             isEnabled = false;
             persistAutoReplyEnabled(false);
             log("روشن نشد — نیاز به فعال‌سازی (", source || "ui", ")");
-            ensureButton();
+            removeLegacyFloatingButtons();
             return false;
         }
     }
@@ -105,10 +82,10 @@ async function applyAutoReplyEnabled(enabled, source) {
     if (isEnabled) resetMessageCache();
     log(
         isEnabled
-            ? "روشن شد — نظارت روی چت باز + لیست کناری (" + (source || "ui") + ")"
-            : "خاموش شد (" + (source || "ui") + ")"
+            ? "افزونه روشن شد — پاسخ خودکار فعال (" + (source || "ui") + ")"
+            : "افزونه خاموش شد — پاسخ خودکار غیرفعال (" + (source || "ui") + ")"
     );
-    ensureButton();
+    removeLegacyFloatingButtons();
     return isEnabled;
 }
 
@@ -117,6 +94,20 @@ window.__iranexpediaGetAutoReplyEnabled = function () {
 };
 window.__iranexpediaSetAutoReplyEnabled = function (enabled) {
     return applyAutoReplyEnabled(enabled, "crm-panel");
+};
+window.__iranexpediaDownloadGroupMembers = async function (btn) {
+    const ok = await requireLicense("دانلود اعضای گروه");
+    if (!ok) return false;
+    const target = btn || {
+        disabled: false,
+        textContent: "",
+        set disabled(_v) {},
+        get disabled() {
+            return false;
+        }
+    };
+    await downloadGroupMembers(target);
+    return true;
 };
 
 async function refreshCrmSettings() {
@@ -285,18 +276,90 @@ function isMemberListText(value) {
 function getHeaderTitleSpans() {
     const header = document.querySelector("#main header");
     if (!header) return [];
-    return Array.from(header.querySelectorAll("span[title]"));
+    return Array.from(
+        header.querySelectorAll("span[title], span[dir='auto'], span[dir='rtl']")
+    );
+}
+
+function cleanChatLabel(value) {
+    return String(value || "")
+        .normalize("NFC")
+        .replace(/[\u200c\u200d\ufeff]/g, "")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+function getChatIdentity() {
+    const spans = getHeaderTitleSpans();
+    let name = "";
+    let phone = "";
+
+    for (let i = 0; i < spans.length; i++) {
+        const raw = cleanChatLabel(
+            spans[i].getAttribute("title") || spans[i].innerText || spans[i].textContent || ""
+        );
+        if (!raw || isStatusText(raw) || isMemberListText(raw)) continue;
+        if (looksLikePhone(raw)) {
+            if (!phone) phone = normalizePhone(raw);
+            continue;
+        }
+        // Prefer first non-phone title (supports Farsi names)
+        if (!name) name = raw;
+    }
+
+    if (!name && phone) name = phone;
+    return { name: name || "", phone: phone || "" };
 }
 
 function getChatName() {
-    const spans = getHeaderTitleSpans();
-    for (let i = 0; i < spans.length; i++) {
-        const t = (spans[i].getAttribute("title") || "").trim();
-        if (!t || isStatusText(t) || isMemberListText(t)) continue;
-        if (looksLikePhone(t)) continue;
-        return t;
+    return getChatIdentity().name || null;
+}
+
+async function saveContactFromIncoming(chatInfo, source) {
+    if (!globalThis.IranexpediaCrm) return null;
+    if (!licenseValid) return null;
+    const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
+    if (!name) return null;
+
+    const existing = await IranexpediaCrm.getContactByName(name);
+    if (existing) {
+        await IranexpediaCrm.upsertContact({
+            name: existing.name || name,
+            phone: (chatInfo && chatInfo.phone) || existing.phone || "",
+            lastMessageAt: Date.now()
+        });
+        return existing;
     }
-    return null;
+
+    const created = await IranexpediaCrm.upsertContact({
+        name: name,
+        phone: (chatInfo && chatInfo.phone) || "",
+        chatType: (chatInfo && chatInfo.chatType) || "pv",
+        lastMessageAt: Date.now()
+    });
+    log("مخاطب جدید ذخیره شد (", source || "message", "):", name);
+    await logCrmEvent("contact_new", "مخاطب جدید: " + name, { source: source || "message" });
+    return created;
+}
+
+/** Capture contacts on new messages even when auto-reply is OFF */
+function captureContactsFromOpenChat() {
+    if (!licenseValid || !globalThis.IranexpediaCrm) return;
+    if (!document.querySelector("#main")) return;
+
+    const text = getLastIncomingText();
+    if (!text) return;
+    if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
+    if (text === lastBotReply) return;
+
+    const info = getChatIdentity();
+    if (!info.name) return;
+
+    const key = info.name + "||" + text;
+    if (key === lastCapturedMsgKey) return;
+    lastCapturedMsgKey = key;
+
+    saveContactFromIncoming(info, "incoming");
 }
 
 function getHeaderMemberListText() {
@@ -569,84 +632,10 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     }
 });
 
-/* ================= TOGGLE (fixed — works with no chat open) ================= */
-function paintButton(btn) {
-    if (!licenseValid) {
-        btn.className = "is-off";
-        btn.textContent = "نیاز به فعال‌سازی · v" + EXT_VERSION;
-        btn.title = licenseMessage || "ابتدا کلید را از آیکون افزونه وارد کنید";
-        return;
-    }
-
-    if (isEnabled) {
-        btn.className = "is-on";
-        btn.textContent = "فعال · همه چت‌ها · v" + EXT_VERSION;
-        btn.title =
-            BRAND +
-            " v" +
-            EXT_VERSION +
-            " — پاسخ خودکار روی همه چت‌ها و گروه‌ها";
-    } else {
-        btn.className = "is-off";
-        btn.textContent = "خاموش · v" + EXT_VERSION;
-        btn.title = BRAND + " v" + EXT_VERSION + " — برای روشن کردن کلیک کنید";
-    }
-}
-
-function ensureButton() {
-    injectUiAssets();
-
-    [
-        "keyword-toggle-btn",
-        "ai-toggle-btn",
-        "kw-toggle-btn",
-        "keyword-autoreply-version"
-    ].forEach(function (id) {
-        const el = document.getElementById(id);
-        if (el) el.remove();
-    });
-
-    let btn = document.getElementById("iranexpedia-toggle");
-    if (!btn) {
-        btn = document.createElement("button");
-        btn.id = "iranexpedia-toggle";
-        btn.type = "button";
-        document.documentElement.appendChild(btn);
-
-        btn.addEventListener("click", async function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            await applyAutoReplyEnabled(!isEnabled, "floating-button");
-        });
-    }
-
-    paintButton(btn);
-    ensureMembersButton();
-}
-
 /* ================= GROUP MEMBERS DOWNLOAD ================= */
-function ensureMembersButton() {
-    let btn = document.getElementById("iranexpedia-members");
-    if (!btn) {
-        btn = document.createElement("button");
-        btn.id = "iranexpedia-members";
-        btn.type = "button";
-        btn.textContent = "دانلود اعضای گروه";
-        btn.title =
-            BRAND +
-            " v" +
-            EXT_VERSION +
-            " — دانلود لیست اعضای گروه باز به‌صورت CSV";
-        document.documentElement.appendChild(btn);
-
-        btn.addEventListener("click", async function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const ok = await requireLicense("دانلود اعضای گروه");
-            if (!ok) return;
-            downloadGroupMembers(btn);
-        });
-    }
+function ensureButton() {
+    // Floating buttons removed — controls are in the CRM side panel.
+    removeLegacyFloatingButtons();
 }
 
 function clickEl(el) {
@@ -968,12 +957,54 @@ function cellHasUnread(cell) {
 }
 
 function getCellChatName(cell) {
-    const spans = cell.querySelectorAll("span[title]");
+    const spans = cell.querySelectorAll(
+        "span[title], span[dir='auto'], span[dir='rtl'], span[dir='ltr']"
+    );
+    let phone = "";
     for (let i = 0; i < spans.length; i++) {
-        const t = (spans[i].getAttribute("title") || "").trim();
-        if (!isStatusText(t)) return t;
+        const t = cleanChatLabel(
+            spans[i].getAttribute("title") || spans[i].innerText || spans[i].textContent || ""
+        );
+        if (!t || isStatusText(t) || isMemberListText(t)) continue;
+        if (looksLikePhone(t)) {
+            if (!phone) phone = normalizePhone(t);
+            continue;
+        }
+        return t;
     }
-    return null;
+    return phone || null;
+}
+
+async function captureContactsFromSidebarUnread() {
+    if (!licenseValid || !globalThis.IranexpediaCrm) return;
+    const cells = getSidebarCells();
+    for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        if (!cellHasUnread(cell)) continue;
+        const chatName = getCellChatName(cell);
+        if (!chatName) continue;
+        const key = cleanChatLabel(chatName);
+        if (!key || sidebarContactSaved[key]) continue;
+        sidebarContactSaved[key] = Date.now();
+        const phone = looksLikePhone(key) ? normalizePhone(key) : "";
+        await saveContactFromIncoming(
+            { name: key, phone: phone, chatType: "pv" },
+            "sidebar-unread"
+        );
+    }
+
+    // keep map small
+    const keys = Object.keys(sidebarContactSaved);
+    if (keys.length > 120) {
+        keys
+            .sort(function (a, b) {
+                return sidebarContactSaved[a] - sidebarContactSaved[b];
+            })
+            .slice(0, keys.length - 60)
+            .forEach(function (k) {
+                delete sidebarContactSaved[k];
+            });
+    }
 }
 
 function getCellPreview(cell, chatName) {
@@ -1236,21 +1267,30 @@ function getLastIncomingText() {
 }
 
 function handleOpenChatMessages() {
-    if (!isEnabled || busy || taskRunnerBusy) return;
     if (!document.querySelector("#main")) return;
 
     const text = getLastIncomingText();
     if (!text) return;
     if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
     if (text === lastBotReply) return;
+
+    const chatInfo = getChatIdentity();
+    const chatName = chatInfo.name || "";
+
+    // Always try to save contact on new incoming message (Farsi-safe)
+    if (text !== lastHandledText) {
+        captureContactsFromOpenChat();
+    }
+
+    if (!isEnabled || busy || taskRunnerBusy) return;
     if (text === lastHandledText) return;
 
     lastHandledText = text;
     log("پیام در چت باز:", text);
 
-    const chatName = getChatName() || "";
-
     (async function () {
+        await saveContactFromIncoming(chatInfo, "incoming");
+
         if (await isChatBotPaused(chatName)) {
             log("ربات برای این چت متوقف است:", chatName);
             return;
@@ -1308,9 +1348,7 @@ function handleOpenChatMessages() {
                                 "پاسخ خودکار به «" + chatName + "»",
                                 { text: text }
                             );
-                            if (globalThis.IranexpediaCrm && chatName) {
-                                IranexpediaCrm.upsertContact({ name: chatName });
-                            }
+                            saveContactFromIncoming(chatInfo, "auto_reply");
                         } else {
                             log("دکمه ارسال پیدا نشد");
                         }
@@ -1327,11 +1365,15 @@ function handleOpenChatMessages() {
 setInterval(function () {
     ensureButton();
 
-    const chat = getChatName();
+    const info = getChatIdentity();
+    const chat = info.name;
     if (chat && chat !== lastStableChat) {
         lastStableChat = chat;
+        lastCapturedMsgKey = "";
         if (!busy) resetMessageCache();
         if (isEnabled) log("چت فعال:", chat);
+        // Save when user opens a chat (Farsi names / phone titles supported)
+        saveContactFromIncoming(info, "open-chat");
     }
 }, 600);
 
@@ -1341,6 +1383,7 @@ setInterval(function () {
 
 setInterval(function () {
     scanSidebarAndReply();
+    captureContactsFromSidebarUnread();
 }, SIDEBAR_SCAN_MS);
 
 loadRules();

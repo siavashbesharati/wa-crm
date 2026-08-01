@@ -156,32 +156,49 @@
             .join("") +
           "</div>";
 
+    root.classList.toggle("is-extension-on", !!autoReplyOn);
+    root.classList.toggle("is-extension-off", !autoReplyOn);
+
     panel.innerHTML =
       '<div class="crm-head">' +
       '<div class="crm-brand">پنل CRM واتساپ</div>' +
-      '<div class="crm-sub">iranexpedia.ir</div>' +
+      '<div class="crm-sub">iranexpedia.ir · v' +
+      (chrome.runtime.getManifest().version || "") +
+      "</div>" +
       '<div class="crm-health">' +
       '<span class="crm-chip ok" id="crm-chip-wa">واتساپ متصل</span>' +
-      '<span class="crm-chip' +
-      (autoReplyOn ? " ok" : " bad") +
-      '" id="crm-chip-bot">' +
-      (autoReplyOn ? "پاسخ خودکار روشن" : "پاسخ خودکار خاموش") +
-      "</span>" +
       '<span class="crm-chip' +
       (queuedCount ? " warn" : "") +
       '" id="crm-chip-q">' +
       queuedCount +
       " در صف</span>" +
       "</div></div>" +
-      '<div class="crm-banner">برای پاسخ خودکار، دکمه زیر را روشن کنید. برای زمان‌بندی، واتساپ وب باید باز بماند.</div>' +
-      '<div class="crm-body">' +
-      '<div class="crm-card"><h3>پاسخ خودکار</h3>' +
-      '<button type="button" class="crm-btn crm-global-toggle' +
-      (autoReplyOn ? "" : " secondary") +
-      '" id="crm-global-toggle">' +
-      (autoReplyOn ? "خاموش کردن پاسخ خودکار" : "روشن کردن پاسخ خودکار") +
-      "</button>" +
-      '<p class="crm-empty">بدون این دکمه، فقط مخاطب ذخیره می‌شود و پاسخی ارسال نمی‌شود.</p></div>' +
+      '<div class="crm-power-card ' +
+      (autoReplyOn ? "is-on" : "is-off") +
+      '">' +
+      '<div class="crm-power-top">' +
+      '<div><div class="crm-power-title">' +
+      (autoReplyOn ? "افزونه روشن است" : "افزونه خاموش است") +
+      "</div>" +
+      '<div class="crm-power-sub">' +
+      (autoReplyOn
+        ? "پاسخ خودکار روی چت‌ها و گروه‌ها فعال است"
+        : "هیچ پیام خودکاری ارسال نمی‌شود") +
+      "</div></div>" +
+      '<button type="button" class="crm-power-switch" id="crm-global-toggle" aria-pressed="' +
+      (autoReplyOn ? "true" : "false") +
+      '">' +
+      '<span class="crm-power-knob"></span>' +
+      '<span class="crm-power-label">' +
+      (autoReplyOn ? "ON" : "OFF") +
+      "</span></button></div>" +
+      '<button type="button" class="crm-btn crm-members-btn" id="crm-download-members">دانلود اعضای گروه</button>' +
+      '<button type="button" class="crm-btn secondary" id="crm-open-dash">باز کردن داشبورد کامل</button>' +
+      "</div>" +
+      '<div class="crm-banner">برای زمان‌بندی، واتساپ وب باید باز بماند.</div>' +
+      '<div class="crm-body' +
+      (autoReplyOn ? "" : " is-dimmed") +
+      '">' +
       '<div class="crm-card"><h3>مخاطب فعلی</h3>' +
       contactHtml +
       "</div>" +
@@ -199,7 +216,6 @@
       '<span style="font-size:11px;color:#9bb5a7">خطر محدودیت واتساپ را می‌پذیرم (گروه/کانال)</span></label>' +
       '<div class="crm-actions">' +
       '<button type="button" class="crm-btn" id="crm-schedule">ثبت در صف</button>' +
-      '<button type="button" class="crm-btn secondary" id="crm-open-dash">داشبورد کامل</button>' +
       "</div></div></div>";
 
     if (currentName) {
@@ -224,6 +240,18 @@
 
     $("#crm-open-dash", panel).onclick = openDashboard;
     $("#crm-schedule", panel).onclick = scheduleLater;
+
+    var membersBtn = $("#crm-download-members", panel);
+    if (membersBtn) {
+      membersBtn.onclick = async function () {
+        if (typeof window.__iranexpediaDownloadGroupMembers === "function") {
+          await window.__iranexpediaDownloadGroupMembers(membersBtn);
+        } else {
+          alert("صفحه واتساپ را تازه کنید و دوباره تلاش کنید.");
+        }
+      };
+    }
+
     var globalBtn = $("#crm-global-toggle", panel);
     if (globalBtn) {
       globalBtn.onclick = async function () {

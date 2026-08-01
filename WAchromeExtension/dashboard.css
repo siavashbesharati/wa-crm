@@ -24,9 +24,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  font-family: Vazirmatn, Tahoma, sans-serif !important;
 }
 
-.brand { font-size: 22px; font-weight: 800; }
+.sidebar,
+.sidebar * {
+  font-family: Vazirmatn, Tahoma, sans-serif !important;
+}
+
+.brand { font-size: 22px; font-weight: 800; font-family: Vazirmatn, Tahoma, sans-serif !important; }
 .brand-sub { font-size: 12px; color: #9bb5a7; margin-top: 4px; }
 .version {
   display: inline-block;
@@ -51,6 +57,7 @@ nav { display: grid; gap: 6px; }
   cursor: pointer;
   font-size: 13px;
   font-weight: 700;
+  font-family: Vazirmatn, Tahoma, sans-serif !important;
 }
 
 .nav-btn.active,

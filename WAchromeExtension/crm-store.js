@@ -74,24 +74,63 @@
     return list || [];
   }
 
+  // Farsi/Arabic-compatible key (ي/ی, ك/ک, ZWNJ, NFC)
+  function normalizeContactKey(name) {
+    return String(name || "")
+      .normalize("NFC")
+      .replace(/[\u200c\u200d\ufeff]/g, "")
+      .replace(/ي/g, "ی")
+      .replace(/ك/g, "ک")
+      .replace(/ة/g, "ه")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase("fa-IR");
+  }
+
   function contactIdFromName(name) {
-    return "c_" + String(name || "").trim().toLowerCase();
+    var key = normalizeContactKey(name);
+    var h = 2166136261;
+    for (var i = 0; i < key.length; i++) {
+      h ^= key.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return "c_" + (h >>> 0).toString(36);
+  }
+
+  function namesMatch(a, b) {
+    return normalizeContactKey(a) === normalizeContactKey(b);
   }
 
   async function upsertContact(partial) {
-    var name = String((partial && partial.name) || "").trim();
+    var name = String((partial && partial.name) || "")
+      .normalize("NFC")
+      .replace(/[\u200c\u200d\ufeff]/g, "")
+      .trim()
+      .replace(/\s+/g, " ");
     if (!name) return null;
     var list = await getContacts();
     var id = partial.id || contactIdFromName(name);
+    var phone = partial.phone
+      ? String(partial.phone).replace(/[\s\-()]/g, "").trim()
+      : "";
     var idx = list.findIndex(function (c) {
-      return c.id === id || String(c.name).trim() === name;
+      if (c.id === id) return true;
+      if (namesMatch(c.name, name)) return true;
+      if (phone && c.phone && String(c.phone).replace(/[\s\-()]/g, "") === phone) {
+        return true;
+      }
+      return false;
     });
     var now = Date.now();
     if (idx >= 0) {
-      list[idx] = Object.assign({}, list[idx], partial, {
-        id: list[idx].id,
-        name: name,
-        updatedAt: now
+      var prev = list[idx];
+      list[idx] = Object.assign({}, prev, partial, {
+        id: prev.id,
+        // Keep existing Farsi display name when keys match (avoid ي/ی flicker)
+        name: namesMatch(prev.name, name) ? prev.name || name : name || prev.name,
+        phone: phone || prev.phone || "",
+        updatedAt: now,
+        lastMessageAt: partial.lastMessageAt || prev.lastMessageAt || now
       });
       await saveContacts(list);
       return list[idx];
@@ -99,14 +138,15 @@
     var created = {
       id: id,
       name: name,
-      phone: partial.phone || "",
+      phone: phone || "",
       chatType: partial.chatType || "pv",
       tags: Array.isArray(partial.tags) ? partial.tags : [],
       stage: partial.stage || STAGES[0],
       notes: partial.notes || "",
       botPaused: !!partial.botPaused,
       updatedAt: now,
-      createdAt: now
+      createdAt: now,
+      lastMessageAt: partial.lastMessageAt || now
     };
     list.unshift(created);
     await saveContacts(list);
@@ -136,10 +176,11 @@
   async function getContactByName(name) {
     var n = String(name || "").trim();
     if (!n) return null;
+    var key = normalizeContactKey(n);
     var list = await getContacts();
     return (
       list.find(function (c) {
-        return String(c.name).trim() === n;
+        return normalizeContactKey(c.name) === key;
       }) || null
     );
   }
@@ -304,6 +345,8 @@
     STAGES: STAGES,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     uid: uid,
+    normalizeContactKey: normalizeContactKey,
+    namesMatch: namesMatch,
     getSettings: getSettings,
     saveSettings: saveSettings,
     getContacts: getContacts,

@@ -105,14 +105,26 @@
     $("stat-sent").textContent = String(sentToday);
   }
 
+  function faKey(s) {
+    if (window.IranexpediaCrm && IranexpediaCrm.normalizeContactKey) {
+      return IranexpediaCrm.normalizeContactKey(s);
+    }
+    return String(s || "")
+      .replace(/ي/g, "ی")
+      .replace(/ك/g, "ک")
+      .toLocaleLowerCase("fa-IR");
+  }
+
   function renderContacts() {
-    var q = ($("contact-search").value || "").trim().toLowerCase();
+    var q = faKey(($("contact-search").value || "").trim());
     var body = $("contacts-body");
     body.innerHTML = "";
     contacts
       .filter(function (c) {
         if (!q) return true;
-        var hay = (c.name + " " + (c.tags || []).join(" ") + " " + (c.notes || "")).toLowerCase();
+        var hay = faKey(
+          c.name + " " + (c.tags || []).join(" ") + " " + (c.notes || "")
+        );
         return hay.indexOf(q) !== -1;
       })
       .forEach(function (c) {
@@ -121,7 +133,8 @@
           "<td><strong></strong><div class='hint'></div></td>" +
           "<td></td><td></td><td></td><td></td><td></td>";
         tr.cells[0].querySelector("strong").textContent = c.name;
-        tr.cells[0].querySelector(".hint").textContent = c.chatType || "pv";
+        tr.cells[0].querySelector(".hint").textContent =
+          (c.chatType || "pv") + (c.phone ? " · " + c.phone : "");
         tr.cells[1].textContent = c.stage || "-";
         tr.cells[2].textContent = (c.tags || []).join("، ") || "-";
         tr.cells[3].textContent = c.botPaused ? "متوقف" : "فعال";

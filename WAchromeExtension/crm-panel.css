@@ -274,7 +274,115 @@
   line-height: 1.6;
 }
 
-.crm-global-toggle {
+.crm-power-card {
+  margin: 10px 14px 0;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--crm-line);
+  display: grid;
+  gap: 10px;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.crm-power-card.is-off {
+  background: rgba(75, 85, 99, 0.28);
+  border-color: rgba(156, 163, 175, 0.35);
+  box-shadow: none;
+}
+
+.crm-power-card.is-on {
+  background: rgba(31, 157, 102, 0.22);
+  border-color: rgba(125, 255, 184, 0.35);
+  box-shadow: 0 0 0 1px rgba(31, 157, 102, 0.25) inset;
+}
+
+.crm-power-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.crm-power-title {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.crm-power-card.is-off .crm-power-title { color: #d1d5db; }
+.crm-power-card.is-on .crm-power-title { color: #7dffb8; }
+
+.crm-power-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--crm-muted);
+}
+
+.crm-power-switch {
+  position: relative;
+  width: 72px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.2s ease;
+}
+
+.crm-power-card.is-off .crm-power-switch {
+  background: #6b7280;
+}
+
+.crm-power-card.is-on .crm-power-switch {
+  background: #1f9d66;
+}
+
+.crm-power-knob {
+  position: absolute;
+  top: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: left 0.2s ease, right 0.2s ease;
+}
+
+.crm-power-card.is-off .crm-power-knob {
+  left: 4px;
+}
+
+.crm-power-card.is-on .crm-power-knob {
+  left: 40px;
+}
+
+.crm-power-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.4px;
+}
+
+.crm-power-card.is-off .crm-power-label { right: 10px; }
+.crm-power-card.is-on .crm-power-label { left: 10px; }
+
+.crm-members-btn {
   width: 100%;
-  margin-bottom: 4px;
+  background: #0f766e !important;
+}
+
+.crm-body.is-dimmed {
+  opacity: 0.72;
+}
+
+#iranexpedia-crm-root.is-extension-off #iranexpedia-crm-toggle {
+  background: linear-gradient(180deg, #6b7280, #4b5563);
+}
+
+#iranexpedia-crm-root.is-extension-on #iranexpedia-crm-toggle {
+  background: linear-gradient(180deg, var(--crm-accent), var(--crm-accent-2));
 }
