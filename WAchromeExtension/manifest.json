@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "پاسخ خودکار واتساپ",
   "description": "CRM و پاسخ خودکار واتساپ وب با زمان‌بندی. توسعه: iranexpedia.ir",
-  "version": "6.1.0",
+  "version": "6.1.1",
   "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": [
     "https://web.whatsapp.com/*",

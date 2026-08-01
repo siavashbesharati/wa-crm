@@ -1,13 +1,11 @@
 #iranexpedia-crm-root {
-  --crm-bg: #0f1f18;
-  --crm-panel: #163024;
-  --crm-line: rgba(207, 227, 215, 0.18);
-  --crm-text: #eef7f1;
-  --crm-muted: #9bb5a7;
+  --crm-text: #f4fffa;
+  --crm-muted: rgba(207, 233, 219, 0.82);
   --crm-accent: #1f9d66;
   --crm-accent-2: #0b8457;
-  --crm-danger: #ef4444;
-  --crm-warn: #f59e0b;
+  --crm-line: rgba(255, 255, 255, 0.22);
+  --crm-glass: rgba(12, 32, 24, 0.42);
+  --crm-glass-card: rgba(255, 255, 255, 0.08);
   font-family: Tahoma, "Segoe UI", sans-serif !important;
   direction: rtl;
   position: fixed;
@@ -32,16 +30,22 @@
   right: 340px;
   width: 34px;
   height: 88px;
-  border: none;
-  border-radius: 12px 0 0 12px;
-  background: linear-gradient(180deg, var(--crm-accent), var(--crm-accent-2));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 14px 0 0 14px;
+  background: linear-gradient(
+    180deg,
+    rgba(31, 157, 102, 0.85),
+    rgba(11, 132, 87, 0.78)
+  );
   color: #fff;
   font-size: 11px;
   font-weight: 800;
   writing-mode: vertical-rl;
   cursor: pointer;
-  box-shadow: -4px 0 18px rgba(0, 0, 0, 0.25);
+  box-shadow: -6px 0 20px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.3);
   letter-spacing: 0.5px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 #iranexpedia-crm-root.is-collapsed #iranexpedia-crm-toggle {
@@ -55,15 +59,16 @@
   margin-right: 0;
   margin-left: auto;
   background:
-    radial-gradient(circle at top right, rgba(31, 157, 102, 0.22), transparent 42%),
-    linear-gradient(180deg, #13271e 0%, #0f1f18 100%);
-  border-right: none;
+    linear-gradient(165deg, rgba(20, 56, 40, 0.55), rgba(8, 22, 18, 0.38)),
+    radial-gradient(circle at top right, rgba(56, 189, 140, 0.22), transparent 48%);
   border-left: 1px solid var(--crm-line);
-  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.35);
+  box-shadow: -10px 0 36px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   transition: transform 0.2s ease;
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
 }
 
 #iranexpedia-crm-root.is-collapsed #iranexpedia-crm-panel {
@@ -72,7 +77,8 @@
 
 .crm-head {
   padding: 14px 14px 10px;
-  border-bottom: 1px solid var(--crm-line);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .crm-brand {
@@ -99,34 +105,40 @@
   font-weight: 700;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: var(--crm-muted);
+  backdrop-filter: blur(8px);
 }
 
 .crm-chip.ok {
-  background: rgba(31, 157, 102, 0.2);
-  color: #7dffb8;
+  background: rgba(31, 157, 102, 0.28);
+  color: #a7f3c8;
+  border-color: rgba(167, 243, 200, 0.28);
 }
 
 .crm-chip.warn {
-  background: rgba(245, 158, 11, 0.18);
-  color: #ffd27a;
+  background: rgba(245, 158, 11, 0.22);
+  color: #ffe0a3;
+  border-color: rgba(255, 224, 163, 0.25);
 }
 
 .crm-chip.bad {
-  background: rgba(239, 68, 68, 0.18);
-  color: #ff9b9b;
+  background: rgba(239, 68, 68, 0.22);
+  color: #fecaca;
+  border-color: rgba(254, 202, 202, 0.25);
 }
 
 .crm-banner {
   margin: 10px 14px 0;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(245, 158, 11, 0.12);
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.14);
   border: 1px solid rgba(245, 158, 11, 0.28);
-  color: #ffd27a;
+  color: #ffe0a3;
   font-size: 11px;
   line-height: 1.5;
+  backdrop-filter: blur(10px);
 }
 
 .crm-body {
@@ -138,17 +150,19 @@
 }
 
 .crm-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--crm-line);
-  border-radius: 14px;
+  background: var(--crm-glass-card);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
   padding: 12px;
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .crm-card h3 {
   margin: 0 0 8px;
   font-size: 12px;
   font-weight: 800;
-  color: #cfe9db;
+  color: #d9f5e7;
 }
 
 .crm-empty {
@@ -184,13 +198,14 @@
 .crm-field select,
 .crm-field textarea {
   width: 100%;
-  border: 1px solid var(--crm-line);
-  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--crm-text);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 8px 10px;
   font-size: 12px;
   outline: none;
+  backdrop-filter: blur(8px);
 }
 
 .crm-field textarea {
@@ -205,24 +220,25 @@
 }
 
 .crm-btn {
-  border: none;
-  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
   padding: 8px 10px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  background: var(--crm-accent);
+  background: linear-gradient(180deg, rgba(31, 157, 102, 0.92), rgba(11, 132, 87, 0.88));
   color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .crm-btn.secondary {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--crm-text);
 }
 
 .crm-btn.danger {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ff9b9b;
+  background: rgba(239, 68, 68, 0.22);
+  color: #fecaca;
 }
 
 .crm-btn:disabled {
@@ -243,9 +259,9 @@
   gap: 8px;
   align-items: center;
   padding: 8px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .crm-template-item strong {
@@ -277,23 +293,23 @@
 .crm-power-card {
   margin: 10px 14px 0;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid var(--crm-line);
   display: grid;
   gap: 10px;
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  backdrop-filter: blur(14px);
 }
 
 .crm-power-card.is-off {
   background: rgba(75, 85, 99, 0.28);
   border-color: rgba(156, 163, 175, 0.35);
-  box-shadow: none;
 }
 
 .crm-power-card.is-on {
-  background: rgba(31, 157, 102, 0.22);
-  border-color: rgba(125, 255, 184, 0.35);
-  box-shadow: 0 0 0 1px rgba(31, 157, 102, 0.25) inset;
+  background: rgba(31, 157, 102, 0.24);
+  border-color: rgba(167, 243, 200, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .crm-power-top {
@@ -309,7 +325,7 @@
 }
 
 .crm-power-card.is-off .crm-power-title { color: #d1d5db; }
-.crm-power-card.is-on .crm-power-title { color: #7dffb8; }
+.crm-power-card.is-on .crm-power-title { color: #a7f3c8; }
 
 .crm-power-sub {
   margin-top: 3px;
@@ -322,20 +338,21 @@
   position: relative;
   width: 72px;
   height: 36px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 999px;
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
   transition: background 0.2s ease;
+  backdrop-filter: blur(8px);
 }
 
 .crm-power-card.is-off .crm-power-switch {
-  background: #6b7280;
+  background: rgba(107, 114, 128, 0.85);
 }
 
 .crm-power-card.is-on .crm-power-switch {
-  background: #1f9d66;
+  background: rgba(31, 157, 102, 0.95);
 }
 
 .crm-power-knob {
@@ -344,18 +361,13 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  transition: left 0.2s ease, right 0.2s ease;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  transition: left 0.2s ease;
 }
 
-.crm-power-card.is-off .crm-power-knob {
-  left: 4px;
-}
-
-.crm-power-card.is-on .crm-power-knob {
-  left: 40px;
-}
+.crm-power-card.is-off .crm-power-knob { left: 4px; }
+.crm-power-card.is-on .crm-power-knob { left: 40px; }
 
 .crm-power-label {
   position: absolute;
@@ -372,7 +384,7 @@
 
 .crm-members-btn {
   width: 100%;
-  background: #0f766e !important;
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.95), rgba(13, 98, 92, 0.9)) !important;
 }
 
 .crm-body.is-dimmed {
@@ -380,9 +392,9 @@
 }
 
 #iranexpedia-crm-root.is-extension-off #iranexpedia-crm-toggle {
-  background: linear-gradient(180deg, #6b7280, #4b5563);
+  background: linear-gradient(180deg, rgba(107, 114, 128, 0.9), rgba(75, 85, 99, 0.85));
 }
 
 #iranexpedia-crm-root.is-extension-on #iranexpedia-crm-toggle {
-  background: linear-gradient(180deg, var(--crm-accent), var(--crm-accent-2));
+  background: linear-gradient(180deg, rgba(31, 157, 102, 0.9), rgba(11, 132, 87, 0.85));
 }
