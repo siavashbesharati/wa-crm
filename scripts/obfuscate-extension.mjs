@@ -70,6 +70,9 @@ function main() {
   copyFile("manifest.json");
   copyFile("popup.html");
   copyFile("popup.css");
+  copyFile("dashboard.html");
+  copyFile("dashboard.css");
+  copyFile("crm-panel.css");
   copyFile("background.js");
   if (fs.existsSync(path.join(srcDir, "rules.json"))) {
     copyFile("rules.json");
@@ -79,8 +82,11 @@ function main() {
   // JS to protect
   obfuscateJs("license-config.js");
   obfuscateJs("license-lib.js");
+  obfuscateJs("crm-store.js");
   obfuscateJs("content.js");
+  obfuscateJs("crm-panel.js");
   obfuscateJs("popup.js");
+  obfuscateJs("dashboard.js");
 
   console.log("\nDone.");
   console.log("Load this folder in Chrome (Load unpacked):");

@@ -1,4 +1,4 @@
-const EXT_VERSION = "5.3.1";
+const EXT_VERSION = "6.0.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -7,11 +7,13 @@ console.log(
 );
 
 /* ================= CONFIG ================= */
-const MIN_DELAY_MS = 2500;
-const MAX_DELAY_MS = 5000;
+let MIN_DELAY_MS = 2500;
+let MAX_DELAY_MS = 5000;
 const REPLY_COOLDOWN_MS = 10000;
 const BATCH_WAIT_MS = 4000;
 const SIDEBAR_SCAN_MS = 2500;
+let crmSettingsCache = null;
+let taskRunnerBusy = false;
 
 const DEFAULT_RULES = [
     { keyword: "hi", reply: "سلام! چطور می‌تونم کمکتون کنم؟" },
@@ -73,12 +75,43 @@ function injectUiAssets() {
         box-shadow: 0 4px 14px rgba(0,0,0,.25);
         transition: background .15s ease, opacity .15s ease;
       }
+      #iranexpedia-toggle,
+      #iranexpedia-members {
+        left: auto !important;
+        right: 20px !important;
+      }
       #iranexpedia-toggle { bottom: 20px; }
       #iranexpedia-members { bottom: 70px; background: #0f766e !important; }
       #iranexpedia-members:disabled { opacity: .6; cursor: wait; }
       #iranexpedia-toggle.is-off { background: #6b7280 !important; }
       #iranexpedia-toggle.is-on { background: #0b8457 !important; }
     `;
+}
+
+async function refreshCrmSettings() {
+    if (!globalThis.IranexpediaCrm) return;
+    try {
+        crmSettingsCache = await IranexpediaCrm.getSettings();
+        MIN_DELAY_MS = crmSettingsCache.minDelayMs || 2500;
+        MAX_DELAY_MS = crmSettingsCache.maxDelayMs || 5000;
+    } catch (_err) {
+        // keep defaults
+    }
+}
+
+async function isChatBotPaused(chatName) {
+    if (!globalThis.IranexpediaCrm || !chatName) return false;
+    const contact = await IranexpediaCrm.getContactByName(chatName);
+    return !!(contact && contact.botPaused);
+}
+
+async function logCrmEvent(type, message, meta) {
+    if (!globalThis.IranexpediaCrm) return;
+    try {
+        await IranexpediaCrm.addEvent(type, message, meta || {});
+    } catch (_err) {
+        // ignore
+    }
 }
 
 /* ================= HELPERS ================= */
@@ -348,6 +381,162 @@ async function waitForChatReady(expectedName, timeoutMs) {
     }
     return false;
 }
+
+function clickSidebarCell(cell) {
+    const clickable =
+        cell.querySelector("span[title]") ||
+        cell.querySelector('[role="gridcell"]') ||
+        cell;
+    clickable.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window })
+    );
+    clickable.dispatchEvent(
+        new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
+    );
+    clickable.click();
+}
+
+async function openChatByName(targetName, timeoutMs) {
+    const want = String(targetName || "").trim();
+    if (!want) return false;
+
+    const current = getChatName();
+    if (current && current === want) {
+        return waitForChatReady(want, timeoutMs || 8000);
+    }
+
+    const cells = getSidebarCells();
+    for (let i = 0; i < cells.length; i++) {
+        const name = getCellChatName(cells[i]);
+        if (name === want) {
+            clickSidebarCell(cells[i]);
+            return waitForChatReady(want, timeoutMs || 12000);
+        }
+    }
+
+    // Try search box if available
+    const search =
+        document.querySelector('div[contenteditable="true"][data-tab="3"]') ||
+        document.querySelector('[data-testid="chat-list-search"]') ||
+        document.querySelector('div[contenteditable="true"][role="textbox"][data-tab="3"]');
+    if (search) {
+        search.focus();
+        document.execCommand("selectAll", false, null);
+        document.execCommand("insertText", false, want);
+        await sleep(1200);
+        const afterSearch = getSidebarCells();
+        for (let j = 0; j < afterSearch.length; j++) {
+            const name2 = getCellChatName(afterSearch[j]);
+            if (name2 === want) {
+                clickSidebarCell(afterSearch[j]);
+                return waitForChatReady(want, timeoutMs || 12000);
+            }
+        }
+    }
+
+    return false;
+}
+
+async function sendTextNow(text) {
+    const msg = String(text || "").trim();
+    if (!msg) return false;
+    await refreshCrmSettings();
+    const delay =
+        Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+    await sleep(Math.min(delay, 3000));
+    if (!insertReply(msg)) return false;
+    await sleep(700);
+    const ok = sendWhatsAppMessage();
+    if (ok) {
+        lastBotReply = msg;
+        await logCrmEvent("manual_sent", "ارسال دستی/قالب: " + (getChatName() || ""), {
+            text: msg
+        });
+    }
+    return ok;
+}
+
+async function runScheduledTask(task) {
+    if (!task || !task.targetName || !task.message) {
+        return { ok: false, error: "وظیفه ناقص است." };
+    }
+    if (taskRunnerBusy || busy) {
+        return { ok: false, error: "سیستم مشغول است. کمی بعد دوباره تلاش می‌شود." };
+    }
+
+    taskRunnerBusy = true;
+    busy = true;
+    try {
+        await refreshCrmSettings();
+        if (globalThis.IranexpediaCrm) {
+            const sentHour = await IranexpediaCrm.countSendsInLastHour();
+            const max = (crmSettingsCache && crmSettingsCache.maxPerHour) || 20;
+            if (sentHour >= max) {
+                return {
+                    ok: false,
+                    error: "سقف ارسال ساعتی (" + max + ") پر شده است."
+                };
+            }
+        }
+
+        const opened = await openChatByName(task.targetName, 14000);
+        if (!opened) {
+            return {
+                ok: false,
+                error: "چت «" + task.targetName + "» در لیست پیدا نشد یا باز نشد."
+            };
+        }
+
+        await sleep(900);
+        resetMessageCache();
+
+        const delay =
+            Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) +
+            MIN_DELAY_MS;
+        await sleep(delay);
+
+        if (!insertReply(task.message)) {
+            return { ok: false, error: "باکس پیام پیدا نشد." };
+        }
+        await sleep(700);
+        const sent = sendWhatsAppMessage();
+        if (!sent) return { ok: false, error: "دکمه ارسال پیدا نشد." };
+
+        lastBotReply = task.message;
+        lastReplyTime = Date.now();
+        if (globalThis.IranexpediaCrm) {
+            await IranexpediaCrm.upsertContact({
+                name: task.targetName,
+                chatType: task.targetType || "pv"
+            });
+        }
+        return { ok: true };
+    } catch (err) {
+        return { ok: false, error: String((err && err.message) || err) };
+    } finally {
+        taskRunnerBusy = false;
+        busy = false;
+    }
+}
+
+window.__iranexpediaGetChatName = getChatName;
+window.__iranexpediaSendNow = function (text) {
+    sendTextNow(text).then(function (ok) {
+        if (!ok) alert("ارسال انجام نشد. چت را باز کنید و دوباره تلاش کنید.");
+    });
+};
+
+chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+    if (!message || !message.type) return;
+    if (message.type === "runScheduledTask") {
+        runScheduledTask(message.task || {}).then(sendResponse);
+        return true;
+    }
+    if (message.type === "pingRunner") {
+        sendResponse({ ok: true, chat: getChatName() || "" });
+        return;
+    }
+});
 
 /* ================= TOGGLE (fixed — works with no chat open) ================= */
 function paintButton(btn) {
@@ -873,20 +1062,14 @@ async function processSidebarMatch(match) {
         });
     }
 
+    if (await isChatBotPaused(match.chatName)) {
+        log("ربات برای این چت متوقف است:", match.chatName);
+        return;
+    }
+
     log("چت خوانده‌نشده پیدا شد:", match.chatName, "| پیش‌نمایش:", match.preview);
 
-    const clickable =
-        match.cell.querySelector("span[title]") ||
-        match.cell.querySelector('[role="gridcell"]') ||
-        match.cell;
-
-    clickable.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window })
-    );
-    clickable.dispatchEvent(
-        new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
-    );
-    clickable.click();
+    clickSidebarCell(match.cell);
 
     const ready = await waitForChatReady(match.chatName, 10000);
     if (!ready) {
@@ -910,6 +1093,24 @@ async function processSidebarMatch(match) {
         log("آخرین پیام چت بازشده:", lastText);
     }
 
+    await refreshCrmSettings();
+    if (
+        globalThis.IranexpediaCrm &&
+        crmSettingsCache &&
+        !IranexpediaCrm.isWithinBusinessHours(crmSettingsCache)
+    ) {
+        const away =
+            (crmSettingsCache.businessHours &&
+                crmSettingsCache.businessHours.awayMessage) ||
+            "";
+        if (away) reply = away;
+        else {
+            log("خارج از ساعات کاری — بدون پیام away");
+            delete handledSidebarKeys[match.key];
+            return;
+        }
+    }
+
     const now = Date.now();
     if (now - lastReplyTime < REPLY_COOLDOWN_MS) {
         log("کول‌داون فعال است، بعداً دوباره تلاش می‌شود");
@@ -921,13 +1122,19 @@ async function processSidebarMatch(match) {
     const ok = await replyInOpenChat(reply);
     if (ok) {
         log("پاسخ به چت بسته/گروه ارسال شد:", match.chatName);
+        await logCrmEvent("auto_reply", "پاسخ خودکار به «" + match.chatName + "»", {
+            preview: match.preview
+        });
+        if (globalThis.IranexpediaCrm) {
+            await IranexpediaCrm.upsertContact({ name: match.chatName });
+        }
     } else {
         delete handledSidebarKeys[match.key];
     }
 }
 
 async function scanSidebarAndReply() {
-    if (!isEnabled || busy) return;
+    if (!isEnabled || busy || taskRunnerBusy) return;
 
     const matches = findSidebarMatches();
     if (!matches.length) return;
@@ -944,7 +1151,7 @@ async function scanSidebarAndReply() {
 
 /* ================= OPEN CHAT LOOP ================= */
 function handleOpenChatMessages() {
-    if (!isEnabled || busy) return;
+    if (!isEnabled || busy || taskRunnerBusy) return;
     if (!document.querySelector("#main")) return;
 
     const spans = document.querySelectorAll(
@@ -962,34 +1169,69 @@ function handleOpenChatMessages() {
     lastHandledText = text;
     log("پیام در چت باز:", text);
 
-    const reply = findReply(text);
-    if (!reply) {
-        log("کلمه‌ای مطابقت نداشت:", text);
-        return;
-    }
+    const chatName = getChatName() || "";
 
-    log("مطابقت در چت باز. پاسخ:", reply);
+    (async function () {
+        if (await isChatBotPaused(chatName)) {
+            log("ربات برای این چت متوقف است:", chatName);
+            return;
+        }
 
-    if (batchTimeout) clearTimeout(batchTimeout);
+        await refreshCrmSettings();
+        let reply = findReply(text);
+        const outside =
+            globalThis.IranexpediaCrm &&
+            crmSettingsCache &&
+            !IranexpediaCrm.isWithinBusinessHours(crmSettingsCache);
 
-    batchTimeout = setTimeout(function () {
-        if (!isEnabled || busy) return;
-        const now = Date.now();
-        if (now - lastReplyTime < REPLY_COOLDOWN_MS) return;
-        lastReplyTime = now;
-
-        const delay = randomDelay();
-        log("ارسال تا " + (delay / 1000).toFixed(1) + " ثانیه دیگر");
-
-        if (replyTimeout) clearTimeout(replyTimeout);
-        replyTimeout = setTimeout(function () {
-            if (!isEnabled || busy) return;
-            lastBotReply = reply;
-            if (insertReply(reply)) {
-                setTimeout(sendWhatsAppMessage, 700);
+        if (outside) {
+            reply =
+                (crmSettingsCache.businessHours &&
+                    crmSettingsCache.businessHours.awayMessage) ||
+                "";
+            if (!reply) {
+                log("خارج از ساعات کاری");
+                return;
             }
-        }, delay);
-    }, BATCH_WAIT_MS);
+        } else if (!reply) {
+            log("کلمه‌ای مطابقت نداشت:", text);
+            return;
+        }
+
+        log("مطابقت در چت باز. پاسخ:", reply);
+
+        if (batchTimeout) clearTimeout(batchTimeout);
+
+        batchTimeout = setTimeout(function () {
+            if (!isEnabled || busy || taskRunnerBusy) return;
+            const now = Date.now();
+            if (now - lastReplyTime < REPLY_COOLDOWN_MS) return;
+            lastReplyTime = now;
+
+            const delay = randomDelay();
+            log("ارسال تا " + (delay / 1000).toFixed(1) + " ثانیه دیگر");
+
+            if (replyTimeout) clearTimeout(replyTimeout);
+            replyTimeout = setTimeout(function () {
+                if (!isEnabled || busy || taskRunnerBusy) return;
+                lastBotReply = reply;
+                if (insertReply(reply)) {
+                    setTimeout(function () {
+                        if (sendWhatsAppMessage()) {
+                            logCrmEvent(
+                                "auto_reply",
+                                "پاسخ خودکار به «" + chatName + "»",
+                                { text: text }
+                            );
+                            if (globalThis.IranexpediaCrm && chatName) {
+                                IranexpediaCrm.upsertContact({ name: chatName });
+                            }
+                        }
+                    }, 700);
+                }
+            }, delay);
+        }, BATCH_WAIT_MS);
+    })();
 }
 
 /* ================= TIMERS ================= */
@@ -1013,6 +1255,7 @@ setInterval(function () {
 }, SIDEBAR_SCAN_MS);
 
 loadRules();
+refreshCrmSettings();
 refreshLicenseStatus().then(function () {
     ensureButton();
     log("وضعیت فعال‌سازی:", licenseValid ? "فعال" : "غیرفعال", "-", licenseMessage);
@@ -1029,6 +1272,9 @@ chrome.storage.onChanged.addListener(function (changes, area) {
             ensureButton();
         });
     }
+    if (changes.crmSettings) {
+        refreshCrmSettings();
+    }
 });
 
 // Re-check expiry periodically with network time
@@ -1037,3 +1283,7 @@ setInterval(function () {
         ensureButton();
     });
 }, 5 * 60 * 1000);
+
+setInterval(function () {
+    refreshCrmSettings();
+}, 60 * 1000);

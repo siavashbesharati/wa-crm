@@ -1,0 +1,273 @@
+#iranexpedia-crm-root {
+  --crm-bg: #0f1f18;
+  --crm-panel: #163024;
+  --crm-line: rgba(207, 227, 215, 0.18);
+  --crm-text: #eef7f1;
+  --crm-muted: #9bb5a7;
+  --crm-accent: #1f9d66;
+  --crm-accent-2: #0b8457;
+  --crm-danger: #ef4444;
+  --crm-warn: #f59e0b;
+  font-family: Vazirmatn, Tahoma, sans-serif !important;
+  direction: rtl;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 340px;
+  z-index: 999998;
+  color: var(--crm-text);
+  pointer-events: none;
+}
+
+#iranexpedia-crm-root * {
+  box-sizing: border-box;
+  font-family: Vazirmatn, Tahoma, sans-serif !important;
+}
+
+#iranexpedia-crm-toggle {
+  pointer-events: auto;
+  position: absolute;
+  top: 72px;
+  left: 340px;
+  width: 34px;
+  height: 88px;
+  border: none;
+  border-radius: 0 12px 12px 0;
+  background: linear-gradient(180deg, var(--crm-accent), var(--crm-accent-2));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  cursor: pointer;
+  box-shadow: 4px 0 18px rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.5px;
+}
+
+#iranexpedia-crm-root.is-collapsed #iranexpedia-crm-toggle {
+  left: 0;
+}
+
+#iranexpedia-crm-panel {
+  pointer-events: auto;
+  height: 100%;
+  width: 340px;
+  background:
+    radial-gradient(circle at top left, rgba(31, 157, 102, 0.22), transparent 42%),
+    linear-gradient(180deg, #13271e 0%, #0f1f18 100%);
+  border-left: 1px solid var(--crm-line);
+  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+#iranexpedia-crm-root.is-collapsed #iranexpedia-crm-panel {
+  transform: translateX(-100%);
+}
+
+.crm-head {
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--crm-line);
+}
+
+.crm-brand {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.crm-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--crm-muted);
+}
+
+.crm-health {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.crm-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--crm-muted);
+}
+
+.crm-chip.ok {
+  background: rgba(31, 157, 102, 0.2);
+  color: #7dffb8;
+}
+
+.crm-chip.warn {
+  background: rgba(245, 158, 11, 0.18);
+  color: #ffd27a;
+}
+
+.crm-chip.bad {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ff9b9b;
+}
+
+.crm-banner {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  color: #ffd27a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.crm-body {
+  padding: 12px 14px 16px;
+  overflow: auto;
+  flex: 1;
+  display: grid;
+  gap: 12px;
+}
+
+.crm-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--crm-line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.crm-card h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #cfe9db;
+}
+
+.crm-empty {
+  font-size: 12px;
+  color: var(--crm-muted);
+  margin: 0;
+}
+
+.crm-name {
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.crm-meta {
+  font-size: 11px;
+  color: var(--crm-muted);
+  margin-bottom: 10px;
+}
+
+.crm-field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.crm-field label {
+  font-size: 11px;
+  color: var(--crm-muted);
+}
+
+.crm-field input,
+.crm-field select,
+.crm-field textarea {
+  width: 100%;
+  border: 1px solid var(--crm-line);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--crm-text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+.crm-field textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.crm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.crm-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--crm-accent);
+  color: #fff;
+}
+
+.crm-btn.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--crm-text);
+}
+
+.crm-btn.danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ff9b9b;
+}
+
+.crm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.crm-template-list {
+  display: grid;
+  gap: 6px;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.crm-template-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid transparent;
+}
+
+.crm-template-item strong {
+  font-size: 12px;
+}
+
+.crm-template-item span {
+  display: block;
+  font-size: 11px;
+  color: var(--crm-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.crm-lock {
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.crm-lock p {
+  color: var(--crm-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}

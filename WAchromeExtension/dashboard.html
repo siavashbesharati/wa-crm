@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پنل CRM واتساپ | iranexpedia.ir</title>
+  <link
+    href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand">CRM واتساپ</div>
+        <div class="brand-sub">iranexpedia.ir</div>
+        <div class="version" id="dash-version">v?</div>
+      </div>
+      <nav>
+        <button type="button" class="nav-btn active" data-tab="contacts">مخاطبین</button>
+        <button type="button" class="nav-btn" data-tab="templates">قالب‌ها</button>
+        <button type="button" class="nav-btn" data-tab="tasks">زمان‌بندی</button>
+        <button type="button" class="nav-btn" data-tab="rules">اتوماسیون</button>
+        <button type="button" class="nav-btn" data-tab="activity">فعالیت‌ها</button>
+        <button type="button" class="nav-btn" data-tab="settings">تنظیمات</button>
+      </nav>
+      <div class="side-foot">
+        <div class="health" id="runner-health">وضعیت اجرا: در حال بررسی...</div>
+        <a href="https://iranexpedia.ir" target="_blank" rel="noopener noreferrer">iranexpedia.ir</a>
+      </div>
+    </aside>
+
+    <main>
+      <header class="top">
+        <div>
+          <h1 id="page-title">مخاطبین</h1>
+          <p class="top-sub" id="page-sub">مدیریت مخاطبین، برچسب و مراحل فروش</p>
+        </div>
+        <div class="top-stats">
+          <div class="stat"><span id="stat-contacts">0</span><small>مخاطب</small></div>
+          <div class="stat"><span id="stat-queued">0</span><small>صف</small></div>
+          <div class="stat"><span id="stat-sent">0</span><small>ارسال امروز</small></div>
+        </div>
+      </header>
+
+      <div class="banner">برای اجرای زمان‌بندی، Chrome و واتساپ وب باید باز بمانند. ارسال گروهی/کانال با پذیرش خطر محدودیت توسط کاربر انجام می‌شود.</div>
+
+      <section class="tab active" id="tab-contacts">
+        <div class="toolbar">
+          <input id="contact-search" type="search" placeholder="جستجوی نام یا برچسب" />
+          <button type="button" class="btn secondary" id="export-contacts">خروجی CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>نام</th>
+                <th>مرحله</th>
+                <th>برچسب</th>
+                <th>ربات</th>
+                <th>یادداشت</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="contacts-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab" id="tab-templates">
+        <form id="template-form" class="card form-grid">
+          <label>عنوان<input id="tpl-title" required placeholder="مثلاً معرفی تور" /></label>
+          <label>متن (متغیر {name} پشتیبانی می‌شود)
+            <textarea id="tpl-body" rows="3" required placeholder="سلام {name}، ..."></textarea>
+          </label>
+          <button type="submit" class="btn">افزودن قالب</button>
+        </form>
+        <div class="cards" id="templates-list"></div>
+      </section>
+
+      <section class="tab" id="tab-tasks">
+        <form id="task-form" class="card form-grid">
+          <label>نام چت / گروه / کانال
+            <input id="task-target" required placeholder="دقیقاً همان‌طور که در واتساپ دیده می‌شود" />
+          </label>
+          <label>نوع
+            <select id="task-type">
+              <option value="pv">چت خصوصی</option>
+              <option value="group">گروه</option>
+              <option value="channel">کانال</option>
+            </select>
+          </label>
+          <label>زمان ارسال<input id="task-at" type="datetime-local" required /></label>
+          <label>پیام<textarea id="task-message" rows="3" required></textarea></label>
+          <label class="check">
+            <input id="task-risk" type="checkbox" />
+            خطر محدودیت واتساپ برای گروه/کانال را می‌پذیرم
+          </label>
+          <button type="submit" class="btn">افزودن به صف</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>هدف</th>
+                <th>نوع</th>
+                <th>زمان</th>
+                <th>وضعیت</th>
+                <th>پیام</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tasks-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab" id="tab-rules">
+        <form id="rule-form" class="card form-grid">
+          <label>کلمه کلیدی<input id="rule-keyword" required /></label>
+          <label>پاسخ<textarea id="rule-reply" rows="3" required></textarea></label>
+          <button type="submit" class="btn">ذخیره قانون</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>کلمه کلیدی</th><th>پاسخ</th><th></th></tr>
+            </thead>
+            <tbody id="rules-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab" id="tab-activity">
+        <div class="toolbar">
+          <button type="button" class="btn secondary" id="clear-events">پاک کردن لاگ</button>
+        </div>
+        <ul class="timeline" id="events-list"></ul>
+      </section>
+
+      <section class="tab" id="tab-settings">
+        <form id="settings-form" class="card form-grid">
+          <label>حداکثر ارسال زمان‌بندی در ساعت
+            <input id="set-max-hour" type="number" min="1" max="200" />
+          </label>
+          <label>حداقل تأخیر (میلی‌ثانیه)
+            <input id="set-min-delay" type="number" min="500" />
+          </label>
+          <label>حداکثر تأخیر (میلی‌ثانیه)
+            <input id="set-max-delay" type="number" min="500" />
+          </label>
+          <label class="check">
+            <input id="set-hours-enabled" type="checkbox" />
+            فعال بودن ساعات کاری برای پاسخ خودکار
+          </label>
+          <label>شروع<input id="set-hours-start" type="time" /></label>
+          <label>پایان<input id="set-hours-end" type="time" /></label>
+          <label>پیام خارج از ساعت
+            <textarea id="set-away" rows="2"></textarea>
+          </label>
+          <p class="hint" id="risk-status"></p>
+          <button type="submit" class="btn">ذخیره تنظیمات</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="license-config.js"></script>
+  <script src="license-lib.js"></script>
+  <script src="crm-store.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "پاسخ خودکار واتساپ",
-  "description": "پاسخ خودکار پیام‌های واتساپ وب با کلمه کلیدی. توسعه: iranexpedia.ir",
-  "version": "5.3.1",
-  "permissions": ["storage"],
+  "description": "CRM و پاسخ خودکار واتساپ وب با زمان‌بندی. توسعه: iranexpedia.ir",
+  "version": "6.0.0",
+  "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
     "https://cdn.jsdelivr.net/*",
@@ -30,10 +30,23 @@
     "64": "icons/icon64.png",
     "128": "icons/icon128.png"
   },
+  "options_page": "dashboard.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["crm-panel.css"],
+      "matches": ["https://web.whatsapp.com/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": ["https://web.whatsapp.com/*"],
-      "js": ["license-config.js", "license-lib.js", "content.js"],
+      "js": [
+        "license-config.js",
+        "license-lib.js",
+        "crm-store.js",
+        "content.js",
+        "crm-panel.js"
+      ],
       "run_at": "document_idle"
     }
   ]

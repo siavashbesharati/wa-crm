@@ -260,3 +260,25 @@ button {
 .app-footer a:hover {
   text-decoration: underline;
 }
+
+.popup-actions {
+  margin-bottom: 14px;
+}
+
+.primary-wide {
+  width: 100%;
+  background: #0b8457;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.primary-wide:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

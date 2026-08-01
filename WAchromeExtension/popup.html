@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand">پاسخ خودکار واتساپ</div>
-    <div class="subtitle">تنظیم پاسخ‌ها و فعال‌سازی برنامه</div>
+    <div class="subtitle">CRM و اتوماسیون واتساپ وب</div>
     <div id="ext-version" class="version">v?</div>
   </header>
 
@@ -38,31 +38,14 @@
   </section>
 
   <section class="help">
-    <p>۱. کلید فعال‌سازی را وارد کنید</p>
-    <p>۲. واتساپ وب را باز کنید و دکمه <strong>فعال</strong> را بزنید</p>
-    <p>۳. برای خروجی اعضای گروه، روی دکمه مربوطه در واتساپ کلیک کنید</p>
+    <p>۱. کلید را فعال کنید</p>
+    <p>۲. واتساپ وب را باز کنید — پنل CRM در سمت چپ ظاهر می‌شود</p>
+    <p>۳. برای زمان‌بندی، مخاطبین و قوانین از داشبورد استفاده کنید</p>
   </section>
 
-  <form id="rule-form">
-    <label>
-      کلمه کلیدی
-      <input id="keyword" type="text" placeholder="مثلاً قیمت" required />
-    </label>
-    <label>
-      پاسخ
-      <textarea id="reply" rows="3" placeholder="متنی که باید ارسال شود" required></textarea>
-    </label>
-    <button type="submit" id="add-btn">افزودن</button>
-  </form>
-
-  <section>
-    <div class="section-title">
-      <h2>پاسخ‌های ذخیره‌شده</h2>
-      <span id="count">0</span>
-    </div>
-    <ul id="rules-list"></ul>
-    <p id="empty" class="empty">هنوز موردی ثبت نشده است.</p>
-  </section>
+  <div class="popup-actions">
+    <button type="button" id="open-crm" class="primary-wide">باز کردن پنل CRM</button>
+  </div>
 
   <footer class="app-footer">
     <div>نسخه <span id="footer-version">?</span></div>
