@@ -1,5 +1,6 @@
-const EXT_VERSION = "5.2.1";
+const EXT_VERSION = "6.1.0";
 const BRAND = "iranexpedia.ir";
+const LICENSE_RECHECK_MS = 5 * 60 * 1000;
 
 console.log(
     "%c[" + BRAND + " v" + EXT_VERSION + "] LOADED",
@@ -20,6 +21,8 @@ const DEFAULT_RULES = [
 
 /* ================= STATE ================= */
 let isEnabled = false;
+let licenseValid = false;
+let licenseMessage = "لایسنس بررسی نشده";
 let keywordRules = DEFAULT_RULES.slice();
 let busy = false;
 
@@ -97,6 +100,68 @@ function log() {
     const args = Array.prototype.slice.call(arguments);
     args.unshift("[" + BRAND + " v" + EXT_VERSION + "]");
     console.log.apply(console, args);
+}
+
+/* ================= LICENSE ================= */
+function sendBg(message) {
+    return new Promise(function (resolve) {
+        try {
+            chrome.runtime.sendMessage(message, function (response) {
+                if (chrome.runtime.lastError) {
+                    resolve({
+                        ok: false,
+                        valid: false,
+                        message: chrome.runtime.lastError.message
+                    });
+                    return;
+                }
+                resolve(response || { ok: false, valid: false });
+            });
+        } catch (err) {
+            resolve({
+                ok: false,
+                valid: false,
+                message: String(err.message || err)
+            });
+        }
+    });
+}
+
+async function refreshLicense(forceServer) {
+    if (forceServer) {
+        const result = await sendBg({ type: "revalidateLicense" });
+        licenseValid = !!result.valid;
+        licenseMessage = result.message || (licenseValid ? "معتبر" : "نامعتبر");
+        if (!licenseValid && isEnabled) {
+            isEnabled = false;
+            log("لایسنس نامعتبر — پاسخ خودکار خاموش شد");
+        }
+        return licenseValid;
+    }
+
+    const status = await sendBg({ type: "getLicenseStatus" });
+    licenseValid = !!status.valid;
+    licenseMessage =
+        (status.info && status.info.message) ||
+        (licenseValid ? "لایسنس معتبر است" : "لایسنس فعال نیست");
+    if (!licenseValid && isEnabled) {
+        isEnabled = false;
+    }
+    return licenseValid;
+}
+
+async function requireLicense(featureName) {
+    const ok = await refreshLicense(true);
+    if (!ok) {
+        alert(
+            "برای استفاده از «" +
+                featureName +
+                "» باید لایسنس معتبر داشته باشید.\n\n" +
+                (licenseMessage || "")
+        );
+        return false;
+    }
+    return true;
 }
 
 /* ================= RULES ================= */
@@ -310,6 +375,13 @@ async function waitForChatReady(expectedName, timeoutMs) {
 
 /* ================= TOGGLE (fixed — works with no chat open) ================= */
 function paintButton(btn) {
+    if (!licenseValid) {
+        btn.className = "is-off";
+        btn.textContent = "نیاز به لایسنس · v" + EXT_VERSION;
+        btn.title = licenseMessage || "ابتدا لایسنس را در پاپ‌آپ فعال کنید";
+        return;
+    }
+
     if (isEnabled) {
         btn.className = "is-on";
         btn.textContent = "فعال · همه چت‌ها · v" + EXT_VERSION;
@@ -345,9 +417,15 @@ function ensureButton() {
         btn.type = "button";
         document.documentElement.appendChild(btn);
 
-        btn.addEventListener("click", function (e) {
+        btn.addEventListener("click", async function (e) {
             e.preventDefault();
             e.stopPropagation();
+
+            if (!isEnabled) {
+                const ok = await requireLicense("پاسخ خودکار");
+                paintButton(btn);
+                if (!ok) return;
+            }
 
             isEnabled = !isEnabled;
             busy = false;
@@ -381,9 +459,11 @@ function ensureMembersButton() {
             " — دانلود لیست اعضای گروه باز به‌صورت CSV";
         document.documentElement.appendChild(btn);
 
-        btn.addEventListener("click", function (e) {
+        btn.addEventListener("click", async function (e) {
             e.preventDefault();
             e.stopPropagation();
+            const ok = await requireLicense("دانلود اعضای گروه");
+            if (!ok) return;
             downloadGroupMembers(btn);
         });
     }
@@ -957,4 +1037,22 @@ setInterval(function () {
 }, SIDEBAR_SCAN_MS);
 
 loadRules();
-ensureButton();
+refreshLicense(false).then(function () {
+    ensureButton();
+    log("وضعیت لایسنس:", licenseValid ? "معتبر" : "نامعتبر", "-", licenseMessage);
+});
+
+chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== "local") return;
+    if (changes.licenseValid || changes.licenseInfo || changes.licenseKey) {
+        refreshLicense(false).then(function () {
+            ensureButton();
+        });
+    }
+});
+
+setInterval(function () {
+    refreshLicense(true).then(function () {
+        ensureButton();
+    });
+}, LICENSE_RECHECK_MS);

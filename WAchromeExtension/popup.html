@@ -18,11 +18,33 @@
     <div id="ext-version" class="version">v?</div>
   </header>
 
+  <section class="license-card">
+    <div class="section-title">
+      <h2>لایسنس</h2>
+      <span id="license-badge" class="license-badge off">غیرفعال</span>
+    </div>
+    <p id="license-message" class="license-message">برای استفاده، کلید لایسنس را وارد کنید.</p>
+    <form id="license-form">
+      <label>
+        کلید لایسنس
+        <input id="license-key" type="text" placeholder="مثلاً IRAN-DEMO-0001" required />
+      </label>
+      <label>
+        آدرس سرور
+        <input id="api-base" type="text" placeholder="https://your-app.vercel.app" />
+      </label>
+      <div class="license-actions">
+        <button type="submit" id="license-btn">فعال‌سازی</button>
+        <button type="button" id="license-clear" class="secondary-btn">حذف</button>
+      </div>
+    </form>
+  </section>
+
   <section class="help">
-    <p>۱. واتساپ وب را باز بگذارید</p>
-    <p>۲. دکمه شناور <strong>فعال · همه چت‌ها</strong> را روشن کنید</p>
-    <p>۳. روی چت باز، و نیز چت/گروه‌های بسته با پیام خوانده‌نشده نظارت می‌شود</p>
-    <p>۴. برای دانلود اعضا: گروه را باز کنید و دکمه <strong>دانلود اعضای گروه</strong> را بزنید</p>
+    <p>۱. بک‌اند را لوکال یا روی Vercel اجرا کنید</p>
+    <p>۲. آدرس سرور را وارد کنید (مثلاً https://xxx.vercel.app)</p>
+    <p>۳. لایسنس را فعال کنید</p>
+    <p>۴. واتساپ وب را باز کنید و دکمه <strong>فعال</strong> را بزنید</p>
   </section>
 
   <form id="rule-form">

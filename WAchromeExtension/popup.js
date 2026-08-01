@@ -11,10 +11,82 @@ const emptyState = document.getElementById("empty");
 const countBadge = document.getElementById("count");
 const versionEl = document.getElementById("ext-version");
 
+const licenseForm = document.getElementById("license-form");
+const licenseKeyInput = document.getElementById("license-key");
+const apiBaseInput = document.getElementById("api-base");
+const licenseBtn = document.getElementById("license-btn");
+const licenseClearBtn = document.getElementById("license-clear");
+const licenseBadge = document.getElementById("license-badge");
+const licenseMessage = document.getElementById("license-message");
+
 const manifest = chrome.runtime.getManifest();
 versionEl.textContent = "v" + manifest.version;
 
 let rules = [];
+
+function setLicenseUi(valid, message, key, apiBase) {
+  licenseBadge.textContent = valid ? "معتبر" : "غیرفعال";
+  licenseBadge.classList.toggle("on", !!valid);
+  licenseBadge.classList.toggle("off", !valid);
+  licenseMessage.textContent = message || "";
+  if (typeof key === "string") licenseKeyInput.value = key;
+  if (typeof apiBase === "string") apiBaseInput.value = apiBase;
+}
+
+function sendBg(message) {
+  return new Promise(function (resolve) {
+    chrome.runtime.sendMessage(message, function (response) {
+      if (chrome.runtime.lastError) {
+        resolve({
+          ok: false,
+          valid: false,
+          message: chrome.runtime.lastError.message
+        });
+        return;
+      }
+      resolve(response || { ok: false, valid: false, message: "بدون پاسخ" });
+    });
+  });
+}
+
+async function refreshLicenseStatus() {
+  const status = await sendBg({ type: "getLicenseStatus" });
+  setLicenseUi(
+    !!status.valid,
+    status.info?.message ||
+      (status.valid ? "لایسنس معتبر است." : "برای استفاده، کلید لایسنس را وارد کنید."),
+    status.key || "",
+    status.apiBaseUrl || "http://localhost:3000"
+  );
+}
+
+licenseForm.addEventListener("submit", async function (event) {
+  event.preventDefault();
+  const key = licenseKeyInput.value.trim();
+  const apiBase = apiBaseInput.value.trim() || "http://localhost:3000";
+
+  licenseBtn.disabled = true;
+  licenseBtn.textContent = "در حال بررسی...";
+
+  try {
+    await chrome.storage.local.set({ apiBaseUrl: apiBase.replace(/\/$/, "") });
+    const result = await sendBg({ type: "verifyLicense", key: key });
+    setLicenseUi(
+      !!result.valid,
+      result.message || (result.valid ? "فعال شد" : "نامعتبر"),
+      key,
+      apiBase
+    );
+  } finally {
+    licenseBtn.disabled = false;
+    licenseBtn.textContent = "فعال‌سازی";
+  }
+});
+
+licenseClearBtn.addEventListener("click", async function () {
+  await sendBg({ type: "clearLicense" });
+  setLicenseUi(false, "لایسنس حذف شد.", "", apiBaseInput.value.trim());
+});
 
 function saveRules(next) {
   return new Promise(function (resolve) {
@@ -98,4 +170,5 @@ form.addEventListener("submit", async function (event) {
   renderRules();
 });
 
+refreshLicenseStatus();
 loadRules();

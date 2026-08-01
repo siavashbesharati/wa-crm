@@ -1,10 +1,14 @@
 # Dependencies
 node_modules/
+server/node_modules/
 
 # Environment / secrets
 .env
 .env.*
 !.env.example
+server/.env
+server/.env.*
+!server/.env.example
 
 # Logs
 logs/
@@ -16,6 +20,10 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# Vercel
+.vercel
+server/.vercel
 
 # Optional npm cache
 .npm/

@@ -1,0 +1,16 @@
+[
+  {
+    "key": "IRAN-DEMO-0001",
+    "customer": "Demo User",
+    "active": true,
+    "expiresAt": null,
+    "features": ["autoreply", "members"]
+  },
+  {
+    "key": "IRAN-PRO-2026-ABCD",
+    "customer": "Pro Customer",
+    "active": true,
+    "expiresAt": "2027-01-01",
+    "features": ["autoreply", "members"]
+  }
+]

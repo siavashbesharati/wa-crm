@@ -1,0 +1,6 @@
+WAchromeExtension
+node_modules
+.git
+*.md
+.env
+.env.*
