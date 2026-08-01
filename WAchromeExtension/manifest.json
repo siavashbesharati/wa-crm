@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "iranexpedia.ir — پاسخ خودکار واتساپ",
-  "description": "پاسخ خودکار واتساپ وب با کلمه کلیدی | iranexpedia.ir",
-  "version": "5.1.0",
+  "description": "پاسخ خودکار واتساپ وب با کلمه کلیدی | دانلود اعضای گروه | iranexpedia.ir",
+  "version": "5.2.1",
   "permissions": ["storage"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
@@ -10,7 +10,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "iranexpedia.ir v5.1.0",
+    "default_title": "iranexpedia.ir v5.2.1",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

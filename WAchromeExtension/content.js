@@ -1,4 +1,4 @@
-const EXT_VERSION = "5.1.0";
+const EXT_VERSION = "5.2.1";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -35,19 +35,25 @@ const handledSidebarKeys = {};
 
 /* ================= FONT + STYLES ================= */
 function injectUiAssets() {
-    if (document.getElementById("iranexpedia-font")) return;
+    if (!document.getElementById("iranexpedia-font")) {
+        const font = document.createElement("link");
+        font.id = "iranexpedia-font";
+        font.rel = "stylesheet";
+        font.href =
+            "https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css";
+        document.documentElement.appendChild(font);
+    }
 
-    const font = document.createElement("link");
-    font.id = "iranexpedia-font";
-    font.rel = "stylesheet";
-    font.href =
-        "https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css";
-    document.documentElement.appendChild(font);
+    let style = document.getElementById("iranexpedia-style");
+    if (!style) {
+        style = document.createElement("style");
+        style.id = "iranexpedia-style";
+        document.documentElement.appendChild(style);
+    }
 
-    const style = document.createElement("style");
-    style.id = "iranexpedia-style";
     style.textContent = `
-      #iranexpedia-toggle {
+      #iranexpedia-toggle,
+      #iranexpedia-members {
         font-family: Vazirmatn, Tahoma, sans-serif !important;
         direction: rtl;
         min-width: 140px;
@@ -60,16 +66,17 @@ function injectUiAssets() {
         font-size: 12px !important;
         font-weight: 700 !important;
         position: fixed;
-        bottom: 20px;
         left: 20px;
         z-index: 999999;
         box-shadow: 0 4px 14px rgba(0,0,0,.25);
-        transition: background .15s ease;
+        transition: background .15s ease, opacity .15s ease;
       }
+      #iranexpedia-toggle { bottom: 20px; }
+      #iranexpedia-members { bottom: 70px; background: #0f766e !important; }
+      #iranexpedia-members:disabled { opacity: .6; cursor: wait; }
       #iranexpedia-toggle.is-off { background: #6b7280 !important; }
       #iranexpedia-toggle.is-on { background: #0b8457 !important; }
     `;
-    document.documentElement.appendChild(style);
 }
 
 /* ================= HELPERS ================= */
@@ -151,16 +158,97 @@ function isStatusText(value) {
     );
 }
 
-function getChatName() {
-    const header = document.querySelector("#main header");
-    if (!header) return null;
+function looksLikePhone(value) {
+    const t = String(value || "").replace(/[\s\-()]/g, "");
+    return /^\+?\d{8,15}$/.test(t);
+}
 
-    const spans = header.querySelectorAll("span[title]");
+function normalizePhone(value) {
+    return String(value || "").replace(/[\s\-()]/g, "").trim();
+}
+
+function isMemberListText(value) {
+    const t = String(value || "").trim();
+    if (!t) return false;
+    const phones = t.match(/\+\d[\d\s\-()]{6,}\d/g);
+    if (phones && phones.length >= 2) return true;
+    if ((t.match(/,/g) || []).length >= 3) return true;
+    if (t.length > 120) return true;
+    return false;
+}
+
+function getHeaderTitleSpans() {
+    const header = document.querySelector("#main header");
+    if (!header) return [];
+    return Array.from(header.querySelectorAll("span[title]"));
+}
+
+function getChatName() {
+    const spans = getHeaderTitleSpans();
     for (let i = 0; i < spans.length; i++) {
         const t = (spans[i].getAttribute("title") || "").trim();
-        if (!isStatusText(t)) return t;
+        if (!t || isStatusText(t) || isMemberListText(t)) continue;
+        if (looksLikePhone(t)) continue;
+        return t;
     }
     return null;
+}
+
+function getHeaderMemberListText() {
+    const spans = getHeaderTitleSpans();
+    let best = "";
+    for (let i = 0; i < spans.length; i++) {
+        const t = (spans[i].getAttribute("title") || "").trim();
+        if (!isMemberListText(t)) continue;
+        if (t.length > best.length) best = t;
+    }
+    return best;
+}
+
+function parseMemberListText(text) {
+    const parts = String(text || "")
+        .split(",")
+        .map(function (s) {
+            return s.trim();
+        })
+        .filter(Boolean);
+
+    const members = [];
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (isStatusText(part)) continue;
+        if (looksLikePhone(part)) {
+            members.push({ name: "", phone: normalizePhone(part) });
+        } else {
+            members.push({ name: part, phone: "" });
+        }
+    }
+    return members;
+}
+
+function mergeMembers(listA, listB) {
+    const map = {};
+    function add(m) {
+        if (!m) return;
+        const phone = normalizePhone(m.phone || "");
+        const name = String(m.name || "").trim();
+        if (!phone && !name) return;
+        const key = (phone || name).toLowerCase();
+        if (!map[key]) {
+            map[key] = { name: name, phone: phone };
+            return;
+        }
+        if (phone && !map[key].phone) map[key].phone = phone;
+        if (name && !map[key].name) map[key].name = name;
+        if (name && phone && map[key].name === map[key].phone) {
+            map[key].name = name;
+        }
+    }
+    (listA || []).forEach(add);
+    (listB || []).forEach(add);
+    return Object.keys(map).map(function (k) {
+        return map[k];
+    });
 }
 
 function resetMessageCache() {
@@ -275,6 +363,311 @@ function ensureButton() {
     }
 
     paintButton(btn);
+    ensureMembersButton();
+}
+
+/* ================= GROUP MEMBERS DOWNLOAD ================= */
+function ensureMembersButton() {
+    let btn = document.getElementById("iranexpedia-members");
+    if (!btn) {
+        btn = document.createElement("button");
+        btn.id = "iranexpedia-members";
+        btn.type = "button";
+        btn.textContent = "دانلود اعضای گروه";
+        btn.title =
+            BRAND +
+            " v" +
+            EXT_VERSION +
+            " — دانلود لیست اعضای گروه باز به‌صورت CSV";
+        document.documentElement.appendChild(btn);
+
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            downloadGroupMembers(btn);
+        });
+    }
+}
+
+function clickEl(el) {
+    if (!el) return;
+    el.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window })
+    );
+    el.dispatchEvent(
+        new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window })
+    );
+    el.click();
+}
+
+function findByText(root, patterns) {
+    const nodes = root.querySelectorAll("div, span, button, li");
+    for (let i = 0; i < nodes.length; i++) {
+        const txt = (nodes[i].innerText || nodes[i].textContent || "")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!txt || txt.length > 80) continue;
+        for (let p = 0; p < patterns.length; p++) {
+            if (patterns[p].test(txt)) return nodes[i];
+        }
+    }
+    return null;
+}
+
+function collectMemberRows(root) {
+    const map = {};
+    const spans = root.querySelectorAll("span[title], span[dir='auto']");
+
+    for (let i = 0; i < spans.length; i++) {
+        const title = (
+            spans[i].getAttribute("title") ||
+            spans[i].innerText ||
+            ""
+        ).trim();
+        if (!title) continue;
+        if (isStatusText(title)) continue;
+        if (isMemberListText(title)) {
+            parseMemberListText(title).forEach(function (m) {
+                const key = ((m.phone || "") + "|" + m.name).toLowerCase();
+                if (!map[key]) map[key] = m;
+            });
+            continue;
+        }
+        if (/participant|اعضا|عضو|about|درباره|description|توضیح/i.test(title)) {
+            continue;
+        }
+
+        let phone = "";
+        let name = title;
+
+        if (looksLikePhone(title)) {
+            phone = normalizePhone(title);
+            name = "";
+            const parent =
+                spans[i].closest('[data-testid="cell-frame-container"]') ||
+                spans[i].closest('[role="listitem"]') ||
+                spans[i].parentElement;
+            if (parent) {
+                const other = parent.querySelectorAll("span[title], span[dir='auto']");
+                for (let j = 0; j < other.length; j++) {
+                    const n = (
+                        other[j].getAttribute("title") ||
+                        other[j].innerText ||
+                        ""
+                    ).trim();
+                    if (
+                        n &&
+                        n !== title &&
+                        !looksLikePhone(n) &&
+                        !isStatusText(n) &&
+                        !isMemberListText(n)
+                    ) {
+                        name = n;
+                        break;
+                    }
+                }
+            }
+        } else {
+            const parent =
+                spans[i].closest('[data-testid="cell-frame-container"]') ||
+                spans[i].closest('[role="listitem"]') ||
+                spans[i].parentElement;
+            if (parent) {
+                const other = parent.querySelectorAll("span[title], span[dir='auto']");
+                for (let j = 0; j < other.length; j++) {
+                    const n = (
+                        other[j].getAttribute("title") ||
+                        other[j].innerText ||
+                        ""
+                    ).trim();
+                    if (looksLikePhone(n)) {
+                        phone = normalizePhone(n);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!phone && !name) continue;
+        const key = (phone || name).toLowerCase();
+        if (!map[key]) {
+            map[key] = { name: name, phone: phone };
+        } else if (phone && !map[key].phone) {
+            map[key].phone = phone;
+        } else if (name && !map[key].name) {
+            map[key].name = name;
+        }
+    }
+
+    return Object.keys(map).map(function (k) {
+        return map[k];
+    });
+}
+
+async function openGroupInfoPanel() {
+    const header =
+        document.querySelector("#main header") ||
+        document.querySelector('#main [data-testid="conversation-info-header"]');
+    if (!header) {
+        throw new Error("ابتدا یک گروه را در واتساپ باز کنید.");
+    }
+
+    clickEl(header.querySelector("span[title]") || header);
+    await sleep(1000);
+
+    const drawer =
+        document.querySelector('[data-testid="drawer-right"]') ||
+        document.querySelector("#app .two > div:last-child") ||
+        document.body;
+
+    const participantsBtn = findByText(drawer, [
+        /\d+\s+participants?/i,
+        /\d+\s+اعضا/,
+        /\d+\s+عضو/,
+        /participants?/i,
+        /اعضای گروه/,
+        /مشاهده همه/,
+        /View all/
+    ]);
+
+    if (participantsBtn) {
+        clickEl(participantsBtn);
+        await sleep(1200);
+    }
+}
+
+async function scrollAndCollectMembers() {
+    const roots = [
+        document.querySelector('[data-testid="drawer-right"]'),
+        document.querySelector('[data-testid="popup-contents"]'),
+        document.querySelector('div[role="dialog"]'),
+        document.querySelector("#app")
+    ].filter(Boolean);
+
+    const root = roots[0] || document.body;
+    const scrollBoxes = root.querySelectorAll("div");
+    let scroller = null;
+    let best = 0;
+
+    for (let i = 0; i < scrollBoxes.length; i++) {
+        const el = scrollBoxes[i];
+        if (el.scrollHeight - el.clientHeight > best && el.clientHeight > 120) {
+            best = el.scrollHeight - el.clientHeight;
+            scroller = el;
+        }
+    }
+
+    const all = {};
+    let stableRounds = 0;
+    let lastCount = 0;
+
+    for (let round = 0; round < 50; round++) {
+        const batch = collectMemberRows(root);
+        batch.forEach(function (m) {
+            const key = ((m.phone || "") + "|" + m.name).toLowerCase();
+            all[key] = m;
+        });
+
+        const count = Object.keys(all).length;
+        if (count === lastCount) stableRounds += 1;
+        else stableRounds = 0;
+        lastCount = count;
+
+        if (stableRounds >= 4) break;
+
+        if (scroller) {
+            scroller.scrollTop =
+                scroller.scrollTop + Math.max(220, scroller.clientHeight * 0.85);
+        }
+        await sleep(400);
+    }
+
+    return Object.keys(all).map(function (k) {
+        return all[k];
+    });
+}
+
+function downloadCsv(members, groupName) {
+    const header = "name,phone,group";
+    const lines = members.map(function (m) {
+        const name = '"' + String(m.name || "").replace(/"/g, '""') + '"';
+        const phone = '"' + String(m.phone || "").replace(/"/g, '""') + '"';
+        const group = '"' + String(groupName || "").replace(/"/g, '""') + '"';
+        return name + "," + phone + "," + group;
+    });
+
+    const csv = "\uFEFF" + header + "\n" + lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safe = String(groupName || "group")
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .slice(0, 40);
+    a.href = url;
+    a.download = "iranexpedia-group-members-" + safe + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function downloadGroupMembers(btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = "در حال دریافت...";
+
+    try {
+        if (!document.querySelector("#main")) {
+            throw new Error("ابتدا یک گروه را باز کنید.");
+        }
+
+        const groupName = getChatName() || "group";
+        log("شروع دانلود اعضای گروه:", groupName);
+
+        // 1) Fast path: members listed under group header subtitle
+        const headerListText = getHeaderMemberListText();
+        let headerMembers = [];
+        if (headerListText) {
+            headerMembers = parseMemberListText(headerListText);
+            log("اعضای موجود در هدر گروه:", headerMembers.length);
+        }
+
+        // 2) Also try group info panel + scroll
+        let panelMembers = [];
+        try {
+            await openGroupInfoPanel();
+            panelMembers = await scrollAndCollectMembers();
+            log("اعضای جمع‌شده از پنل گروه:", panelMembers.length);
+        } catch (panelErr) {
+            log("پنل گروه در دسترس نبود، از لیست هدر استفاده می‌شود:", panelErr.message || panelErr);
+        }
+
+        const members = mergeMembers(headerMembers, panelMembers).filter(function (m) {
+            // drop the group title itself if it slipped in
+            if (!m.phone && m.name && m.name === groupName) return false;
+            return true;
+        });
+
+        if (!members.length) {
+            throw new Error(
+                "عضوی پیدا نشد. مطمئن شوید چت یک گروه است."
+            );
+        }
+
+        downloadCsv(members, groupName);
+        log("دانلود شد:", members.length, "عضو از گروه", groupName);
+        btn.textContent = "دانلود شد (" + members.length + ")";
+        await sleep(1800);
+    } catch (err) {
+        console.error(err);
+        log("خطا در دانلود اعضا:", err.message || err);
+        alert(err.message || String(err));
+        btn.textContent = oldText;
+    } finally {
+        btn.disabled = false;
+        setTimeout(function () {
+            btn.textContent = "دانلود اعضای گروه";
+        }, 1200);
+    }
 }
 
 /* ================= SIDEBAR: unread closed chats/groups ================= */
