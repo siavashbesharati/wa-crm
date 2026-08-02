@@ -1,8 +1,8 @@
 (function () {
   var titles = {
-    contacts: ["مخاطبین", "مدیریت مخاطبین، برچسب و مراحل فروش"],
+    contacts: ["لیدها", "مدیریت لیدها، برچسب و مراحل فروش"],
+    pipeline: ["پایپلاین", "برد مراحل فروش — کارت را بکشید تا مرحله عوض شود"],
     templates: ["قالب‌ها", "پیام‌های آماده با متغیر {name}"],
-    tasks: ["وظایف", "ارسال و پیگیری زمان‌بندی‌شده برای مخاطبین"],
     rules: ["اتوماسیون", "پاسخ خودکار بر اساس کلمه کلیدی"],
     activity: ["فعالیت‌ها", "لاگ ارسال‌ها و رویدادها"],
     settings: ["تنظیمات", "محدودیت ایمنی و ساعات کاری"]
@@ -17,6 +17,7 @@
   var contactView = "list";
   var selectedContact = null;
   var drawerEvents = [];
+  var drawerMode = "edit";
 
   var manifest = chrome.runtime.getManifest();
   document.getElementById("dash-version").textContent = "v" + manifest.version;
@@ -28,17 +29,6 @@
   function fmt(ts) {
     if (!ts) return "-";
     return new Date(ts).toLocaleString("fa-IR");
-  }
-
-  function statusLabel(s) {
-    var map = {
-      queued: "در صف",
-      running: "در حال اجرا",
-      sent: "ارسال شد",
-      failed: "ناموفق",
-      cancelled: "لغو شد"
-    };
-    return map[s] || s;
   }
 
   function stages() {
@@ -76,14 +66,24 @@
   }
 
   function switchTab(tab) {
+    var navTab = tab;
+    var contentTab = tab;
+    if (tab === "pipeline") {
+      contentTab = "contacts";
+      setContactView("pipeline");
+    } else if (tab === "contacts") {
+      setContactView("list");
+    }
+
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
+      btn.classList.toggle("active", btn.getAttribute("data-tab") === navTab);
     });
     document.querySelectorAll(".tab").forEach(function (el) {
-      el.classList.toggle("active", el.id === "tab-" + tab);
+      el.classList.toggle("active", el.id === "tab-" + contentTab);
     });
-    $("page-title").textContent = titles[tab][0];
-    $("page-sub").textContent = titles[tab][1];
+    var title = titles[navTab] || titles.contacts;
+    $("page-title").textContent = title[0];
+    $("page-sub").textContent = title[1];
   }
 
   document.querySelectorAll(".nav-btn").forEach(function (btn) {
@@ -176,24 +176,57 @@
     renderContacts();
   }
 
+  function setDrawerMode(mode) {
+    drawerMode = mode === "send" || mode === "task" ? mode : "edit";
+    var isEdit = drawerMode === "edit";
+    var isSend = drawerMode === "send";
+    var isTask = drawerMode === "task";
+
+    $("drawer-form").classList.toggle("hidden", !isEdit);
+    $("drawer-text-box").classList.toggle("hidden", !isSend);
+    $("drawer-task-box").classList.toggle("hidden", !isTask);
+    $("drawer-timeline-card").classList.toggle("hidden", !isEdit);
+
+    $("drawer-mode-edit").classList.toggle("active", isEdit);
+    $("drawer-mode-edit").classList.toggle("secondary", !isEdit);
+    $("drawer-mode-send").classList.toggle("active", isSend);
+    $("drawer-mode-send").classList.toggle("secondary", !isSend);
+    $("drawer-mode-task").classList.toggle("active", isTask);
+    $("drawer-mode-task").classList.toggle("secondary", !isTask);
+  }
+
+  function syncDrawerIdentityFields(contact) {
+    var isGroup = (contact.chatType || "pv") === "group";
+    $("drawer-phone-label").classList.toggle("hidden", isGroup);
+    $("drawer-group-label").classList.toggle("hidden", !isGroup);
+    $("drawer-phone").value = contact.phone || "";
+    $("drawer-group-id").value = contact.groupId || "";
+  }
+
   async function openDrawer(contact) {
     selectedContact = contact;
     $("drawer-backdrop").classList.remove("hidden");
     $("contact-drawer").classList.remove("hidden");
     $("contact-drawer").setAttribute("aria-hidden", "false");
     $("drawer-name").textContent = contact.name;
+    var idPart =
+      (contact.chatType || "pv") === "group"
+        ? contact.groupId
+          ? " · " + contact.groupId
+          : ""
+        : contact.phone
+          ? " · " + contact.phone
+          : "";
     $("drawer-meta").textContent =
       (contact.chatType || "pv") +
-      (contact.phone ? " · " + contact.phone : "") +
+      idPart +
       " · آخرین پیام: " +
       fmt(contact.lastMessageAt || contact.updatedAt);
     fillStageSelect($("drawer-stage"), contact.stage || stages()[0]);
     $("drawer-tags").value = (contact.tags || []).join("، ");
-    $("drawer-phone").value = contact.phone || "";
+    syncDrawerIdentityFields(contact);
     $("drawer-notes").value = contact.notes || "";
     $("drawer-bot-paused").checked = !!contact.botPaused;
-    $("drawer-text-box").classList.add("hidden");
-    $("drawer-task-box").classList.add("hidden");
     $("drawer-text-body").value = "";
 
     var d = new Date(Date.now() + 60 * 60 * 1000);
@@ -201,12 +234,14 @@
     $("drawer-task-at").value = d.toISOString().slice(0, 16);
     $("drawer-task-msg").value = "";
 
+    setDrawerMode("edit");
     drawerEvents = await IranexpediaCrm.getEventsForContact(contact.name);
     renderDrawerTimeline();
   }
 
   function closeDrawer() {
     selectedContact = null;
+    drawerMode = "edit";
     $("drawer-backdrop").classList.add("hidden");
     $("contact-drawer").classList.add("hidden");
     $("contact-drawer").setAttribute("aria-hidden", "true");
@@ -268,7 +303,14 @@
         "<td></td><td></td><td></td><td></td><td class='row-actions'></td>";
       tr.cells[0].querySelector("strong").textContent = c.name;
       tr.cells[0].querySelector(".hint").textContent =
-        (c.chatType || "pv") + (c.phone ? " · " + c.phone : "");
+        (c.chatType || "pv") +
+        ((c.chatType || "pv") === "group"
+          ? c.groupId
+            ? " · " + c.groupId
+            : ""
+          : c.phone
+            ? " · " + c.phone
+            : "");
       tr.cells[1].textContent = c.stage || "-";
       tr.cells[2].textContent = (c.tags || []).join("، ") || "-";
       tr.cells[3].textContent = c.botPaused ? "متوقف" : "فعال";
@@ -277,17 +319,9 @@
       var details = document.createElement("button");
       details.type = "button";
       details.className = "btn";
-      details.textContent = "جزئیات";
+      details.textContent = "عملیات";
       details.onclick = function () {
         openDrawer(c);
-      };
-
-      var wa = document.createElement("button");
-      wa.type = "button";
-      wa.className = "btn secondary";
-      wa.textContent = "واتساپ";
-      wa.onclick = function () {
-        openWhatsAppFor(c);
       };
 
       var del = document.createElement("button");
@@ -302,7 +336,6 @@
       };
 
       tr.cells[5].appendChild(details);
-      tr.cells[5].appendChild(wa);
       tr.cells[5].appendChild(del);
       body.appendChild(tr);
     });
@@ -311,9 +344,12 @@
   function renderPipeline(list) {
     var board = $("contacts-pipeline-view");
     board.innerHTML = "";
+    var dragMoved = false;
+
     stages().forEach(function (stage) {
       var col = document.createElement("div");
       col.className = "pipeline-col";
+      col.dataset.stage = stage;
       var title = document.createElement("h3");
       var items = list.filter(function (c) {
         return (c.stage || stages()[0]) === stage;
@@ -321,17 +357,47 @@
       title.textContent = stage + " (" + items.length + ")";
       col.appendChild(title);
 
+      col.addEventListener("dragover", function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        col.classList.add("drag-over");
+      });
+      col.addEventListener("dragleave", function (e) {
+        if (!col.contains(e.relatedTarget)) {
+          col.classList.remove("drag-over");
+        }
+      });
+      col.addEventListener("drop", async function (e) {
+        e.preventDefault();
+        col.classList.remove("drag-over");
+        var contactId = e.dataTransfer.getData("text/contact-id");
+        var fromStage = e.dataTransfer.getData("text/from-stage");
+        if (!contactId || fromStage === stage) return;
+        await IranexpediaCrm.setContactStage(contactId, stage);
+        await loadAll();
+      });
+
       items.forEach(function (c) {
         var card = document.createElement("div");
         card.className = "pipeline-card";
+        card.draggable = true;
+        card.dataset.contactId = c.id;
+
         var strong = document.createElement("strong");
         strong.textContent = c.name;
         var tags = document.createElement("div");
         tags.className = "tags";
         tags.textContent = (c.tags || []).join("، ") || "بدون برچسب";
+        var hint = document.createElement("div");
+        hint.className = "drag-hint";
+        hint.textContent = "بکشید برای تغییر مرحله";
         var sel = document.createElement("select");
         fillStageSelect(sel, c.stage || stage);
+        sel.draggable = false;
         sel.onclick = function (e) {
+          e.stopPropagation();
+        };
+        sel.onmousedown = function (e) {
           e.stopPropagation();
         };
         sel.onchange = async function (e) {
@@ -339,10 +405,31 @@
           await IranexpediaCrm.setContactStage(c.id, sel.value);
           await loadAll();
         };
+
         card.appendChild(strong);
         card.appendChild(tags);
+        card.appendChild(hint);
         card.appendChild(sel);
+
+        card.addEventListener("dragstart", function (e) {
+          dragMoved = true;
+          card.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/contact-id", c.id);
+          e.dataTransfer.setData("text/from-stage", c.stage || stage);
+          e.dataTransfer.setData("text/plain", c.name);
+        });
+        card.addEventListener("dragend", function () {
+          card.classList.remove("dragging");
+          board.querySelectorAll(".pipeline-col.drag-over").forEach(function (el) {
+            el.classList.remove("drag-over");
+          });
+          setTimeout(function () {
+            dragMoved = false;
+          }, 0);
+        });
         card.onclick = function () {
+          if (dragMoved) return;
           openDrawer(c);
         };
         col.appendChild(card);
@@ -361,7 +448,6 @@
     renderStats();
     renderContacts();
     renderTemplates();
-    renderTasks();
     renderRules();
     renderEvents();
     renderSettings();
@@ -415,45 +501,6 @@
       card.appendChild(p);
       card.appendChild(btn);
       list.appendChild(card);
-    });
-  }
-
-  function renderTasks() {
-    var body = $("tasks-body");
-    body.innerHTML = "";
-    tasks.forEach(function (t) {
-      var tr = document.createElement("tr");
-      tr.innerHTML =
-        "<td></td><td></td><td></td><td><span class='badge'></span></td><td></td><td></td>";
-      tr.cells[0].textContent = t.targetName;
-      tr.cells[1].textContent = t.targetType;
-      tr.cells[2].textContent = fmt(t.runAt);
-      var badge = tr.cells[3].querySelector(".badge");
-      badge.className = "badge " + (t.status || "queued");
-      badge.textContent = statusLabel(t.status);
-      tr.cells[4].textContent = t.message;
-      if (t.lastError) {
-        var err = document.createElement("div");
-        err.className = "hint";
-        err.textContent = t.lastError;
-        tr.cells[4].appendChild(err);
-      }
-      if (t.status === "queued" || t.status === "running") {
-        var cancel = document.createElement("button");
-        cancel.type = "button";
-        cancel.className = "btn secondary";
-        cancel.textContent = "لغو";
-        cancel.onclick = function () {
-          chrome.runtime.sendMessage(
-            { type: "cancelTask", taskId: t.id },
-            async function () {
-              await loadAll();
-            }
-          );
-        };
-        tr.cells[5].appendChild(cancel);
-      }
-      body.appendChild(tr);
     });
   }
 
@@ -538,22 +585,22 @@
   $("filter-stage").addEventListener("change", renderContacts);
   $("filter-tag").addEventListener("change", renderContacts);
   $("view-list").addEventListener("click", function () {
-    setContactView("list");
+    switchTab("contacts");
   });
   $("view-pipeline").addEventListener("click", function () {
-    setContactView("pipeline");
+    switchTab("pipeline");
   });
   $("drawer-close").addEventListener("click", closeDrawer);
   $("drawer-backdrop").addEventListener("click", closeDrawer);
 
-  $("drawer-send-text").addEventListener("click", function () {
-    $("drawer-text-box").classList.toggle("hidden");
-    $("drawer-task-box").classList.add("hidden");
+  $("drawer-mode-edit").addEventListener("click", function () {
+    setDrawerMode("edit");
   });
-
-  $("drawer-create-task").addEventListener("click", function () {
-    $("drawer-task-box").classList.toggle("hidden");
-    $("drawer-text-box").classList.add("hidden");
+  $("drawer-mode-send").addEventListener("click", function () {
+    setDrawerMode("send");
+  });
+  $("drawer-mode-task").addEventListener("click", function () {
+    setDrawerMode("task");
   });
 
   $("drawer-text-confirm").addEventListener("click", function () {
@@ -575,8 +622,8 @@
           return;
         }
         showToast("متن ارسال شد.");
-        $("drawer-text-box").classList.add("hidden");
         $("drawer-text-body").value = "";
+        setDrawerMode("edit");
         await loadAll();
       }
     );
@@ -587,7 +634,7 @@
     var message = ($("drawer-task-msg").value || "").trim();
     var at = $("drawer-task-at").value;
     if (!message || !at) {
-      showToast("زمان و متن وظیفه را وارد کنید.", true);
+      showToast("زمان و متن پیام را وارد کنید.", true);
       return;
     }
     var runAt = new Date(at).getTime();
@@ -606,10 +653,8 @@
           showToast((res && res.error) || "ثبت وظیفه ناموفق بود.", true);
           return;
         }
-        showToast("وظیفه ثبت شد.");
-        $("drawer-task-box").classList.add("hidden");
-        closeDrawer();
-        switchTab("tasks");
+        showToast("زمان‌بندی ثبت شد. در زمان مقرر ارسال می‌شود.");
+        setDrawerMode("edit");
         await loadAll();
       }
     );
@@ -624,11 +669,15 @@
         return t.trim();
       })
       .filter(Boolean);
+    var isGroup = (selectedContact.chatType || "pv") === "group";
     await IranexpediaCrm.saveContactDetails(selectedContact.id, {
       stage: $("drawer-stage").value,
       tags: tags,
       notes: $("drawer-notes").value || "",
-      phone: $("drawer-phone").value || "",
+      phone: isGroup ? selectedContact.phone || "" : $("drawer-phone").value || "",
+      groupId: isGroup
+        ? $("drawer-group-id").value || ""
+        : selectedContact.groupId || "",
       botPaused: $("drawer-bot-paused").checked
     });
     showToast("تغییرات ذخیره شد.");
@@ -637,7 +686,16 @@
 
   $("export-contacts").addEventListener("click", function () {
     var rows = [
-      ["name", "stage", "tags", "notes", "botPaused", "chatType", "phone"]
+      [
+        "name",
+        "stage",
+        "tags",
+        "notes",
+        "botPaused",
+        "chatType",
+        "phone",
+        "groupId"
+      ]
     ];
     filteredContacts().forEach(function (c) {
       rows.push([
@@ -647,7 +705,8 @@
         (c.notes || "").replace(/\n/g, " "),
         c.botPaused ? "1" : "0",
         c.chatType || "",
-        c.phone || ""
+        c.phone || "",
+        c.groupId || ""
       ]);
     });
     var csv = rows
@@ -671,42 +730,6 @@
     await IranexpediaCrm.addTemplate($("tpl-title").value, $("tpl-body").value);
     $("template-form").reset();
     await loadAll();
-  });
-
-  $("task-form").addEventListener("submit", async function (e) {
-    e.preventDefault();
-    var targetType = $("task-type").value;
-    var risk = $("task-risk").checked;
-    if ((targetType === "group" || targetType === "channel") && !risk) {
-      alert("برای گروه/کانال باید پذیرش خطر را علامت بزنید.");
-      return;
-    }
-    if (targetType === "group" || targetType === "channel") {
-      await IranexpediaCrm.acceptRisk();
-    }
-    var runAt = new Date($("task-at").value).getTime();
-    chrome.runtime.sendMessage(
-      {
-        type: "scheduleTask",
-        task: {
-          targetName: $("task-target").value.trim(),
-          targetType: targetType,
-          message: $("task-message").value.trim(),
-          runAt: runAt
-        }
-      },
-      async function (res) {
-        if (!res || !res.ok) {
-          alert((res && res.error) || "ثبت ناموفق بود.");
-          return;
-        }
-        $("task-form").reset();
-        var d = new Date(Date.now() + 15 * 60 * 1000);
-        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-        $("task-at").value = d.toISOString().slice(0, 16);
-        await loadAll();
-      }
-    );
   });
 
   $("rule-form").addEventListener("submit", async function (e) {

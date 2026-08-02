@@ -113,10 +113,14 @@
     var phone = partial.phone
       ? String(partial.phone).replace(/[\s\-()]/g, "").trim()
       : "";
+    var groupId = partial.groupId ? String(partial.groupId).trim() : "";
     var idx = list.findIndex(function (c) {
       if (c.id === id) return true;
       if (namesMatch(c.name, name)) return true;
       if (phone && c.phone && String(c.phone).replace(/[\s\-()]/g, "") === phone) {
+        return true;
+      }
+      if (groupId && c.groupId && String(c.groupId) === groupId) {
         return true;
       }
       return false;
@@ -129,6 +133,8 @@
         // Keep existing Farsi display name when keys match (avoid ي/ی flicker)
         name: namesMatch(prev.name, name) ? prev.name || name : name || prev.name,
         phone: phone || prev.phone || "",
+        groupId: groupId || prev.groupId || "",
+        chatType: partial.chatType || prev.chatType || "pv",
         updatedAt: now,
         lastMessageAt: partial.lastMessageAt || prev.lastMessageAt || now
       });
@@ -139,6 +145,7 @@
       id: id,
       name: name,
       phone: phone || "",
+      groupId: groupId || "",
       chatType: partial.chatType || "pv",
       tags: Array.isArray(partial.tags) ? partial.tags : [],
       stage: partial.stage || STAGES[0],
@@ -230,7 +237,8 @@
       tags: Array.isArray(patch.tags) ? patch.tags : contact.tags,
       notes: patch.notes != null ? String(patch.notes) : contact.notes,
       botPaused: patch.botPaused != null ? !!patch.botPaused : contact.botPaused,
-      phone: patch.phone != null ? String(patch.phone) : contact.phone
+      phone: patch.phone != null ? String(patch.phone) : contact.phone,
+      groupId: patch.groupId != null ? String(patch.groupId) : contact.groupId || ""
     };
     var stageChanged = next.stage && next.stage !== contact.stage;
     var updated = await updateContact(id, next);

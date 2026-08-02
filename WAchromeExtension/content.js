@@ -1,4 +1,4 @@
-const EXT_VERSION = "6.1.2";
+const EXT_VERSION = "6.1.8";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -289,10 +289,35 @@ function cleanChatLabel(value) {
         .replace(/\s+/g, " ");
 }
 
+function extractPeerIdsFromOpenChat() {
+    const result = { phone: "", groupId: "", chatType: "" };
+    const nodes = document.querySelectorAll("#main [data-id]");
+    if (!nodes.length) return result;
+
+    const start = Math.max(0, nodes.length - 60);
+    for (let i = nodes.length - 1; i >= start; i--) {
+        const id = nodes[i].getAttribute("data-id") || "";
+        const groupMatch = id.match(/(\d{10,24})@g\.us/);
+        if (groupMatch) {
+            result.groupId = groupMatch[1] + "@g.us";
+            result.chatType = "group";
+            return result;
+        }
+        const phoneMatch = id.match(/(\d{8,15})@c\.us/);
+        if (phoneMatch && !result.phone) {
+            result.phone = normalizePhone(phoneMatch[1]);
+            result.chatType = "pv";
+        }
+    }
+    return result;
+}
+
 function getChatIdentity() {
     const spans = getHeaderTitleSpans();
     let name = "";
     let phone = "";
+    const memberList = getHeaderMemberListText();
+    const peer = extractPeerIdsFromOpenChat();
 
     for (let i = 0; i < spans.length; i++) {
         const raw = cleanChatLabel(
@@ -308,7 +333,23 @@ function getChatIdentity() {
     }
 
     if (!name && phone) name = phone;
-    return { name: name || "", phone: phone || "" };
+
+    const isGroup = !!(memberList || peer.groupId || peer.chatType === "group");
+    if (isGroup) {
+        return {
+            name: name || "",
+            phone: "",
+            groupId: peer.groupId || "",
+            chatType: "group"
+        };
+    }
+
+    return {
+        name: name || "",
+        phone: phone || peer.phone || "",
+        groupId: "",
+        chatType: "pv"
+    };
 }
 
 function getChatName() {
@@ -321,24 +362,42 @@ async function saveContactFromIncoming(chatInfo, source) {
     const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
     if (!name) return null;
 
+    const chatType = (chatInfo && chatInfo.chatType) || "pv";
+    const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
+    const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
+
     const existing = await IranexpediaCrm.getContactByName(name);
     if (existing) {
-        await IranexpediaCrm.upsertContact({
+        const updated = await IranexpediaCrm.upsertContact({
             name: existing.name || name,
-            phone: (chatInfo && chatInfo.phone) || existing.phone || "",
+            phone: phone || existing.phone || "",
+            groupId: groupId || existing.groupId || "",
+            chatType: chatType || existing.chatType || "pv",
             lastMessageAt: Date.now()
         });
-        return existing;
+        return updated || existing;
     }
 
     const created = await IranexpediaCrm.upsertContact({
         name: name,
-        phone: (chatInfo && chatInfo.phone) || "",
-        chatType: (chatInfo && chatInfo.chatType) || "pv",
+        phone: phone,
+        groupId: groupId,
+        chatType: chatType,
         lastMessageAt: Date.now()
     });
-    log("مخاطب جدید ذخیره شد (", source || "message", "):", name);
-    await logCrmEvent("contact_new", "مخاطب جدید: " + name, { source: source || "message" });
+    log(
+        "مخاطب جدید ذخیره شد (",
+        source || "message",
+        "):",
+        name,
+        chatType === "group" ? groupId || "(بدون group id)" : phone || "(بدون تلفن)"
+    );
+    await logCrmEvent("contact_new", "مخاطب جدید: " + name, {
+        source: source || "message",
+        chatType: chatType,
+        phone: phone,
+        groupId: groupId
+    });
     return created;
 }
 
@@ -691,6 +750,7 @@ async function runScheduledTask(task) {
 }
 
 window.__iranexpediaGetChatName = getChatName;
+window.__iranexpediaGetChatIdentity = getChatIdentity;
 window.__iranexpediaSendNow = function (text) {
     sendTextNow(text).then(function (ok) {
         if (!ok) alert("ارسال انجام نشد. چت را باز کنید و دوباره تلاش کنید.");

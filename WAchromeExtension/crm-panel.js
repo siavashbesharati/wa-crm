@@ -120,10 +120,19 @@
           );
         })
         .join("");
+      var idMeta =
+        (c.chatType || "pv") === "group"
+          ? c.groupId
+            ? " · " + c.groupId
+            : ""
+          : c.phone
+            ? " · " + c.phone
+            : "";
       contactHtml =
         '<div class="crm-name"></div>' +
         '<div class="crm-meta">نوع: ' +
         (c.chatType || "pv") +
+        idMeta +
         "</div>" +
         '<div class="crm-field"><label>مرحله</label><select id="crm-stage">' +
         stageOpts +
@@ -323,9 +332,29 @@
 
   async function ensureContact() {
     if (!currentName || !globalThis.IranexpediaCrm) return;
+    var identity =
+      typeof window.__iranexpediaGetChatIdentity === "function"
+        ? window.__iranexpediaGetChatIdentity()
+        : { name: currentName, chatType: "pv", phone: "", groupId: "" };
+    var chatType =
+      (identity && identity.chatType) ||
+      (currentContact && currentContact.chatType) ||
+      "pv";
     currentContact = await IranexpediaCrm.upsertContact({
       name: currentName,
-      chatType: (currentContact && currentContact.chatType) || "pv"
+      chatType: chatType,
+      phone:
+        chatType === "group"
+          ? ""
+          : (identity && identity.phone) ||
+            (currentContact && currentContact.phone) ||
+            "",
+      groupId:
+        chatType === "group"
+          ? (identity && identity.groupId) ||
+            (currentContact && currentContact.groupId) ||
+            ""
+          : (currentContact && currentContact.groupId) || ""
     });
   }
 
