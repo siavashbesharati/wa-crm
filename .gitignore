@@ -1,5 +1,12 @@
 # Dependencies
 node_modules/
+platform/web/node_modules/
+platform/web/.next/
+platform/api/wa_crm.db
+platform/api/__pycache__/
+platform/api/**/__pycache__/
+platform/api/.venv/
+*.pyc
 
 # Built / obfuscated extension (generate with npm run build:ext)
 WAchromeExtension-dist/
@@ -8,6 +15,11 @@ WAchromeExtension-dist/
 .env
 .env.*
 !.env.example
+!.env.local.example
+platform/api/wa_crm.db
+platform/api/**/__pycache__/
+platform/web/.next/
+platform/web/node_modules/
 
 # Logs
 logs/

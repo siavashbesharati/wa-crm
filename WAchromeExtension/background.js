@@ -1,8 +1,11 @@
 /**
- * Trusted time + CRM task scheduler dispatcher.
+ * Trusted time + CRM task scheduler dispatcher + cloud bridge.
  */
 
+importScripts("cloud-bridge.js");
+
 var SWEEP_ALARM = "crm_task_sweep";
+var CLOUD_ALARM = "cloud_bridge_poll";
 
 function alarmNameForTask(taskId) {
   return "crm_task_" + taskId;
@@ -369,6 +372,10 @@ ensureSweepAlarm();
 
 chrome.alarms.onAlarm.addListener(function (alarm) {
   if (!alarm || !alarm.name) return;
+  if (alarm.name === CLOUD_ALARM) {
+    pollCloudBridge();
+    return;
+  }
   if (alarm.name === SWEEP_ALARM) {
     runDueTasks();
     return;
@@ -421,4 +428,52 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     sendTemplateNow(message.targetName, message.message).then(sendResponse);
     return true;
   }
+
+  if (message.type === "cloudSetConfig") {
+    IranexpediaCloudBridge.setConfig(message.config || {}).then(function (cfg) {
+      sendResponse({ ok: true, config: cfg });
+    });
+    return true;
+  }
+
+  if (message.type === "cloudGetConfig") {
+    IranexpediaCloudBridge.getConfig().then(function (cfg) {
+      sendResponse({ ok: true, config: cfg });
+    });
+    return true;
+  }
+
+  if (message.type === "cloudIngestMessage") {
+    IranexpediaCloudBridge.ingestMessage(message.payload || {}).then(sendResponse);
+    return true;
+  }
 });
+
+async function pollCloudBridge() {
+  try {
+    var cfg = await IranexpediaCloudBridge.getConfig();
+    if (!cfg.enabled) return;
+    await IranexpediaCloudBridge.heartbeat();
+    var jobs = await IranexpediaCloudBridge.claimJobs(3);
+    if (!jobs.length) return;
+    var tab = await findWhatsAppTab();
+    if (!tab) return;
+    for (var i = 0; i < jobs.length; i++) {
+      var job = jobs[i];
+      try {
+        var res = await chrome.tabs.sendMessage(tab.id, {
+          type: "sendTemplateNow",
+          targetName: job.target_name,
+          message: job.body
+        });
+        await IranexpediaCloudBridge.completeJob(job.id, !!(res && res.ok), (res && res.error) || "");
+      } catch (err) {
+        await IranexpediaCloudBridge.completeJob(job.id, false, String(err && err.message || err));
+      }
+    }
+  } catch (_err) {
+    // ignore transient bridge errors
+  }
+}
+
+chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });

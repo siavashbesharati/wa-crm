@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.deps import AuthContext, get_auth, require_roles
+from app.models import ConnectorRole, ConnectorSession, MemberRole, OutboundJob, OutboundStatus, WhatsAppAccount
+from app.plans import plan_limits
+from app.schemas import HeartbeatIn, WhatsAppAccountIn, WhatsAppAccountOut
+
+router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
+
+
+@router.get("/accounts", response_model=list[WhatsAppAccountOut])
+def list_accounts(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    rows = db.query(WhatsAppAccount).filter(WhatsAppAccount.org_id == auth.org.id).all()
+    return [WhatsAppAccountOut(id=r.id, label=r.label, phone=r.phone, status=r.status) for r in rows]
+
+
+@router.post("/accounts", response_model=WhatsAppAccountOut)
+def create_account(
+    body: WhatsAppAccountIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    limits = plan_limits(auth.org.plan)
+    count = db.query(WhatsAppAccount).filter(WhatsAppAccount.org_id == auth.org.id).count()
+    if count >= limits["max_wa_numbers"]:
+        raise HTTPException(status_code=402, detail="سقف تعداد شماره واتساپ پلن پر شده است")
+    acc = WhatsAppAccount(org_id=auth.org.id, label=body.label or body.phone, phone=body.phone)
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+    return WhatsAppAccountOut(id=acc.id, label=acc.label, phone=acc.phone, status=acc.status)
+
+
+@router.post("/heartbeat")
+def heartbeat(body: HeartbeatIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    acc = (
+        db.query(WhatsAppAccount)
+        .filter(WhatsAppAccount.id == body.account_id, WhatsAppAccount.org_id == auth.org.id)
+        .first()
+    )
+    if not acc:
+        raise HTTPException(status_code=404, detail="اکانت واتساپ یافت نشد")
+    try:
+        role = ConnectorRole(body.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="نقش کانکتور نامعتبر است") from exc
+
+    session = (
+        db.query(ConnectorSession)
+        .filter(
+            ConnectorSession.org_id == auth.org.id,
+            ConnectorSession.account_id == body.account_id,
+            ConnectorSession.device_id == body.device_id,
+        )
+        .first()
+    )
+    if not session:
+        session = ConnectorSession(
+            org_id=auth.org.id,
+            account_id=body.account_id,
+            user_id=auth.user.id,
+            device_id=body.device_id,
+            role=role,
+        )
+        db.add(session)
+    else:
+        session.role = role
+        session.user_id = auth.user.id
+        session.status = "online"
+        session.last_seen_at = datetime.utcnow()
+        db.add(session)
+
+    acc.status = "online"
+    db.add(acc)
+    db.commit()
+    return {"ok": True, "session_id": session.id, "role": session.role.value}
+
+
+@router.get("/sessions")
+def list_sessions(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    cutoff = datetime.utcnow() - timedelta(seconds=90)
+    rows = (
+        db.query(ConnectorSession)
+        .filter(ConnectorSession.org_id == auth.org.id, ConnectorSession.last_seen_at >= cutoff)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "account_id": r.account_id,
+            "device_id": r.device_id,
+            "role": r.role.value,
+            "status": r.status,
+            "last_seen_at": r.last_seen_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+def pick_session(db: Session, org_id: str, account_id: str) -> ConnectorSession | None:
+    """Hybrid: prefer connector, else any online agent session."""
+    cutoff = datetime.utcnow() - timedelta(seconds=90)
+    base = (
+        db.query(ConnectorSession)
+        .filter(
+            ConnectorSession.org_id == org_id,
+            ConnectorSession.account_id == account_id,
+            ConnectorSession.last_seen_at >= cutoff,
+            ConnectorSession.status == "online",
+        )
+    )
+    connector = base.filter(ConnectorSession.role == ConnectorRole.connector).first()
+    if connector:
+        return connector
+    return base.filter(ConnectorSession.role == ConnectorRole.agent).first()
+
+
+@router.post("/jobs/claim")
+def claim_jobs(
+    account_id: str,
+    device_id: str,
+    limit: int = 5,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    session = (
+        db.query(ConnectorSession)
+        .filter(
+            ConnectorSession.org_id == auth.org.id,
+            ConnectorSession.account_id == account_id,
+            ConnectorSession.device_id == device_id,
+        )
+        .first()
+    )
+    if not session:
+        raise HTTPException(status_code=400, detail="ابتدا heartbeat بزنید")
+
+    preferred = pick_session(db, auth.org.id, account_id)
+    if preferred and preferred.device_id != device_id:
+        # Only preferred hybrid winner claims; others get empty
+        if preferred.role == ConnectorRole.connector or session.role != ConnectorRole.connector:
+            if preferred.id != session.id:
+                return {"jobs": []}
+
+    jobs = (
+        db.query(OutboundJob)
+        .filter(
+            OutboundJob.org_id == auth.org.id,
+            OutboundJob.account_id == account_id,
+            OutboundJob.status == OutboundStatus.queued,
+        )
+        .order_by(OutboundJob.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    out = []
+    for job in jobs:
+        job.status = OutboundStatus.claimed
+        job.claimed_by_session_id = session.id
+        job.updated_at = datetime.utcnow()
+        db.add(job)
+        out.append(
+            {
+                "id": job.id,
+                "account_id": job.account_id,
+                "lead_id": job.lead_id,
+                "target_name": job.target_name,
+                "body": job.body,
+                "sender_type": job.sender_type.value,
+                "status": job.status.value,
+            }
+        )
+    db.commit()
+    return {"jobs": out}
+
+
+@router.post("/jobs/{job_id}/complete")
+def complete_job(
+    job_id: str,
+    ok: bool = True,
+    error: str = "",
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    job = db.query(OutboundJob).filter(OutboundJob.id == job_id, OutboundJob.org_id == auth.org.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="جاب یافت نشد")
+    job.status = OutboundStatus.sent if ok else OutboundStatus.failed
+    job.error = error or ""
+    job.updated_at = datetime.utcnow()
+    db.add(job)
+    db.commit()
+    return {"ok": True}

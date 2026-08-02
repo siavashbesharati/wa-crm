@@ -1,0 +1,49 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: wa_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./api
+    env_file: ./api/.env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/wa_crm
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-change-me
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./api:/app
+
+  workers:
+    build: ./api
+    command: python -m app.workers.runner
+    environment:
+      DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/wa_crm
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-change-me
+      APP_ENV: development
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./api:/app
+
+volumes:
+  pgdata:

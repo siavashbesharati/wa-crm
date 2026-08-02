@@ -74,6 +74,7 @@ function main() {
   copyFile("dashboard.css");
   copyFile("crm-panel.css");
   copyFile("background.js");
+  copyFile("cloud-bridge.js");
   if (fs.existsSync(path.join(srcDir, "rules.json"))) {
     copyFile("rules.json");
   }
@@ -83,6 +84,7 @@ function main() {
   obfuscateJs("license-config.js");
   obfuscateJs("license-lib.js");
   obfuscateJs("crm-store.js");
+  obfuscateJs("cloud-bridge.js");
   obfuscateJs("content.js");
   obfuscateJs("crm-panel.js");
   obfuscateJs("popup.js");

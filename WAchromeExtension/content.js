@@ -1,4 +1,4 @@
-const EXT_VERSION = "6.1.8";
+const EXT_VERSION = "6.2.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -398,6 +398,24 @@ async function saveContactFromIncoming(chatInfo, source) {
         phone: phone,
         groupId: groupId
     });
+
+    // Best-effort sync to cloud inbox (if bridge enabled)
+    try {
+        if (globalThis.IranexpediaCloudBridge) {
+            await IranexpediaCloudBridge.ingestMessage({
+                chat_name: name,
+                body: "(contact sync) " + (source || "message"),
+                direction: "inbound",
+                phone: phone,
+                group_id: groupId,
+                chat_type: chatType,
+                sender_type: "customer"
+            });
+        }
+    } catch (_cloudErr) {
+        // ignore
+    }
+
     return created;
 }
 

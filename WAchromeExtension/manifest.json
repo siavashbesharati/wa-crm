@@ -2,10 +2,12 @@
   "manifest_version": 3,
   "name": "پاسخ خودکار واتساپ",
   "description": "CRM و پاسخ خودکار واتساپ وب با زمان‌بندی. توسعه: iranexpedia.ir",
-  "version": "6.1.8",
+  "version": "6.2.0",
   "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
     "https://worldtimeapi.org/*",
     "https://timeapi.io/*",
     "https://www.cloudflare.com/*"
@@ -43,6 +45,7 @@
         "license-config.js",
         "license-lib.js",
         "crm-store.js",
+        "cloud-bridge.js",
         "content.js",
         "crm-panel.js"
       ],

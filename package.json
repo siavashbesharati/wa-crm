@@ -1,12 +1,15 @@
 {
   "name": "iranexpedia-whatsapp-extension-build",
-  "version": "6.1.8",
+  "version": "6.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build:ext": "node scripts/obfuscate-extension.mjs",
     "obfuscate": "npm run build:ext",
-    "license:gen": "node scripts/generate-license-key.mjs"
+    "license:gen": "node scripts/generate-license-key.mjs",
+    "api:dev": "cd platform/api && python -m uvicorn app.main:app --reload --port 8000",
+    "web:dev": "cd platform/web && npm run dev",
+    "workers:dev": "cd platform/api && python -m app.workers.runner"
   },
   "devDependencies": {
     "javascript-obfuscator": "^4.2.2"
