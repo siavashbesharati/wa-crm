@@ -1,4 +1,4 @@
-* {
+﻿* {
   box-sizing: border-box;
 }
 
@@ -8,11 +8,11 @@ body {
   padding: 16px;
   font-family: Vazirmatn, Tahoma, sans-serif;
   direction: rtl;
-  color: #12241c;
+  color: #0f2744;
   background:
-    radial-gradient(ellipse 80% 50% at 100% 0%, rgba(56, 189, 140, 0.28), transparent 55%),
+    radial-gradient(ellipse 80% 50% at 100% 0%, rgba(147, 197, 253, 0.45), transparent 55%),
     radial-gradient(ellipse 70% 45% at 0% 20%, rgba(125, 211, 252, 0.22), transparent 50%),
-    linear-gradient(165deg, #eaf7f0 0%, #e2f0f6 55%, #e8f3ec 100%);
+    linear-gradient(165deg, #eef6ff 0%, #e0f2fe 55%, #f0f7ff 100%);
 }
 
 header {
@@ -22,14 +22,14 @@ header {
 .brand {
   font-size: 22px;
   font-weight: 800;
-  color: #0b8457;
+  color: #2563eb;
   letter-spacing: 0.2px;
 }
 
 .subtitle {
   margin-top: 4px;
   font-size: 12px;
-  color: #4d6358;
+  color: #4a6a88;
 }
 
 .version {
@@ -37,7 +37,7 @@ header {
   margin-top: 8px;
   padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(11, 132, 87, 0.9);
+  background: rgba(37, 99, 235, 0.9);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -52,7 +52,7 @@ header {
   border-radius: 16px;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow: 0 8px 22px rgba(18, 56, 40, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: 0 8px 22px rgba(30, 64, 175, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .help {
@@ -63,7 +63,7 @@ header {
 .help p {
   margin: 4px 0;
   font-size: 12px;
-  color: #31463c;
+  color: #334e68;
 }
 
 .license-card {
@@ -74,14 +74,14 @@ header {
 .license-message {
   margin: 0 0 6px;
   font-size: 12px;
-  color: #4d6358;
+  color: #4a6a88;
   line-height: 1.5;
 }
 
 .license-expiry {
   margin: 0 0 10px;
   font-size: 11px;
-  color: #0b8457;
+  color: #2563eb;
 }
 
 .license-badge {
@@ -98,8 +98,8 @@ header {
 }
 
 .license-badge.on {
-  background: rgba(215, 235, 224, 0.85);
-  color: #0b8457;
+  background: rgba(219, 234, 254, 0.9);
+  color: #2563eb;
 }
 
 .license-badge.off {
@@ -136,7 +136,7 @@ label {
 input,
 textarea {
   width: 100%;
-  border: 1px solid rgba(183, 206, 193, 0.65);
+  border: 1px solid rgba(147, 197, 253, 0.65);
   border-radius: 12px;
   padding: 8px 10px;
   font: inherit;
@@ -148,7 +148,7 @@ textarea {
 
 input:focus,
 textarea:focus {
-  outline: 2px solid rgba(31, 168, 85, 0.45);
+  outline: 2px solid rgba(59, 130, 246, 0.45);
   border-color: transparent;
 }
 
@@ -164,9 +164,9 @@ button {
 #license-btn,
 #add-btn,
 .primary-wide {
-  background: linear-gradient(180deg, rgba(31, 157, 102, 0.95), rgba(11, 132, 87, 0.95));
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 0.95));
   color: #fff;
-  box-shadow: 0 6px 14px rgba(11, 132, 87, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 #add-btn:hover,
@@ -190,8 +190,8 @@ button {
   min-width: 22px;
   height: 22px;
   border-radius: 999px;
-  background: rgba(215, 235, 224, 0.9);
-  color: #0b8457;
+  background: rgba(219, 234, 254, 0.9);
+  color: #2563eb;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -218,12 +218,12 @@ button {
 .rule-keyword {
   font-size: 13px;
   font-weight: 800;
-  color: #0b8457;
+  color: #2563eb;
 }
 
 .rule-reply {
   font-size: 12px;
-  color: #31463c;
+  color: #334e68;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -243,7 +243,7 @@ button {
 .empty {
   margin: 0;
   font-size: 12px;
-  color: #6a7f74;
+  color: #64748b;
 }
 
 .empty.hidden {
@@ -253,17 +253,17 @@ button {
 .app-footer {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid rgba(207, 227, 215, 0.7);
+  border-top: 1px solid rgba(191, 219, 254, 0.7);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   font-size: 12px;
-  color: #4d6358;
+  color: #4a6a88;
 }
 
 .app-footer a {
-  color: #0b8457;
+  color: #2563eb;
   font-weight: 700;
   text-decoration: none;
 }
@@ -291,3 +291,4 @@ button {
   opacity: 0.55;
   cursor: not-allowed;
 }
+

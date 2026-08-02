@@ -1,9 +1,9 @@
-const EXT_VERSION = "6.1.1";
+const EXT_VERSION = "6.1.2";
 const BRAND = "iranexpedia.ir";
 
 console.log(
     "%c[" + BRAND + " v" + EXT_VERSION + "] LOADED",
-    "background:#0b8457;color:#fff;font-size:14px;padding:6px;"
+    "background:#2563eb;color:#fff;font-size:14px;padding:6px;"
 );
 
 /* ================= CONFIG ================= */

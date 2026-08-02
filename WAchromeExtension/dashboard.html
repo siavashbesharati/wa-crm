@@ -20,8 +20,8 @@
       </div>
       <nav>
         <button type="button" class="nav-btn active" data-tab="contacts">مخاطبین</button>
+        <button type="button" class="nav-btn" data-tab="tasks">وظایف</button>
         <button type="button" class="nav-btn" data-tab="templates">قالب‌ها</button>
-        <button type="button" class="nav-btn" data-tab="tasks">زمان‌بندی</button>
         <button type="button" class="nav-btn" data-tab="rules">اتوماسیون</button>
         <button type="button" class="nav-btn" data-tab="activity">فعالیت‌ها</button>
         <button type="button" class="nav-btn" data-tab="settings">تنظیمات</button>
@@ -93,9 +93,8 @@
         </div>
         <div class="drawer-body">
           <div class="drawer-actions">
-            <button type="button" class="btn" id="drawer-open-wa">باز کردن در واتساپ</button>
-            <button type="button" class="btn secondary" id="drawer-send-tpl">ارسال قالب</button>
-            <button type="button" class="btn secondary" id="drawer-schedule">زمان‌بندی پیگیری</button>
+            <button type="button" class="btn" id="drawer-send-text">ارسال متن</button>
+            <button type="button" class="btn secondary" id="drawer-create-task">ایجاد وظیفه</button>
           </div>
           <form id="drawer-form" class="card form-grid drawer-form">
             <label>مرحله
@@ -116,25 +115,22 @@
             </label>
             <button type="submit" class="btn">ذخیره تغییرات</button>
           </form>
-          <div class="card drawer-send-box hidden" id="drawer-tpl-box">
-            <h3>ارسال قالب الان</h3>
-            <label>قالب
-              <select id="drawer-tpl-select"></select>
+          <div class="card drawer-send-box hidden" id="drawer-text-box">
+            <h3>ارسال متن</h3>
+            <label>متن پیام
+              <textarea id="drawer-text-body" rows="4" placeholder="متن را اینجا بنویسید..."></textarea>
             </label>
-            <label>متن
-              <textarea id="drawer-tpl-body" rows="3"></textarea>
-            </label>
-            <button type="button" class="btn" id="drawer-tpl-confirm">ارسال الان</button>
+            <button type="button" class="btn" id="drawer-text-confirm">ارسال الان</button>
           </div>
-          <div class="card drawer-send-box hidden" id="drawer-sched-box">
-            <h3>زمان‌بندی پیگیری</h3>
-            <label>زمان
-              <input id="drawer-sched-at" type="datetime-local" />
+          <div class="card drawer-send-box hidden" id="drawer-task-box">
+            <h3>ایجاد وظیفه</h3>
+            <label>زمان اجرا
+              <input id="drawer-task-at" type="datetime-local" />
             </label>
-            <label>پیام
-              <textarea id="drawer-sched-msg" rows="3"></textarea>
+            <label>متن وظیفه / پیام
+              <textarea id="drawer-task-msg" rows="3" placeholder="مثلاً پیگیری پیشنهاد تور..."></textarea>
             </label>
-            <button type="button" class="btn" id="drawer-sched-confirm">ثبت در صف</button>
+            <button type="button" class="btn" id="drawer-task-confirm">ثبت وظیفه</button>
           </div>
           <div class="card">
             <h3>تاریخچه</h3>
@@ -156,8 +152,9 @@
       </section>
 
       <section class="tab" id="tab-tasks">
+        <p class="hint" style="margin-bottom:12px">وظایف زمان‌بندی‌شده برای ارسال پیام به مخاطبین. واتساپ وب باید باز بماند.</p>
         <form id="task-form" class="card form-grid">
-          <label>نام چت / گروه / کانال
+          <label>نام چت / مخاطب
             <input id="task-target" required placeholder="دقیقاً همان‌طور که در واتساپ دیده می‌شود" />
           </label>
           <label>نوع
@@ -167,13 +164,13 @@
               <option value="channel">کانال</option>
             </select>
           </label>
-          <label>زمان ارسال<input id="task-at" type="datetime-local" required /></label>
-          <label>پیام<textarea id="task-message" rows="3" required></textarea></label>
+          <label>زمان اجرا<input id="task-at" type="datetime-local" required /></label>
+          <label>متن وظیفه / پیام<textarea id="task-message" rows="3" required></textarea></label>
           <label class="check">
             <input id="task-risk" type="checkbox" />
             خطر محدودیت واتساپ برای گروه/کانال را می‌پذیرم
           </label>
-          <button type="submit" class="btn">افزودن به صف</button>
+          <button type="submit" class="btn">ثبت وظیفه</button>
         </form>
         <div class="table-wrap">
           <table>

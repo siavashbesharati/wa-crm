@@ -2,7 +2,7 @@
   var titles = {
     contacts: ["مخاطبین", "مدیریت مخاطبین، برچسب و مراحل فروش"],
     templates: ["قالب‌ها", "پیام‌های آماده با متغیر {name}"],
-    tasks: ["زمان‌بندی", "ارسال تأخیری به چت، گروه یا کانال"],
+    tasks: ["وظایف", "ارسال و پیگیری زمان‌بندی‌شده برای مخاطبین"],
     rules: ["اتوماسیون", "پاسخ خودکار بر اساس کلمه کلیدی"],
     activity: ["فعالیت‌ها", "لاگ ارسال‌ها و رویدادها"],
     settings: ["تنظیمات", "محدودیت ایمنی و ساعات کاری"]
@@ -192,30 +192,14 @@
     $("drawer-phone").value = contact.phone || "";
     $("drawer-notes").value = contact.notes || "";
     $("drawer-bot-paused").checked = !!contact.botPaused;
-    $("drawer-tpl-box").classList.add("hidden");
-    $("drawer-sched-box").classList.add("hidden");
-
-    var tplSel = $("drawer-tpl-select");
-    tplSel.innerHTML = "";
-    templates.forEach(function (t) {
-      var opt = document.createElement("option");
-      opt.value = t.id;
-      opt.textContent = t.title;
-      tplSel.appendChild(opt);
-    });
-    if (templates[0]) {
-      $("drawer-tpl-body").value = IranexpediaCrm.applyTemplateVars(
-        templates[0].body,
-        { name: contact.name }
-      );
-    } else {
-      $("drawer-tpl-body").value = "";
-    }
+    $("drawer-text-box").classList.add("hidden");
+    $("drawer-task-box").classList.add("hidden");
+    $("drawer-text-body").value = "";
 
     var d = new Date(Date.now() + 60 * 60 * 1000);
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    $("drawer-sched-at").value = d.toISOString().slice(0, 16);
-    $("drawer-sched-msg").value = "";
+    $("drawer-task-at").value = d.toISOString().slice(0, 16);
+    $("drawer-task-msg").value = "";
 
     drawerEvents = await IranexpediaCrm.getEventsForContact(contact.name);
     renderDrawerTimeline();
@@ -562,35 +546,19 @@
   $("drawer-close").addEventListener("click", closeDrawer);
   $("drawer-backdrop").addEventListener("click", closeDrawer);
 
-  $("drawer-open-wa").addEventListener("click", function () {
-    if (selectedContact) openWhatsAppFor(selectedContact);
+  $("drawer-send-text").addEventListener("click", function () {
+    $("drawer-text-box").classList.toggle("hidden");
+    $("drawer-task-box").classList.add("hidden");
   });
 
-  $("drawer-send-tpl").addEventListener("click", function () {
-    $("drawer-tpl-box").classList.toggle("hidden");
-    $("drawer-sched-box").classList.add("hidden");
+  $("drawer-create-task").addEventListener("click", function () {
+    $("drawer-task-box").classList.toggle("hidden");
+    $("drawer-text-box").classList.add("hidden");
   });
 
-  $("drawer-schedule").addEventListener("click", function () {
-    $("drawer-sched-box").classList.toggle("hidden");
-    $("drawer-tpl-box").classList.add("hidden");
-  });
-
-  $("drawer-tpl-select").addEventListener("change", function () {
+  $("drawer-text-confirm").addEventListener("click", function () {
     if (!selectedContact) return;
-    var t = templates.find(function (x) {
-      return x.id === $("drawer-tpl-select").value;
-    });
-    if (t) {
-      $("drawer-tpl-body").value = IranexpediaCrm.applyTemplateVars(t.body, {
-        name: selectedContact.name
-      });
-    }
-  });
-
-  $("drawer-tpl-confirm").addEventListener("click", function () {
-    if (!selectedContact) return;
-    var message = ($("drawer-tpl-body").value || "").trim();
+    var message = ($("drawer-text-body").value || "").trim();
     if (!message) {
       showToast("متن پیام خالی است.", true);
       return;
@@ -606,19 +574,20 @@
           showToast((res && res.error) || "ارسال ناموفق بود.", true);
           return;
         }
-        showToast("قالب ارسال شد.");
-        $("drawer-tpl-box").classList.add("hidden");
+        showToast("متن ارسال شد.");
+        $("drawer-text-box").classList.add("hidden");
+        $("drawer-text-body").value = "";
         await loadAll();
       }
     );
   });
 
-  $("drawer-sched-confirm").addEventListener("click", function () {
+  $("drawer-task-confirm").addEventListener("click", function () {
     if (!selectedContact) return;
-    var message = ($("drawer-sched-msg").value || "").trim();
-    var at = $("drawer-sched-at").value;
+    var message = ($("drawer-task-msg").value || "").trim();
+    var at = $("drawer-task-at").value;
     if (!message || !at) {
-      showToast("زمان و متن پیام را وارد کنید.", true);
+      showToast("زمان و متن وظیفه را وارد کنید.", true);
       return;
     }
     var runAt = new Date(at).getTime();
@@ -634,11 +603,13 @@
       },
       async function (res) {
         if (!res || !res.ok) {
-          showToast((res && res.error) || "ثبت زمان‌بندی ناموفق بود.", true);
+          showToast((res && res.error) || "ثبت وظیفه ناموفق بود.", true);
           return;
         }
-        showToast("در صف زمان‌بندی ثبت شد.");
-        $("drawer-sched-box").classList.add("hidden");
+        showToast("وظیفه ثبت شد.");
+        $("drawer-task-box").classList.add("hidden");
+        closeDrawer();
+        switchTab("tasks");
         await loadAll();
       }
     );
