@@ -14,18 +14,28 @@
 <body>
   <div class="app">
     <aside class="sidebar">
-      <div class="brand-block">
-        <div class="brand">CRM واتساپ</div>
-        <div class="brand-sub">iranexpedia.ir</div>
-        <div class="version" id="dash-version">v?</div>
+      <div class="sidebar-top">
+        <div class="brand-block">
+          <div class="brand">CRM واتساپ</div>
+          <div class="brand-sub">iranexpedia</div>
+          <div class="version" id="dash-version">v?</div>
+        </div>
       </div>
+      <div class="user-chip">
+        <div class="user-avatar">م</div>
+        <div class="user-meta">
+          <strong>پنل محلی</strong>
+          <span>همگام با ابر تیمی</span>
+        </div>
+      </div>
+      <div class="nav-label">منو</div>
       <nav>
-        <button type="button" class="nav-btn active" data-tab="contacts">لیدها</button>
-        <button type="button" class="nav-btn" data-tab="pipeline">پایپلاین</button>
-        <button type="button" class="nav-btn" data-tab="templates">قالب‌ها</button>
-        <button type="button" class="nav-btn" data-tab="rules">اتوماسیون</button>
-        <button type="button" class="nav-btn" data-tab="activity">فعالیت‌ها</button>
-        <button type="button" class="nav-btn" data-tab="settings">تنظیمات</button>
+        <button type="button" class="nav-btn active" data-tab="contacts"><span class="nav-ico">☰</span>لیدها</button>
+        <button type="button" class="nav-btn" data-tab="pipeline"><span class="nav-ico">▦</span>پایپلاین</button>
+        <button type="button" class="nav-btn" data-tab="templates"><span class="nav-ico">✉</span>قالب‌ها</button>
+        <button type="button" class="nav-btn" data-tab="rules"><span class="nav-ico">⚡</span>اتوماسیون</button>
+        <button type="button" class="nav-btn" data-tab="activity"><span class="nav-ico">◉</span>فعالیت‌ها</button>
+        <button type="button" class="nav-btn" data-tab="settings"><span class="nav-ico">⚙</span>تنظیمات</button>
       </nav>
       <div class="side-foot">
         <div class="health" id="runner-health">وضعیت اجرا: در حال بررسی...</div>
@@ -33,9 +43,9 @@
       </div>
     </aside>
 
-    <main>
-      <header class="top">
-        <div>
+    <div class="main-wrap">
+      <header class="topbar">
+        <div class="topbar-titles">
           <h1 id="page-title">لیدها</h1>
           <p class="top-sub" id="page-sub">مدیریت لیدها، برچسب و مراحل فروش</p>
         </div>
@@ -46,6 +56,7 @@
         </div>
       </header>
 
+      <main class="content">
       <div class="banner">برای اجرای زمان‌بندی، Chrome و واتساپ وب باید باز بمانند. ارسال گروهی/کانال با پذیرش خطر محدودیت توسط کاربر انجام می‌شود.</div>
 
       <section class="tab active" id="tab-contacts">
@@ -59,12 +70,12 @@
           </select>
           <div class="view-toggle">
             <button type="button" class="btn secondary active" id="view-list" data-view="list">لیست</button>
-            <button type="button" class="btn secondary" id="view-pipeline" data-view="pipeline">پایپلاین</button>
+            <button type="button" class="btn secondary" id="view-pipeline" data-view="pipeline">برد</button>
           </div>
           <button type="button" class="btn secondary" id="export-contacts">خروجی CSV</button>
           <button type="button" class="btn" id="sync-contacts-cloud">ارسال لیدها به پنل ابری</button>
         </div>
-        <p class="hint" id="cloud-sync-hint" style="margin:8px 0 0">این لیست فقط روی همین مرورگر است. برای دیدن در پنل ابری (localhost:3000) باید «ارسال لیدها به پنل ابری» را بزنید.</p>
+        <p class="hint" id="cloud-sync-hint" style="margin:8px 0 12px">این لیست محلی است. برای پنل ابری «ارسال لیدها به پنل ابری» را بزنید.</p>
         <div id="contacts-list-view">
           <div class="table-wrap">
             <table>
@@ -133,7 +144,7 @@
           </div>
           <div class="card drawer-send-box hidden" id="drawer-task-box">
             <h3>زمان‌بندی ارسال پیام</h3>
-            <p class="hint">در زمان انتخاب‌شده، این متن از واتساپ وب ارسال می‌شود. مرحله/برچسب/یادداشت اینجا عوض نمی‌شود — برای آن‌ها از «ویرایش مخاطب» استفاده کنید. واتساپ وب باید باز بماند.</p>
+            <p class="hint">در زمان انتخاب‌شده ارسال می‌شود. واتساپ وب باید باز بماند.</p>
             <label>زمان ارسال
               <input id="drawer-task-at" type="datetime-local" />
             </label>
@@ -217,7 +228,8 @@
           <button type="submit" class="btn">ذخیره تنظیمات</button>
         </form>
       </section>
-    </main>
+      </main>
+    </div>
   </div>
 
   <script src="license-config.js"></script>

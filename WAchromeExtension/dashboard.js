@@ -104,7 +104,7 @@
       }
     }
     if (!status.valid && !cloudOk) {
-      document.querySelector("main").innerHTML =
+      document.querySelector("main.content").innerHTML =
         '<div class="card" style="max-width:520px;margin:40px auto;text-align:center">' +
         "<h2>فعال‌سازی لازم است</h2>" +
         "<p class='hint'>از پاپ‌آپ افزونه کلید لایسنس وارد کنید یا با OTP به ابر تیمی وصل شوید.</p>" +
@@ -355,16 +355,27 @@
     board.innerHTML = "";
     var dragMoved = false;
 
-    stages().forEach(function (stage) {
+    stages().forEach(function (stage, idx) {
       var col = document.createElement("div");
       col.className = "pipeline-col";
       col.dataset.stage = stage;
-      var title = document.createElement("h3");
       var items = list.filter(function (c) {
         return (c.stage || stages()[0]) === stage;
       });
-      title.textContent = stage + " (" + items.length + ")";
-      col.appendChild(title);
+      var dots = ["new", "follow", "offer", "buy", "closed"];
+      var head = document.createElement("div");
+      head.className = "pipeline-col-head";
+      var title = document.createElement("h3");
+      var dot = document.createElement("span");
+      dot.className = "stage-dot " + (dots[idx] || "new");
+      title.appendChild(dot);
+      title.appendChild(document.createTextNode(" " + stage));
+      var count = document.createElement("span");
+      count.className = "col-count";
+      count.textContent = String(items.length);
+      head.appendChild(title);
+      head.appendChild(count);
+      col.appendChild(head);
 
       col.addEventListener("dragover", function (e) {
         e.preventDefault();
