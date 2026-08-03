@@ -94,11 +94,20 @@
 
   async function ensureLicense() {
     var status = await IranexpediaLicense.getStoredLicenseStatus();
-    if (!status.valid) {
+    var cloudOk = false;
+    if (globalThis.IranexpediaCloudBridge) {
+      try {
+        var st = await IranexpediaCloudBridge.status();
+        cloudOk = !!st.connected;
+      } catch (_err) {
+        cloudOk = false;
+      }
+    }
+    if (!status.valid && !cloudOk) {
       document.querySelector("main").innerHTML =
         '<div class="card" style="max-width:520px;margin:40px auto;text-align:center">' +
         "<h2>فعال‌سازی لازم است</h2>" +
-        "<p class='hint'>برای استفاده از داشبورد CRM، از آیکون افزونه کلید فعال‌سازی را وارد کنید.</p>" +
+        "<p class='hint'>از پاپ‌آپ افزونه کلید لایسنس وارد کنید یا با OTP به ابر تیمی وصل شوید.</p>" +
         "</div>";
       return false;
     }
@@ -684,6 +693,61 @@
     await loadAll();
   });
 
+  async function pushContactsToCloud() {
+    var hint = $("cloud-sync-hint");
+    var btn = $("sync-contacts-cloud");
+    if (!globalThis.IranexpediaCloudBridge) {
+      alert("پل ابری بارگذاری نشده. افزونه را Reload کنید.");
+      return;
+    }
+    var cfg = await IranexpediaCloudBridge.getConfig();
+    if (!cfg.enabled || !cfg.accessToken) {
+      alert("ابتدا از پاپ‌آپ افزونه با OTP به ابر وصل شوید، بعد دوباره بزنید.");
+      return;
+    }
+    if (btn) btn.disabled = true;
+    if (hint) hint.textContent = "در حال ارسال " + contacts.length + " لید به سرور…";
+    var ok = 0;
+    var fail = 0;
+    var lastErr = "";
+    for (var i = 0; i < contacts.length; i++) {
+      var c = contacts[i];
+      if (!c || !c.name) continue;
+      var res = await IranexpediaCloudBridge.upsertLead({
+        name: c.name,
+        phone: c.phone || "",
+        groupId: c.groupId || "",
+        chatType: c.chatType || "pv",
+        stage: c.stage || "جدید",
+        tags: c.tags || [],
+        notes: c.notes || "",
+        botPaused: !!c.botPaused
+      });
+      if (res && res.ok) ok += 1;
+      else {
+        fail += 1;
+        lastErr = (res && (res.error || JSON.stringify(res.data))) || "error";
+      }
+    }
+    // Also ask background to sync (same storage).
+    chrome.runtime.sendMessage({ type: "cloudSyncContacts" });
+    if (btn) btn.disabled = false;
+    var msg =
+      "ارسال شد: " +
+      ok +
+      " موفق" +
+      (fail ? " / " + fail + " ناموفق (" + lastErr + ")" : "") +
+      "\nحالا صفحه لیدها در پنل ابری (localhost:3000) را رفرش کنید.";
+    if (hint) hint.textContent = msg;
+    alert(msg);
+  }
+
+  if ($("sync-contacts-cloud")) {
+    $("sync-contacts-cloud").addEventListener("click", function () {
+      pushContactsToCloud();
+    });
+  }
+
   $("export-contacts").addEventListener("click", function () {
     var rows = [
       [
@@ -768,6 +832,28 @@
     await loadAll();
     alert("تنظیمات ذخیره شد.");
   });
+
+  async function refreshCloudDashStatus() {
+    var el = $("cloud-dash-status");
+    if (!el || !globalThis.IranexpediaCloudBridge) return;
+    var st = await IranexpediaCloudBridge.status();
+    if (st.connected) {
+      var org = st.me && st.me.org ? st.me.org.name : "";
+      var plan = st.me && st.me.org ? st.me.org.plan : "";
+      el.textContent =
+        "متصل به ابر · " +
+        org +
+        (plan ? " · پلن " + plan : "") +
+        (st.heartbeatOk ? " · کانکتور آنلاین" : " · اکانت واتساپ را در پاپ‌آپ تنظیم کنید");
+    } else {
+      el.textContent =
+        "قطع از ابر — از پاپ‌آپ افزونه وارد شوید (OTP). بدون ابر فقط CRM محلی کار می‌کند.";
+    }
+  }
+  if ($("cloud-refresh-status")) {
+    $("cloud-refresh-status").addEventListener("click", refreshCloudDashStatus);
+    refreshCloudDashStatus();
+  }
 
   chrome.storage.onChanged.addListener(function (changes, area) {
     if (area === "local") loadAll();

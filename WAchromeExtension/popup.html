@@ -37,15 +37,61 @@
     </form>
   </section>
 
+  <section class="license-card cloud-card">
+    <div class="section-title">
+      <h2>ابر تیمی (B2B)</h2>
+      <span id="cloud-badge" class="license-badge off">قطع</span>
+    </div>
+    <p id="cloud-status" class="license-message">برای کار تیمی به سرور ابری وصل شوید.</p>
+    <form id="cloud-form">
+      <label>
+        آدرس API
+        <input id="cloud-api" type="text" placeholder="http://localhost:8000/api" />
+      </label>
+      <label>
+        موبایل
+        <input id="cloud-phone" type="text" placeholder="0912..." />
+      </label>
+      <label id="cloud-code-wrap" class="hidden">
+        کد OTP
+        <input id="cloud-code" type="text" placeholder="123456" />
+      </label>
+      <label>
+        نقش این مرورگر
+        <select id="cloud-role">
+          <option value="connector">کانکتور اصلی (پیشنهادی)</option>
+          <option value="agent">اپراتور پشتیبان</option>
+        </select>
+      </label>
+      <label>
+        اکانت واتساپ ابری
+        <select id="cloud-account">
+          <option value="">— انتخاب کنید —</option>
+        </select>
+      </label>
+      <div class="license-actions">
+        <button type="button" id="cloud-otp-btn">دریافت کد</button>
+        <button type="button" id="cloud-login-btn" class="secondary-btn">ورود ابری</button>
+      </div>
+      <div class="license-actions" style="margin-top:8px">
+        <button type="button" id="cloud-save-btn">ذخیره اتصال</button>
+        <button type="button" id="cloud-disconnect" class="secondary-btn">قطع اتصال</button>
+      </div>
+      <div class="license-actions" style="margin-top:8px">
+        <button type="button" id="cloud-sync-btn" class="secondary-btn">همگام‌سازی لیدها از واتساپ</button>
+      </div>
+    </form>
+  </section>
+
   <section class="help">
-    <p>۱. کلید را فعال کنید</p>
+    <p>۱. کلید یا ورود ابری را فعال کنید</p>
     <p>۲. واتساپ وب را باز کنید — پنل CRM در سمت راست</p>
-    <p>۳. سوییچ ON/OFF را در پنل روشن کنید تا پاسخ خودکار فعال شود</p>
-    <p>۴. دانلود اعضا و داشبورد هم داخل همان پنل است</p>
+    <p>۳. برای تیم: نقش کانکتور را روی یک سیستم همیشه روشن بگذارید</p>
+    <p>۴. داشبورد ابری: لیدها / اینباکس / KPI بین اپراتورها مشترک است</p>
   </section>
 
   <div class="popup-actions">
-    <button type="button" id="open-crm" class="primary-wide">باز کردن پنل CRM</button>
+    <button type="button" id="open-crm" class="primary-wide">باز کردن داشبورد</button>
   </div>
 
   <footer class="app-footer">
@@ -55,6 +101,7 @@
 
   <script src="license-config.js"></script>
   <script src="license-lib.js"></script>
+  <script src="cloud-bridge.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

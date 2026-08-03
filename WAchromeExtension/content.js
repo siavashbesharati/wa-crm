@@ -1,4 +1,4 @@
-const EXT_VERSION = "6.2.0";
+const EXT_VERSION = "7.0.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -165,8 +165,21 @@ async function refreshLicenseStatus() {
             return false;
         }
         const status = await IranexpediaLicense.getStoredLicenseStatus();
-        licenseValid = !!status.valid;
-        licenseMessage = status.message || (licenseValid ? "فعال" : "غیرفعال");
+        let cloudOk = false;
+        if (globalThis.IranexpediaCloudBridge) {
+            try {
+                const st = await IranexpediaCloudBridge.status();
+                cloudOk = !!st.connected;
+            } catch (_e) {
+                cloudOk = false;
+            }
+        }
+        licenseValid = !!status.valid || cloudOk;
+        licenseMessage = status.valid
+            ? status.message || "فعال"
+            : cloudOk
+              ? "فعال با ابر تیمی"
+              : status.message || "غیرفعال";
         if (!licenseValid && isEnabled) {
             isEnabled = false;
             log("فعال‌سازی نامعتبر/منقضی — پاسخ خودکار خاموش شد");
@@ -375,7 +388,9 @@ async function saveContactFromIncoming(chatInfo, source) {
             chatType: chatType || existing.chatType || "pv",
             lastMessageAt: Date.now()
         });
-        return updated || existing;
+        const contact = updated || existing;
+        await syncContactToCloud(contact, source);
+        return contact;
     }
 
     const created = await IranexpediaCrm.upsertContact({
@@ -399,24 +414,80 @@ async function saveContactFromIncoming(chatInfo, source) {
         groupId: groupId
     });
 
-    // Best-effort sync to cloud inbox (if bridge enabled)
-    try {
-        if (globalThis.IranexpediaCloudBridge) {
-            await IranexpediaCloudBridge.ingestMessage({
-                chat_name: name,
-                body: "(contact sync) " + (source || "message"),
-                direction: "inbound",
-                phone: phone,
-                group_id: groupId,
-                chat_type: chatType,
-                sender_type: "customer"
-            });
-        }
-    } catch (_cloudErr) {
-        // ignore
-    }
+    await syncContactToCloud(created || { name: name, phone: phone, groupId: groupId, chatType: chatType }, source);
 
     return created;
+}
+
+async function syncContactToCloud(contact, source) {
+    if (!globalThis.IranexpediaCloudBridge || !contact || !contact.name) return;
+    try {
+        const res = await IranexpediaCloudBridge.upsertLead({
+            name: contact.name,
+            phone: contact.phone || "",
+            groupId: contact.groupId || "",
+            chatType: contact.chatType || "pv",
+            stage: contact.stage || "جدید",
+            tags: contact.tags || [],
+            notes: contact.notes || "",
+            botPaused: !!contact.botPaused
+        });
+        if (!res || !res.ok) {
+            log("همگام‌سازی ابر ناموفق:", (res && res.error) || "unknown", contact.name);
+            return;
+        }
+        if (source === "incoming" || source === "message") {
+            const ing = await IranexpediaCloudBridge.ingestMessage({
+                chat_name: contact.name,
+                body: "(sync)",
+                direction: "inbound",
+                phone: contact.phone || "",
+                group_id: contact.groupId || "",
+                chat_type: contact.chatType || "pv",
+                sender_type: "customer"
+            });
+            if (!ing || !ing.ok) {
+                log("ingest پیام ابر ناموفق:", (ing && ing.error) || "unknown");
+            }
+        }
+    } catch (cloudErr) {
+        log("خطای همگام‌سازی ابر:", cloudErr && cloudErr.message ? cloudErr.message : cloudErr);
+    }
+}
+
+let cloudBulkSyncDone = false;
+async function syncAllLocalContactsToCloud() {
+    if (cloudBulkSyncDone || !globalThis.IranexpediaCloudBridge || !globalThis.IranexpediaCrm) return;
+    try {
+        const cfg = await IranexpediaCloudBridge.getConfig();
+        if (!cfg.enabled || !cfg.accessToken) return;
+        const contacts = await IranexpediaCrm.getContacts();
+        if (!contacts || !contacts.length) {
+            cloudBulkSyncDone = true;
+            return;
+        }
+        log("همگام‌سازی " + contacts.length + " مخاطب محلی به ابر…");
+        let ok = 0;
+        for (let i = 0; i < contacts.length; i++) {
+            const c = contacts[i];
+            if (!c || !c.name) continue;
+            const res = await IranexpediaCloudBridge.upsertLead({
+                name: c.name,
+                phone: c.phone || "",
+                groupId: c.groupId || "",
+                chatType: c.chatType || "pv",
+                stage: c.stage || "جدید",
+                tags: c.tags || [],
+                notes: c.notes || "",
+                botPaused: !!c.botPaused
+            });
+            if (res && res.ok) ok += 1;
+        }
+        cloudBulkSyncDone = true;
+        log("همگام‌سازی ابر تمام شد:", ok + "/" + contacts.length);
+    } catch (err) {
+        log("همگام‌سازی گروهی ابر خطا:", err && err.message ? err.message : err);
+    }
 }
 
 /** Capture contacts on new messages even when auto-reply is OFF */
@@ -787,6 +858,26 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     }
     if (message.type === "sendTemplateNow") {
         sendTemplateNowAction(message.targetName, message.message).then(sendResponse);
+        return true;
+    }
+    if (message.type === "cloudScanSidebarChats") {
+        (async function () {
+            await refreshLicenseStatus();
+            if (!licenseValid) {
+                sendResponse({ ok: false, error: "license_or_cloud_required" });
+                return;
+            }
+            const scan = await captureContactsFromSidebarVisible();
+            // Force push local → API via background (reliable).
+            chrome.runtime.sendMessage({ type: "cloudSyncContacts" }, function (syncRes) {
+                sendResponse({
+                    ok: true,
+                    scanned: (scan && scan.scanned) || 0,
+                    saved: (scan && scan.saved) || 0,
+                    sync: syncRes || null
+                });
+            });
+        })();
         return true;
     }
     if (message.type === "pingRunner") {
@@ -1170,6 +1261,28 @@ async function captureContactsFromSidebarUnread() {
     }
 }
 
+/** Capture visible chat list → local CRM → cloud (not only unread). */
+async function captureContactsFromSidebarVisible() {
+    if (!licenseValid || !globalThis.IranexpediaCrm) return { saved: 0 };
+    const cells = getSidebarCells();
+    let saved = 0;
+    for (let i = 0; i < cells.length; i++) {
+        const chatName = getCellChatName(cells[i]);
+        if (!chatName) continue;
+        const key = cleanChatLabel(chatName);
+        if (!key) continue;
+        const phone = looksLikePhone(key) ? normalizePhone(key) : "";
+        const before = await IranexpediaCrm.getContactByName(key);
+        await saveContactFromIncoming(
+            { name: key, phone: phone, chatType: "pv" },
+            "sidebar-visible"
+        );
+        if (!before) saved += 1;
+        else saved += 1;
+    }
+    return { saved: saved, scanned: cells.length };
+}
+
 function getCellPreview(cell, chatName) {
     const secondary =
         cell.querySelector('[data-testid="cell-frame-secondary"]') ||
@@ -1549,11 +1662,20 @@ setInterval(function () {
     captureContactsFromSidebarUnread();
 }, SIDEBAR_SCAN_MS);
 
+// Every ~45s push visible chat list into CRM → cloud (backend feed).
+setInterval(function () {
+    if (!licenseValid) return;
+    captureContactsFromSidebarVisible().then(function () {
+        chrome.runtime.sendMessage({ type: "cloudSyncContacts" });
+    });
+}, 45 * 1000);
+
 loadRules();
 refreshCrmSettings();
 refreshLicenseStatus().then(function () {
     ensureButton();
     log("وضعیت فعال‌سازی:", licenseValid ? "فعال" : "غیرفعال", "-", licenseMessage);
+    if (licenseValid) syncAllLocalContactsToCloud();
 
     chrome.storage.local.get({ autoReplyEnabled: false }, function (data) {
         if (data.autoReplyEnabled && licenseValid) {
@@ -1569,6 +1691,13 @@ refreshLicenseStatus().then(function () {
 
 chrome.storage.onChanged.addListener(function (changes, area) {
     if (area !== "local") return;
+    if (changes.cloudBridgeConfig) {
+        cloudBulkSyncDone = false;
+        refreshLicenseStatus().then(function () {
+            ensureButton();
+            if (licenseValid) syncAllLocalContactsToCloud();
+        });
+    }
     if (
         changes.licenseActivated ||
         changes.licenseHash ||

@@ -62,7 +62,9 @@
             <button type="button" class="btn secondary" id="view-pipeline" data-view="pipeline">پایپلاین</button>
           </div>
           <button type="button" class="btn secondary" id="export-contacts">خروجی CSV</button>
+          <button type="button" class="btn" id="sync-contacts-cloud">ارسال لیدها به پنل ابری</button>
         </div>
+        <p class="hint" id="cloud-sync-hint" style="margin:8px 0 0">این لیست فقط روی همین مرورگر است. برای دیدن در پنل ابری (localhost:3000) باید «ارسال لیدها به پنل ابری» را بزنید.</p>
         <div id="contacts-list-view">
           <div class="table-wrap">
             <table>
@@ -183,6 +185,15 @@
       </section>
 
       <section class="tab" id="tab-settings">
+        <div class="card" id="cloud-settings-card">
+          <h3>اتصال ابری B2B</h3>
+          <p class="hint" id="cloud-dash-status">وضعیت از پاپ‌آپ افزونه مدیریت می‌شود.</p>
+          <p class="hint">برای تیم: یک سیستم را به‌عنوان «کانکتور» همیشه روشن بگذارید؛ بقیه اپراتورها از پنل ابری کار می‌کنند.</p>
+          <div class="row-actions">
+            <button type="button" class="btn secondary" id="cloud-refresh-status">بررسی اتصال ابری</button>
+            <a class="btn" id="open-cloud-admin" href="http://localhost:3000" target="_blank" rel="noopener">باز کردن پنل ابری</a>
+          </div>
+        </div>
         <form id="settings-form" class="card form-grid">
           <label>حداکثر ارسال زمان‌بندی در ساعت
             <input id="set-max-hour" type="number" min="1" max="200" />
@@ -212,6 +223,7 @@
   <script src="license-config.js"></script>
   <script src="license-lib.js"></script>
   <script src="crm-store.js"></script>
+  <script src="cloud-bridge.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

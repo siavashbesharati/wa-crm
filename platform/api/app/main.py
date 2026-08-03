@@ -12,7 +12,8 @@ settings = get_settings()
 app = FastAPI(title="IranExpedia WA CRM API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list or ["*"],
+    allow_origins=settings.cors_origin_list or ["http://localhost:3000"],
+    allow_origin_regex=r"https://web\.whatsapp\.com|chrome-extension://.*|http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

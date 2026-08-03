@@ -60,30 +60,82 @@ def list_leads(
 
 @router.post("", response_model=LeadOut)
 def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
-    lead = Lead(
-        org_id=auth.org.id,
-        name=body.name.strip(),
-        phone=body.phone,
-        group_id=body.group_id,
-        chat_type=body.chat_type,
-        stage=body.stage or STAGES[0],
-        tags=body.tags,
-        notes=body.notes,
-        assignee_id=body.assignee_id,
-        bot_paused=body.bot_paused,
-        last_message_at=datetime.utcnow(),
-    )
-    db.add(lead)
-    db.flush()
-    if body.account_id:
-        db.add(
-            LeadAccountLink(
-                org_id=auth.org.id,
-                lead_id=lead.id,
-                account_id=body.account_id,
-                chat_name=body.chat_name or body.name,
-            )
+    name = body.name.strip()
+    lead = None
+    if body.phone:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == auth.org.id, Lead.phone == body.phone)
+            .first()
         )
+    if not lead and body.group_id:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == auth.org.id, Lead.group_id == body.group_id)
+            .first()
+        )
+    if not lead and name:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == auth.org.id, Lead.name == name)
+            .first()
+        )
+
+    if lead:
+        lead.name = name or lead.name
+        if body.phone:
+            lead.phone = body.phone
+        if body.group_id:
+            lead.group_id = body.group_id
+        lead.chat_type = body.chat_type or lead.chat_type
+        if body.stage:
+            lead.stage = body.stage
+        if body.tags is not None:
+            lead.tags = body.tags
+        if body.notes:
+            lead.notes = body.notes
+        if body.assignee_id is not None:
+            lead.assignee_id = body.assignee_id
+        lead.bot_paused = body.bot_paused
+        lead.last_message_at = datetime.utcnow()
+        lead.updated_at = datetime.utcnow()
+        db.add(lead)
+    else:
+        lead = Lead(
+            org_id=auth.org.id,
+            name=name,
+            phone=body.phone,
+            group_id=body.group_id,
+            chat_type=body.chat_type,
+            stage=body.stage or STAGES[0],
+            tags=body.tags,
+            notes=body.notes,
+            assignee_id=body.assignee_id,
+            bot_paused=body.bot_paused,
+            last_message_at=datetime.utcnow(),
+        )
+        db.add(lead)
+        db.flush()
+
+    if body.account_id:
+        exists = (
+            db.query(LeadAccountLink)
+            .filter(
+                LeadAccountLink.org_id == auth.org.id,
+                LeadAccountLink.account_id == body.account_id,
+                LeadAccountLink.chat_name == (body.chat_name or body.name),
+            )
+            .first()
+        )
+        if not exists:
+            db.add(
+                LeadAccountLink(
+                    org_id=auth.org.id,
+                    lead_id=lead.id,
+                    account_id=body.account_id,
+                    chat_name=body.chat_name or body.name,
+                )
+            )
     db.commit()
     db.refresh(lead)
     return _to_out(lead)

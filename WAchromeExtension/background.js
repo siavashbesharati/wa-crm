@@ -6,6 +6,7 @@ importScripts("cloud-bridge.js");
 
 var SWEEP_ALARM = "crm_task_sweep";
 var CLOUD_ALARM = "cloud_bridge_poll";
+var lastCloudContactSyncAt = 0;
 
 function alarmNameForTask(taskId) {
   return "crm_task_" + taskId;
@@ -362,13 +363,22 @@ async function fetchTrustedTime() {
 
 chrome.runtime.onInstalled.addListener(function () {
   ensureSweepAlarm();
+  chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });
+  pollCloudBridge();
 });
 
 chrome.runtime.onStartup.addListener(function () {
   ensureSweepAlarm();
+  chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });
+  pollCloudBridge();
 });
 
 ensureSweepAlarm();
+chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });
+// Kick sync soon after SW wakes (don't wait a full minute).
+setTimeout(function () {
+  pollCloudBridge();
+}, 3000);
 
 chrome.alarms.onAlarm.addListener(function (alarm) {
   if (!alarm || !alarm.name) return;
@@ -447,13 +457,96 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     IranexpediaCloudBridge.ingestMessage(message.payload || {}).then(sendResponse);
     return true;
   }
+
+  // Content scripts proxy all cloud HTTP via background (CORS-safe).
+  if (message.type === "cloudBridgeInvoke") {
+    var method = message.method;
+    var args = message.args || [];
+    var impl =
+      (IranexpediaCloudBridge.__impl && IranexpediaCloudBridge.__impl[method]) ||
+      IranexpediaCloudBridge[method];
+    if (typeof impl !== "function") {
+      sendResponse({ ok: false, error: "unknown_method:" + method });
+      return true;
+    }
+    Promise.resolve()
+      .then(function () {
+        return impl.apply(null, args);
+      })
+      .then(sendResponse)
+      .catch(function (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      });
+    return true;
+  }
+
+  if (message.type === "cloudSyncContacts") {
+    syncLocalContactsToCloud().then(sendResponse);
+    return true;
+  }
+
+  if (message.type === "cloudScanWhatsAppChats") {
+    findWhatsAppTab().then(function (tab) {
+      if (!tab) {
+        sendResponse({ ok: false, error: "whatsapp_tab_not_found" });
+        return;
+      }
+      chrome.tabs.sendMessage(
+        tab.id,
+        { type: "cloudScanSidebarChats" },
+        function (res) {
+          if (chrome.runtime.lastError) {
+            sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          sendResponse(res || { ok: false, error: "no_response" });
+        }
+      );
+    });
+    return true;
+  }
 });
+
+async function syncLocalContactsToCloud() {
+  var cfg = await IranexpediaCloudBridge.getConfig();
+  if (!cfg.enabled || !cfg.accessToken || !cfg.orgId) {
+    return { ok: false, error: "cloud_disabled", synced: 0 };
+  }
+  var data = await storageGet({ crmContacts: [] });
+  var contacts = Array.isArray(data.crmContacts) ? data.crmContacts : [];
+  var synced = 0;
+  var errors = 0;
+  for (var i = 0; i < contacts.length; i++) {
+    var c = contacts[i];
+    if (!c || !c.name) continue;
+    var res = await IranexpediaCloudBridge.upsertLead({
+      name: c.name,
+      phone: c.phone || "",
+      groupId: c.groupId || "",
+      chatType: c.chatType || "pv",
+      stage: c.stage || "جدید",
+      tags: c.tags || [],
+      notes: c.notes || "",
+      botPaused: !!c.botPaused
+    });
+    if (res && res.ok) synced += 1;
+    else errors += 1;
+  }
+  lastCloudContactSyncAt = Date.now();
+  return { ok: true, synced: synced, total: contacts.length, errors: errors };
+}
 
 async function pollCloudBridge() {
   try {
     var cfg = await IranexpediaCloudBridge.getConfig();
     if (!cfg.enabled) return;
     await IranexpediaCloudBridge.heartbeat();
+
+    // Push local CRM contacts → server (real reason backend has leads).
+    if (Date.now() - lastCloudContactSyncAt > 45 * 1000) {
+      await syncLocalContactsToCloud();
+    }
+
     var jobs = await IranexpediaCloudBridge.claimJobs(3);
     if (!jobs.length) return;
     var tab = await findWhatsAppTab();

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, saveSession } from "@/lib/api";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,7 +50,7 @@ export default function LoginPage() {
         auth: false
       });
       saveSession(res);
-      router.replace("/leads");
+      router.replace("/home");
     } catch (e) {
       setError(e instanceof Error ? e.message : "خطا");
     } finally {
@@ -58,8 +60,14 @@ export default function LoginPage() {
 
   return (
     <div className="login-wrap">
-      <div className="card login-card">
-        <h1 className="page-title">ورود با پیامک</h1>
+      <Card className="login-card">
+        <div style={{ marginBottom: 8 }}>
+          <div className="brand">CRM واتساپ</div>
+          <div className="brand-sub">ورود ابری تیم</div>
+        </div>
+        <h1 className="page-title" style={{ fontSize: 22, marginTop: 12 }}>
+          ورود با پیامک
+        </h1>
         <p className="hint">OTP فعلاً mock است — کد پیش‌فرض ۱۲۳۴۵۶</p>
         <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 16 }}>
           <label className="full">
@@ -85,18 +93,18 @@ export default function LoginPage() {
         </div>
         {info && <p className="hint">{info}</p>}
         {error && <p className="error">{error}</p>}
-        <div className="row-actions" style={{ marginTop: 12 }}>
+        <div className="row-actions" style={{ marginTop: 14 }}>
           {step === "request" ? (
-            <button className="btn" disabled={loading} onClick={requestOtp}>
+            <Button loading={loading} onClick={requestOtp}>
               دریافت کد
-            </button>
+            </Button>
           ) : (
-            <button className="btn" disabled={loading} onClick={verifyOtp}>
+            <Button loading={loading} onClick={verifyOtp}>
               ورود
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
