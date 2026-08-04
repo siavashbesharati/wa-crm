@@ -41,6 +41,11 @@ class ConnectorRole(str, enum.Enum):
     agent = "agent"
 
 
+class ChannelType(str, enum.Enum):
+    whatsapp = "whatsapp"
+    divar = "divar"
+
+
 class TaskStatus(str, enum.Enum):
     open = "open"
     done = "done"
@@ -75,7 +80,7 @@ class Organization(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     memberships = relationship("Membership", back_populates="organization")
-    whatsapp_accounts = relationship("WhatsAppAccount", back_populates="organization")
+    channel_accounts = relationship("ChannelAccount", back_populates="organization")
 
 
 class User(Base):
@@ -125,17 +130,30 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
-class WhatsAppAccount(Base):
-    __tablename__ = "whatsapp_accounts"
+class ChannelAccount(Base):
+    __tablename__ = "channel_accounts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    channel: Mapped[ChannelType] = mapped_column(
+        Enum(ChannelType), default=ChannelType.whatsapp, index=True
+    )
     label: Mapped[str] = mapped_column(String(120), default="")
-    phone: Mapped[str] = mapped_column(String(32), default="")
+    # WA phone or Divar session label / external id
+    external_id: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(40), default="disconnected")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
-    organization = relationship("Organization", back_populates="whatsapp_accounts")
+    organization = relationship("Organization", back_populates="channel_accounts")
+
+    @property
+    def phone(self) -> str:
+        """Backward-compatible alias used by WA clients. """
+        return self.external_id if self.channel == ChannelType.whatsapp else ""
+
+
+# Backward-compatible alias
+WhatsAppAccount = ChannelAccount
 
 
 class ConnectorSession(Base):
@@ -143,7 +161,7 @@ class ConnectorSession(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_accounts.id"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("channel_accounts.id"), index=True)
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     device_id: Mapped[str] = mapped_column(String(80), index=True)
     role: Mapped[ConnectorRole] = mapped_column(Enum(ConnectorRole), default=ConnectorRole.agent)
@@ -160,6 +178,9 @@ class Lead(Base):
     name: Mapped[str] = mapped_column(String(200), default="")
     phone: Mapped[str] = mapped_column(String(32), default="", index=True)
     group_id: Mapped[str] = mapped_column(String(80), default="", index=True)
+    external_chat_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    post_token: Mapped[str] = mapped_column(String(120), default="")
+    source_channel: Mapped[str] = mapped_column(String(40), default="")
     chat_type: Mapped[str] = mapped_column(String(20), default="pv")
     stage: Mapped[str] = mapped_column(String(40), default="جدید", index=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
@@ -175,13 +196,15 @@ class LeadAccountLink(Base):
     __tablename__ = "lead_account_links"
     __table_args__ = (
         UniqueConstraint("org_id", "account_id", "chat_name", name="uq_lead_account_chat"),
+        UniqueConstraint("org_id", "account_id", "external_chat_id", name="uq_lead_account_ext"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
     lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_accounts.id"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("channel_accounts.id"), index=True)
     chat_name: Mapped[str] = mapped_column(String(200), default="")
+    external_chat_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
 
 
 class Message(Base):
@@ -189,12 +212,13 @@ class Message(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_accounts.id"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("channel_accounts.id"), index=True)
     lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
     direction: Mapped[MessageDirection] = mapped_column(Enum(MessageDirection))
     sender_type: Mapped[SenderType] = mapped_column(Enum(SenderType), default=SenderType.customer)
     body: Mapped[str] = mapped_column(Text, default="")
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # Stores WA message id or Divar/external message id
     wa_message_id: Mapped[str] = mapped_column(String(120), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
 
@@ -220,7 +244,7 @@ class OutboundJob(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_accounts.id"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("channel_accounts.id"), index=True)
     lead_id: Mapped[str | None] = mapped_column(ForeignKey("leads.id"), nullable=True)
     target_name: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")

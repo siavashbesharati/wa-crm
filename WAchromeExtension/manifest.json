@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "پاسخ خودکار واتساپ",
-  "description": "CRM و پاسخ خودکار واتساپ وب با زمان‌بندی. توسعه: iranexpedia.ir",
-  "version": "7.1.2",
+  "name": "پاسخ خودکار چندکاناله",
+  "description": "CRM و پاسخ خودکار واتساپ و دیوار. توسعه: iranexpedia.ir",
+  "version": "7.2.0",
   "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
+    "https://divar.ir/*",
+    "https://chat.divar.ir/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*"
   ],
@@ -14,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "پاسخ خودکار واتساپ",
+    "default_title": "پاسخ خودکار چندکاناله",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -32,7 +34,11 @@
   "web_accessible_resources": [
     {
       "resources": ["crm-panel.css"],
-      "matches": ["https://web.whatsapp.com/*"]
+      "matches": [
+        "https://web.whatsapp.com/*",
+        "https://divar.ir/*",
+        "https://chat.divar.ir/*"
+      ]
     }
   ],
   "content_scripts": [
@@ -43,6 +49,21 @@
         "auth-gate.js",
         "crm-store.js",
         "content.js",
+        "crm-panel.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://divar.ir/chat/*",
+        "https://chat.divar.ir/*",
+        "https://chat.divar.ir/chat/*"
+      ],
+      "js": [
+        "cloud-bridge.js",
+        "auth-gate.js",
+        "crm-store.js",
+        "content-divar.js",
         "crm-panel.js"
       ],
       "run_at": "document_idle"

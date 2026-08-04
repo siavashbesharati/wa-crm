@@ -51,16 +51,25 @@ class PlanUpdateIn(BaseModel):
     plan: str
 
 
-class WhatsAppAccountIn(BaseModel):
+class ChannelAccountIn(BaseModel):
+    channel: str = "whatsapp"
     label: str = ""
-    phone: str = ""
+    external_id: str = ""
+    phone: str = ""  # WA alias for external_id
 
 
-class WhatsAppAccountOut(BaseModel):
+class ChannelAccountOut(BaseModel):
     id: str
+    channel: str
     label: str
-    phone: str
+    external_id: str
+    phone: str  # WA alias
     status: str
+
+
+# Backward-compatible aliases
+WhatsAppAccountIn = ChannelAccountIn
+WhatsAppAccountOut = ChannelAccountOut
 
 
 class HeartbeatIn(BaseModel):
@@ -73,6 +82,9 @@ class LeadIn(BaseModel):
     name: str
     phone: str = ""
     group_id: str = ""
+    external_chat_id: str = ""
+    post_token: str = ""
+    source_channel: str = ""
     chat_type: str = "pv"
     stage: str = "جدید"
     tags: list[str] = Field(default_factory=list)
@@ -88,6 +100,9 @@ class LeadOut(BaseModel):
     name: str
     phone: str
     group_id: str
+    external_chat_id: str | None = None
+    post_token: str = ""
+    source_channel: str = ""
     chat_type: str
     stage: str
     tags: list[str]
@@ -103,6 +118,8 @@ class LeadPatchIn(BaseModel):
     name: str | None = None
     phone: str | None = None
     group_id: str | None = None
+    external_chat_id: str | None = None
+    post_token: str | None = None
     stage: str | None = None
     tags: list[str] | None = None
     notes: str | None = None
@@ -137,8 +154,12 @@ class MessageIngestIn(BaseModel):
     direction: str = "inbound"
     phone: str = ""
     group_id: str = ""
+    external_chat_id: str = ""
+    post_token: str = ""
+    ad_title: str = ""
     chat_type: str = "pv"
     wa_message_id: str = ""
+    external_message_id: str = ""
     sender_type: str = "customer"
 
 

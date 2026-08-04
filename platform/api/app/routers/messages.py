@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth
 from app.models import (
+    ChannelAccount,
+    ChannelType,
     Lead,
     LeadAccountLink,
     Message,
@@ -15,7 +17,6 @@ from app.models import (
     OutboundJob,
     OutboundStatus,
     SenderType,
-    WhatsAppAccount,
 )
 from app.plans import plan_limits
 from app.schemas import MessageIngestIn, MessageOut, OutboundJobOut, SendMessageIn
@@ -37,16 +38,34 @@ def _to_out(m: Message) -> MessageOut:
     )
 
 
-def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn) -> Lead:
-    link = (
-        db.query(LeadAccountLink)
-        .filter(
-            LeadAccountLink.org_id == org_id,
-            LeadAccountLink.account_id == body.account_id,
-            LeadAccountLink.chat_name == body.chat_name,
+def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, acc: ChannelAccount) -> Lead:
+    external_chat_id = (body.external_chat_id or "").strip() or None
+    chat_name = (body.chat_name or body.ad_title or "").strip() or "بدون نام"
+    post_token = (body.post_token or "").strip()
+    source_channel = acc.channel.value if isinstance(acc.channel, ChannelType) else str(acc.channel)
+
+    link = None
+    if external_chat_id:
+        link = (
+            db.query(LeadAccountLink)
+            .filter(
+                LeadAccountLink.org_id == org_id,
+                LeadAccountLink.account_id == body.account_id,
+                LeadAccountLink.external_chat_id == external_chat_id,
+            )
+            .first()
         )
-        .first()
-    )
+    if not link:
+        link = (
+            db.query(LeadAccountLink)
+            .filter(
+                LeadAccountLink.org_id == org_id,
+                LeadAccountLink.account_id == body.account_id,
+                LeadAccountLink.chat_name == chat_name,
+            )
+            .first()
+        )
+
     if link:
         lead = db.get(Lead, link.lead_id)
         if lead:
@@ -54,27 +73,54 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn) ->
                 lead.phone = body.phone
             if body.group_id and not lead.group_id:
                 lead.group_id = body.group_id
+            if external_chat_id and not lead.external_chat_id:
+                lead.external_chat_id = external_chat_id
+            if post_token and not lead.post_token:
+                lead.post_token = post_token
+            if not lead.source_channel:
+                lead.source_channel = source_channel
+            if body.ad_title and (not lead.name or lead.name == chat_name):
+                lead.name = body.ad_title[:200] if body.ad_title else lead.name
             lead.last_message_at = datetime.utcnow()
             lead.updated_at = datetime.utcnow()
             db.add(lead)
+            if external_chat_id and not link.external_chat_id:
+                link.external_chat_id = external_chat_id
+                db.add(link)
             return lead
 
     lead = None
-    if body.phone:
+    if external_chat_id:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == org_id, Lead.external_chat_id == external_chat_id)
+            .first()
+        )
+    if not lead and body.phone:
         lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == body.phone).first()
     if not lead and body.group_id:
         lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.group_id == body.group_id).first()
     if not lead:
+        display = (body.ad_title or chat_name)[:200]
         lead = Lead(
             org_id=org_id,
-            name=body.chat_name,
+            name=display,
             phone=body.phone if body.chat_type != "group" else "",
             group_id=body.group_id if body.chat_type == "group" else "",
+            external_chat_id=external_chat_id,
+            post_token=post_token,
+            source_channel=source_channel,
             chat_type=body.chat_type or "pv",
         )
         db.add(lead)
         db.flush()
     else:
+        if external_chat_id and not lead.external_chat_id:
+            lead.external_chat_id = external_chat_id
+        if post_token and not lead.post_token:
+            lead.post_token = post_token
+        if not lead.source_channel:
+            lead.source_channel = source_channel
         lead.last_message_at = datetime.utcnow()
         lead.updated_at = datetime.utcnow()
         db.add(lead)
@@ -84,7 +130,8 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn) ->
             org_id=org_id,
             lead_id=lead.id,
             account_id=body.account_id,
-            chat_name=body.chat_name,
+            chat_name=chat_name,
+            external_chat_id=external_chat_id,
         )
     )
     return lead
@@ -93,14 +140,15 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn) ->
 @router.post("/ingest", response_model=MessageOut)
 def ingest(body: MessageIngestIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
     acc = (
-        db.query(WhatsAppAccount)
-        .filter(WhatsAppAccount.id == body.account_id, WhatsAppAccount.org_id == auth.org.id)
+        db.query(ChannelAccount)
+        .filter(ChannelAccount.id == body.account_id, ChannelAccount.org_id == auth.org.id)
         .first()
     )
     if not acc:
-        raise HTTPException(status_code=404, detail="اکانت واتساپ یافت نشد")
+        raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
-    lead = _upsert_lead_from_ingest(db, auth.org.id, body)
+    lead = _upsert_lead_from_ingest(db, auth.org.id, body, acc)
+    ext_msg_id = (body.external_message_id or body.wa_message_id or "").strip()
     msg = Message(
         org_id=auth.org.id,
         account_id=body.account_id,
@@ -108,7 +156,7 @@ def ingest(body: MessageIngestIn, auth: AuthContext = Depends(get_auth), db: Ses
         direction=MessageDirection(body.direction),
         sender_type=SenderType(body.sender_type),
         body=body.body,
-        wa_message_id=body.wa_message_id,
+        wa_message_id=ext_msg_id,
     )
     db.add(msg)
     db.commit()
@@ -139,7 +187,7 @@ def inbox(
 
 @router.get("/threads")
 def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
-    """Aggregated inbox threads across all WA numbers in the org."""
+    """Aggregated inbox threads across all channel accounts in the org."""
     leads = (
         db.query(Lead)
         .filter(Lead.org_id == auth.org.id)
@@ -167,10 +215,20 @@ def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)
                     "name": lead.name,
                     "phone": lead.phone,
                     "group_id": lead.group_id,
+                    "external_chat_id": lead.external_chat_id,
+                    "post_token": lead.post_token,
+                    "source_channel": lead.source_channel,
                     "stage": lead.stage,
                     "assignee_id": lead.assignee_id,
                 },
-                "accounts": [{"account_id": l.account_id, "chat_name": l.chat_name} for l in links],
+                "accounts": [
+                    {
+                        "account_id": l.account_id,
+                        "chat_name": l.chat_name,
+                        "external_chat_id": l.external_chat_id,
+                    }
+                    for l in links
+                ],
                 "last_message": _to_out(last) if last else None,
             }
         )
@@ -184,12 +242,12 @@ def send_message(body: SendMessageIn, auth: AuthContext = Depends(get_auth), db:
         raise HTTPException(status_code=402, detail="پلن شما ارسال خودکار AI ندارد")
 
     acc = (
-        db.query(WhatsAppAccount)
-        .filter(WhatsAppAccount.id == body.account_id, WhatsAppAccount.org_id == auth.org.id)
+        db.query(ChannelAccount)
+        .filter(ChannelAccount.id == body.account_id, ChannelAccount.org_id == auth.org.id)
         .first()
     )
     if not acc:
-        raise HTTPException(status_code=404, detail="اکانت واتساپ یافت نشد")
+        raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
     job = OutboundJob(
         org_id=auth.org.id,

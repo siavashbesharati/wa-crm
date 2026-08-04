@@ -8,12 +8,15 @@ const cloudPhone = document.getElementById("cloud-phone");
 const cloudCode = document.getElementById("cloud-code");
 const cloudCodeWrap = document.getElementById("cloud-code-wrap");
 const cloudRole = document.getElementById("cloud-role");
+const cloudChannel = document.getElementById("cloud-channel");
 const cloudAccount = document.getElementById("cloud-account");
 const cloudOtpBtn = document.getElementById("cloud-otp-btn");
 const cloudLoginBtn = document.getElementById("cloud-login-btn");
 const cloudSaveBtn = document.getElementById("cloud-save-btn");
 const cloudDisconnect = document.getElementById("cloud-disconnect");
 const cloudSyncBtn = document.getElementById("cloud-sync-btn");
+
+const CHANNEL_LABEL = { whatsapp: "واتساپ", divar: "دیوار" };
 
 const manifest = chrome.runtime.getManifest();
 versionEl.textContent = "v" + manifest.version;
@@ -24,14 +27,27 @@ function updateOpenButton() {
   openCrmBtn.disabled = !cloudBadge.classList.contains("on");
 }
 
+function selectedChannel() {
+  return (cloudChannel && cloudChannel.value) || "whatsapp";
+}
+
 async function fillAccounts() {
   cloudAccount.innerHTML = '<option value="">— انتخاب کنید —</option>';
+  const ch = selectedChannel();
   const res = await IranexpediaCloudBridge.listAccounts();
   if (!res.ok || !Array.isArray(res.data)) return;
   res.data.forEach(function (acc) {
+    if (acc.channel && acc.channel !== ch) return;
     const opt = document.createElement("option");
     opt.value = acc.id;
-    opt.textContent = (acc.label || acc.phone || acc.id) + " · " + (acc.status || "");
+    const idLabel = acc.external_id || acc.phone || acc.id;
+    opt.textContent =
+      (CHANNEL_LABEL[acc.channel] || acc.channel || "") +
+      " · " +
+      (acc.label || idLabel) +
+      " · " +
+      (acc.status || "");
+    opt.dataset.channel = acc.channel || ch;
     cloudAccount.appendChild(opt);
   });
 }
@@ -41,6 +57,7 @@ async function refreshCloudUi() {
   cloudApi.value = cfg.apiUrl || "http://localhost:8000/api";
   cloudPhone.value = cfg.phone || "";
   cloudRole.value = cfg.role || "connector";
+  if (cloudChannel) cloudChannel.value = cfg.channel || "whatsapp";
   if (cfg.accessToken) {
     cloudCodeWrap.classList.remove("hidden");
   }
@@ -52,11 +69,14 @@ async function refreshCloudUi() {
     const st = await IranexpediaCloudBridge.status();
     const org = st.me && st.me.org ? st.me.org.name : cfg.orgName || "";
     const plan = st.me && st.me.org ? st.me.org.plan : cfg.plan || "";
+    const chLabel = CHANNEL_LABEL[cfg.channel] || cfg.channel || "کانال";
     cloudStatus.textContent =
       "سازمان: " +
       org +
       (plan ? " · پلن " + plan : "") +
-      (st.heartbeatOk ? " · کانکتور آنلاین" : " · اکانت واتساپ را انتخاب/ذخیره کنید");
+      (st.heartbeatOk
+        ? " · کانکتور " + chLabel + " آنلاین"
+        : " · اکانت کانال را انتخاب/ذخیره کنید");
     await fillAccounts();
     if (cfg.accountId) cloudAccount.value = cfg.accountId;
   } else {
@@ -69,6 +89,12 @@ async function refreshCloudUi() {
         : "سرور در دسترس نیست یا ورود نامعتبر است: " + (gate.reason || "خطا");
   }
   updateOpenButton();
+}
+
+if (cloudChannel) {
+  cloudChannel.addEventListener("change", async function () {
+    await fillAccounts();
+  });
 }
 
 cloudOtpBtn.addEventListener("click", async function () {
@@ -107,7 +133,8 @@ cloudLoginBtn.addEventListener("click", async function () {
     }
     await IranexpediaCloudBridge.setConfig({
       enabled: true,
-      role: cloudRole.value
+      role: cloudRole.value,
+      channel: selectedChannel()
     });
     if (globalThis.IranexpediaAuthGate) {
       await IranexpediaAuthGate.verify(true);
@@ -119,11 +146,14 @@ cloudLoginBtn.addEventListener("click", async function () {
 });
 
 cloudSaveBtn.addEventListener("click", async function () {
+  const ch = selectedChannel();
   let accountId = cloudAccount.value;
   if (!accountId) {
+    const defaultLabel = ch === "divar" ? "دیوار اصلی" : "واتساپ اصلی";
     const created = await IranexpediaCloudBridge.createAccount(
-      "واتساپ اصلی",
-      cloudPhone.value.trim()
+      defaultLabel,
+      cloudPhone.value.trim() || (ch === "divar" ? "divar-main" : ""),
+      ch
     );
     if (created.ok && created.data) {
       accountId = created.data.id;
@@ -131,11 +161,15 @@ cloudSaveBtn.addEventListener("click", async function () {
       cloudAccount.value = accountId;
     }
   }
+  const selectedOpt = cloudAccount.options[cloudAccount.selectedIndex];
+  const accountChannel =
+    (selectedOpt && selectedOpt.dataset && selectedOpt.dataset.channel) || ch;
   await IranexpediaCloudBridge.setConfig({
     enabled: true,
     apiUrl: cloudApi.value.trim(),
     role: cloudRole.value,
-    accountId: accountId || ""
+    accountId: accountId || "",
+    channel: accountChannel
   });
   const hb = await IranexpediaCloudBridge.heartbeat();
   cloudStatus.textContent = hb.ok
@@ -152,7 +186,8 @@ cloudDisconnect.addEventListener("click", async function () {
     accessToken: "",
     refreshToken: "",
     orgId: "",
-    accountId: ""
+    accountId: "",
+    channel: "whatsapp"
   });
   cloudCode.value = "";
   await refreshCloudUi();

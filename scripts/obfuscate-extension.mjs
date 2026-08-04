@@ -99,6 +99,7 @@ const HARD_OPTIONS = {
 const HARD_FILES = new Set([
   "cloud-bridge.js",
   "content.js",
+  "content-divar.js",
   "background.js",
   "auth-gate.js",
   "popup.js",
@@ -166,6 +167,7 @@ function main() {
     "auth-gate.js",
     "crm-store.js",
     "content.js",
+    "content-divar.js",
     "crm-panel.js",
     "popup.js",
     "dashboard.js"

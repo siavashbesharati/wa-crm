@@ -12,7 +12,7 @@ const NAV = [
   { href: "/pipeline", label: "پایپلاین", ico: "▦" },
   { href: "/inbox", label: "اینباکس", ico: "✉" },
   { href: "/tasks", label: "وظایف", ico: "☑" },
-  { href: "/whatsapp", label: "واتساپ", ico: "☎" },
+  { href: "/channels", label: "کانال‌ها", ico: "☎" },
   { href: "/team", label: "تیم", ico: "☺" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },

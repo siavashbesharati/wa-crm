@@ -33,7 +33,7 @@ export default function HomePage() {
         setMe(m);
         await api("/kpi/rollup", { method: "POST" }).catch(() => null);
         setDash(await api<Dash>("/kpi/dashboard"));
-        const acc = await api<{ id: string }[]>("/whatsapp/accounts");
+        const acc = await api<{ id: string }[]>("/channels/accounts");
         setAccounts(acc.length);
       } catch (e) {
         toast.push(e instanceof Error ? e.message : "خطا", "err");
@@ -46,9 +46,9 @@ export default function HomePage() {
   const steps = [
     {
       done: accounts > 0,
-      title: "افزودن شماره واتساپ",
-      href: "/whatsapp",
-      text: "حداقل یک شماره کسب‌وکار ثبت کنید"
+      title: "افزودن کانال",
+      href: "/channels",
+      text: "حداقل یک اکانت واتساپ یا دیوار ثبت کنید"
     },
     {
       done: (dash?.metrics.leads_total || 0) > 0,
@@ -59,7 +59,7 @@ export default function HomePage() {
     {
       done: false,
       title: "نصب افزونه کانکتور",
-      href: "/whatsapp",
+      href: "/channels",
       text: "روی یک PC همیشه روشن، افزونه را با نقش کانکتور وصل کنید"
     },
     {
@@ -82,7 +82,7 @@ export default function HomePage() {
               <div className="hint" style={{ marginTop: 6 }}>
                 پلن {me.org.plan} · نقش شما: {me.role} · سقف{" "}
                 {String(me.org.limits.max_seats)} کاربر /{" "}
-                {String(me.org.limits.max_wa_numbers)} شماره واتساپ
+                {String(me.org.limits.max_channel_accounts || me.org.limits.max_wa_numbers)} اکانت کانال
               </div>
             </Card>
           )}
@@ -102,7 +102,7 @@ export default function HomePage() {
             </div>
             <div className="stat">
               <span>{accounts}</span>
-              <small>شماره واتساپ</small>
+              <small>اکانت کانال</small>
             </div>
           </div>
 

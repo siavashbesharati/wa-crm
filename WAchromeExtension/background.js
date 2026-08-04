@@ -71,6 +71,19 @@ async function findWhatsAppTab() {
   return tabs[0];
 }
 
+async function findDivarTab() {
+  var tabs = await chrome.tabs.query({
+    url: ["https://divar.ir/chat/*", "https://chat.divar.ir/*", "https://chat.divar.ir/chat/*"]
+  });
+  if (!tabs || !tabs.length) return null;
+  return tabs[0];
+}
+
+async function findChannelTab(channel) {
+  if (channel === "divar") return findDivarTab();
+  return findWhatsAppTab();
+}
+
 async function openContactChat(targetName) {
   var name = String(targetName || "").trim();
   if (!name) return { ok: false, error: "نام مخاطب خالی است." };
@@ -563,16 +576,26 @@ async function pollCloudBridge() {
 
     var jobs = await IranexpediaCloudBridge.claimJobs(3);
     if (!jobs.length) return;
-    var tab = await findWhatsAppTab();
+    var channel = cfg.channel || "whatsapp";
+    var tab = await findChannelTab(channel);
     if (!tab) return;
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i];
       try {
-        var res = await chrome.tabs.sendMessage(tab.id, {
-          type: "sendTemplateNow",
-          targetName: job.target_name,
-          message: job.body
-        });
+        var msg =
+          channel === "divar"
+            ? {
+                type: "sendDivarMessage",
+                chatId: job.target_name,
+                targetName: job.target_name,
+                message: job.body
+              }
+            : {
+                type: "sendTemplateNow",
+                targetName: job.target_name,
+                message: job.body
+              };
+        var res = await chrome.tabs.sendMessage(tab.id, msg);
         await IranexpediaCloudBridge.completeJob(job.id, !!(res && res.ok), (res && res.error) || "");
       } catch (err) {
         await IranexpediaCloudBridge.completeJob(job.id, false, String(err && err.message || err));

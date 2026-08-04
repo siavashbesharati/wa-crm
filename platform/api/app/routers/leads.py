@@ -21,6 +21,9 @@ def _to_out(lead: Lead) -> LeadOut:
         name=lead.name,
         phone=lead.phone or "",
         group_id=lead.group_id or "",
+        external_chat_id=lead.external_chat_id,
+        post_token=lead.post_token or "",
+        source_channel=lead.source_channel or "",
         chat_type=lead.chat_type,
         stage=lead.stage,
         tags=lead.tags or [],
@@ -53,7 +56,12 @@ def list_leads(
         query = query.filter(Lead.assignee_id == assignee_id)
     if q:
         like = f"%{q}%"
-        query = query.filter((Lead.name.ilike(like)) | (Lead.phone.ilike(like)) | (Lead.notes.ilike(like)))
+        query = query.filter(
+            (Lead.name.ilike(like))
+            | (Lead.phone.ilike(like))
+            | (Lead.notes.ilike(like))
+            | (Lead.external_chat_id.ilike(like))
+        )
     rows = query.order_by(Lead.updated_at.desc()).limit(500).all()
     return [_to_out(r) for r in rows]
 
@@ -61,8 +69,15 @@ def list_leads(
 @router.post("", response_model=LeadOut)
 def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
     name = body.name.strip()
+    external_chat_id = (body.external_chat_id or "").strip() or None
     lead = None
-    if body.phone:
+    if external_chat_id:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == auth.org.id, Lead.external_chat_id == external_chat_id)
+            .first()
+        )
+    if not lead and body.phone:
         lead = (
             db.query(Lead)
             .filter(Lead.org_id == auth.org.id, Lead.phone == body.phone)
@@ -87,6 +102,12 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             lead.phone = body.phone
         if body.group_id:
             lead.group_id = body.group_id
+        if external_chat_id:
+            lead.external_chat_id = external_chat_id
+        if body.post_token:
+            lead.post_token = body.post_token
+        if body.source_channel:
+            lead.source_channel = body.source_channel
         lead.chat_type = body.chat_type or lead.chat_type
         if body.stage:
             lead.stage = body.stage
@@ -106,6 +127,9 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             name=name,
             phone=body.phone,
             group_id=body.group_id,
+            external_chat_id=external_chat_id,
+            post_token=body.post_token or "",
+            source_channel=body.source_channel or "",
             chat_type=body.chat_type,
             stage=body.stage or STAGES[0],
             tags=body.tags,
@@ -118,22 +142,36 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
         db.flush()
 
     if body.account_id:
-        exists = (
-            db.query(LeadAccountLink)
-            .filter(
-                LeadAccountLink.org_id == auth.org.id,
-                LeadAccountLink.account_id == body.account_id,
-                LeadAccountLink.chat_name == (body.chat_name or body.name),
+        chat_name = body.chat_name or body.name
+        exists = None
+        if external_chat_id:
+            exists = (
+                db.query(LeadAccountLink)
+                .filter(
+                    LeadAccountLink.org_id == auth.org.id,
+                    LeadAccountLink.account_id == body.account_id,
+                    LeadAccountLink.external_chat_id == external_chat_id,
+                )
+                .first()
             )
-            .first()
-        )
+        if not exists:
+            exists = (
+                db.query(LeadAccountLink)
+                .filter(
+                    LeadAccountLink.org_id == auth.org.id,
+                    LeadAccountLink.account_id == body.account_id,
+                    LeadAccountLink.chat_name == chat_name,
+                )
+                .first()
+            )
         if not exists:
             db.add(
                 LeadAccountLink(
                     org_id=auth.org.id,
                     lead_id=lead.id,
                     account_id=body.account_id,
-                    chat_name=body.chat_name or body.name,
+                    chat_name=chat_name,
+                    external_chat_id=external_chat_id,
                 )
             )
     db.commit()

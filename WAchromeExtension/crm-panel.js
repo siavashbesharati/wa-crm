@@ -12,6 +12,16 @@
   var lastRenderKey = "";
   var autoReplyOn = false;
 
+  function detectHostChannel() {
+    try {
+      var host = String(location.hostname || "");
+      if (host.indexOf("divar.ir") !== -1) return "divar";
+    } catch (_e) {}
+    return "whatsapp";
+  }
+
+  var hostChannel = detectHostChannel();
+
   function isTypingInPanel() {
     if (!root) return false;
     var active = document.activeElement;
@@ -97,7 +107,9 @@
     var contactHtml;
     if (!currentName) {
       contactHtml =
-        '<p class="crm-empty">یک چت را در واتساپ باز کنید تا کارت مخاطب نمایش داده شود.</p>';
+        hostChannel === "divar"
+          ? '<p class="crm-empty">یک گفتگو را در دیوار باز کنید تا کارت مخاطب نمایش داده شود.</p>'
+          : '<p class="crm-empty">یک چت را در واتساپ باز کنید تا کارت مخاطب نمایش داده شود.</p>';
     } else {
       var c = currentContact || {
         name: currentName,
@@ -131,8 +143,12 @@
       contactHtml =
         '<div class="crm-field"><label>نام</label>' +
         '<input id="crm-contact-name" type="text" /></div>' +
-        '<div class="crm-field" id="crm-phone-wrap"><label>شماره</label>' +
-        '<input id="crm-contact-phone" type="text" placeholder="98912..." /></div>' +
+        '<div class="crm-field" id="crm-phone-wrap"><label>' +
+        (hostChannel === "divar" ? "شناسه چت دیوار" : "شماره") +
+        "</label>" +
+        '<input id="crm-contact-phone" type="text" placeholder="' +
+        (hostChannel === "divar" ? "chatId" : "98912...") +
+        '" /></div>' +
         '<div class="crm-field" id="crm-group-wrap" style="display:none"><label>شناسه گروه</label>' +
         '<input id="crm-contact-group" type="text" /></div>' +
         '<div class="crm-meta">نوع: ' +
@@ -176,12 +192,14 @@
 
     panel.innerHTML =
       '<div class="crm-head">' +
-      '<div class="crm-brand">پنل CRM واتساپ</div>' +
+      '<div class="crm-brand">پنل CRM چندکاناله</div>' +
       '<div class="crm-sub">iranexpedia.ir · v' +
       (chrome.runtime.getManifest().version || "") +
       "</div>" +
       '<div class="crm-health">' +
-      '<span class="crm-chip ok" id="crm-chip-wa">واتساپ متصل</span>' +
+      '<span class="crm-chip ok" id="crm-chip-wa">' +
+      (hostChannel === "divar" ? "دیوار متصل" : "واتساپ متصل") +
+      "</span>" +
       '<span class="crm-chip' +
       (queuedCount ? " warn" : "") +
       '" id="crm-chip-q">' +
@@ -197,7 +215,9 @@
       "</div>" +
       '<div class="crm-power-sub">' +
       (autoReplyOn
-        ? "پاسخ خودکار روی چت‌ها و گروه‌ها فعال است"
+        ? hostChannel === "divar"
+          ? "پاسخ خودکار روی چت دیوار فعال است"
+          : "پاسخ خودکار روی چت‌ها و گروه‌ها فعال است"
         : "هیچ پیام خودکاری ارسال نمی‌شود") +
       "</div></div>" +
       '<button type="button" class="crm-power-switch" id="crm-global-toggle" aria-pressed="' +
@@ -207,10 +227,16 @@
       '<span class="crm-power-label">' +
       (autoReplyOn ? "ON" : "OFF") +
       "</span></button></div>" +
-      '<button type="button" class="crm-btn crm-members-btn" id="crm-download-members">دانلود اعضای گروه</button>' +
+      (hostChannel === "divar"
+        ? ""
+        : '<button type="button" class="crm-btn crm-members-btn" id="crm-download-members">دانلود اعضای گروه</button>') +
       '<button type="button" class="crm-btn secondary" id="crm-open-dash">باز کردن داشبورد کامل</button>' +
       "</div>" +
-      '<div class="crm-banner">برای زمان‌بندی، واتساپ وب باید باز بماند.</div>' +
+      '<div class="crm-banner">' +
+      (hostChannel === "divar"
+        ? "برای اتوماسیون، تب چت دیوار باید باز بماند."
+        : "برای زمان‌بندی، واتساپ وب باید باز بماند.") +
+      "</div>" +
       '<div class="crm-body' +
       (autoReplyOn ? "" : " is-dimmed") +
       '">' +
@@ -253,9 +279,13 @@
       }
       if (phoneInput) {
         phoneInput.value =
-          (currentContact && currentContact.phone) ||
-          (identity && identity.phone) ||
-          "";
+          hostChannel === "divar"
+            ? (identity && (identity.externalChatId || identity.chatId)) ||
+              (currentContact && currentContact.phone) ||
+              ""
+            : (currentContact && currentContact.phone) ||
+              (identity && identity.phone) ||
+              "";
       }
       if (groupInput) {
         groupInput.value =

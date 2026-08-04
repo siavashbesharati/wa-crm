@@ -13,6 +13,8 @@ import {
   CrmViewToggle,
   STAGES,
   STAGE_DOT,
+  CHANNEL_LABELS,
+  leadIdentity,
   type Lead,
   type Member,
   memberLabel
@@ -57,6 +59,8 @@ export default function LeadsPage() {
       return (
         l.name.toLowerCase().includes(needle) ||
         (l.phone || "").includes(needle) ||
+        (l.external_chat_id || "").toLowerCase().includes(needle) ||
+        (l.source_channel || "").toLowerCase().includes(needle) ||
         (l.tags || []).some((t) => t.toLowerCase().includes(needle))
       );
     });
@@ -153,7 +157,7 @@ export default function LeadsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState
             title="هنوز لیدی نیست"
-            text="افزونه را Reload کنید، واتساپ را باز بگذارید، «همگام‌سازی لیدها از واتساپ» را بزنید، یا از فرم بالا بسازید."
+            text="افزونه را Reload کنید، تب واتساپ یا دیوار را باز بگذارید، یا از فرم بالا لید بسازید."
           />
         ) : (
           <div style={{ overflow: "auto" }}>
@@ -161,7 +165,8 @@ export default function LeadsPage() {
               <thead>
                 <tr>
                   <th>نام</th>
-                  <th>تلفن / گروه</th>
+                  <th>شناسه / تلفن</th>
+                  <th>کانال</th>
                   <th>مرحله</th>
                   <th>ارجاع</th>
                 </tr>
@@ -179,7 +184,16 @@ export default function LeadsPage() {
                         ))}
                       </div>
                     </td>
-                    <td>{l.phone || l.group_id || "-"}</td>
+                    <td>{leadIdentity(l)}</td>
+                    <td>
+                      {l.source_channel ? (
+                        <Badge tone="accent">
+                          {CHANNEL_LABELS[l.source_channel] || l.source_channel}
+                        </Badge>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     <td>
                       <div className="row-actions">
                         <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />

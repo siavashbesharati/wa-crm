@@ -16,6 +16,8 @@ sys.path.insert(0, str(ROOT))
 from app.database import Base, SessionLocal, engine
 from app.models import (
     AiPolicy,
+    ChannelAccount,
+    ChannelType,
     KnowledgeChunk,
     KnowledgeDoc,
     Lead,
@@ -24,13 +26,26 @@ from app.models import (
     Organization,
     OkrObjective,
     User,
-    WhatsAppAccount,
 )
 from app.services.embeddings import chunk_text, embed_text
 
 
 def main() -> None:
-    Base.metadata.create_all(bind=engine)
+    # Bring older local SQLite schemas forward when possible
+    try:
+        import importlib.util
+
+        mig_path = Path(__file__).resolve().parent / "migrate_multichannel.py"
+        spec = importlib.util.spec_from_file_location("migrate_multichannel", mig_path)
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.main()
+        else:
+            Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        print("migrate skipped:", exc)
+        Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     phone = "09120000000"
     user = db.query(User).filter(User.phone == phone).first()
@@ -49,12 +64,46 @@ def main() -> None:
         db.add(Membership(org_id=org.id, user_id=user.id, role=MemberRole.owner))
         db.add(AiPolicy(org_id=org.id, auto_send_enabled=False, min_confidence=0.55))
 
-    if not db.query(WhatsAppAccount).filter(WhatsAppAccount.org_id == org.id).first():
-        db.add(WhatsAppAccount(org_id=org.id, label="واتساپ فروش", phone="989121234567", status="disconnected"))
+    if not db.query(ChannelAccount).filter(
+        ChannelAccount.org_id == org.id, ChannelAccount.channel == ChannelType.whatsapp
+    ).first():
+        db.add(
+            ChannelAccount(
+                org_id=org.id,
+                channel=ChannelType.whatsapp,
+                label="واتساپ فروش",
+                external_id="989121234567",
+                status="disconnected",
+            )
+        )
+
+    if not db.query(ChannelAccount).filter(
+        ChannelAccount.org_id == org.id, ChannelAccount.channel == ChannelType.divar
+    ).first():
+        db.add(
+            ChannelAccount(
+                org_id=org.id,
+                channel=ChannelType.divar,
+                label="دیوار فروش",
+                external_id="divar-demo",
+                status="disconnected",
+            )
+        )
 
     if db.query(Lead).filter(Lead.org_id == org.id).count() == 0:
-        db.add(Lead(org_id=org.id, name="نمونه مشتری", phone="989129998877", stage="جدید", tags=["دمو"]))
-        db.add(Lead(org_id=org.id, name="پیگیری تور", phone="989127776655", stage="پیگیری", tags=["تور"]))
+        db.add(Lead(org_id=org.id, name="نمونه مشتری", phone="989129998877", stage="جدید", tags=["دمو"], source_channel="whatsapp"))
+        db.add(Lead(org_id=org.id, name="پیگیری تور", phone="989127776655", stage="پیگیری", tags=["تور"], source_channel="whatsapp"))
+        db.add(
+            Lead(
+                org_id=org.id,
+                name="آگهی خوابگاه نمونه",
+                external_chat_id="Qa2noKqg",
+                post_token="Qa2noKqg",
+                source_channel="divar",
+                stage="جدید",
+                tags=["دیوار", "دمو"],
+            )
+        )
 
     if not db.query(KnowledgeDoc).filter(KnowledgeDoc.org_id == org.id).first():
         doc = KnowledgeDoc(org_id=org.id, title="FAQ دمو", source="seed")

@@ -7,11 +7,23 @@ export type Lead = {
   name: string;
   phone: string;
   group_id: string;
+  external_chat_id?: string | null;
+  post_token?: string;
+  source_channel?: string;
   stage: string;
   tags: string[];
   notes: string;
   assignee_id: string | null;
 };
+
+export const CHANNEL_LABELS: Record<string, string> = {
+  whatsapp: "واتساپ",
+  divar: "دیوار"
+};
+
+export function leadIdentity(l: Lead) {
+  return l.phone || l.external_chat_id || l.group_id || "-";
+}
 
 export type Member = { user_id: string; display_name: string; phone: string };
 

@@ -74,7 +74,7 @@ export default function TeamPage() {
             <Card title={org.name}>
               <div className="hint">
                 پلن {org.plan} — حداکثر {String(org.limits.max_seats)} کاربر /{" "}
-                {String(org.limits.max_wa_numbers)} شماره واتساپ
+                {String(org.limits.max_channel_accounts || org.limits.max_wa_numbers)} اکانت کانال
               </div>
               <div className="row-actions" style={{ marginTop: 12 }}>
                 <select value={plan} onChange={(e) => setPlan(e.target.value)} style={{ width: "auto" }}>

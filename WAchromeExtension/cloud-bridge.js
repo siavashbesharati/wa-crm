@@ -1,8 +1,8 @@
 /**
- * Cloud bridge for B2B platform API.
+ * Cloud bridge for B2B multi-channel platform API.
  * Hybrid connector: auth, heartbeat, claim jobs, ingest, lead sync.
  *
- * Content scripts on https://web.whatsapp.com cannot call localhost/API
+ * Content scripts on WhatsApp / Divar cannot call localhost/API
  * directly (CORS / mixed-content). Those calls are proxied through the
  * background service worker, which has host_permissions.
  */
@@ -72,6 +72,7 @@
       refreshToken: cfg.refreshToken || "",
       orgId: cfg.orgId || "",
       accountId: cfg.accountId || "",
+      channel: cfg.channel || "whatsapp",
       role: cfg.role || "connector",
       phone: cfg.phone || "",
       orgName: cfg.orgName || "",
@@ -91,6 +92,7 @@
         refreshToken: next.refreshToken,
         orgId: next.orgId,
         accountId: next.accountId,
+        channel: next.channel || "whatsapp",
         role: next.role,
         phone: next.phone,
         orgName: next.orgName,
@@ -179,21 +181,30 @@
     return { ok: true, data: token };
   }
 
-  async function listAccountsImpl() {
-    return request("/whatsapp/accounts", { method: "GET" });
+  async function listAccountsImpl(channel) {
+    var q = "/channels/accounts";
+    if (channel) q += "?channel=" + encodeURIComponent(channel);
+    return request(q, { method: "GET" });
   }
 
-  async function createAccountImpl(label, phone) {
-    return request("/whatsapp/accounts", {
+  async function createAccountImpl(label, phoneOrExternalId, channel) {
+    var ch = channel || "whatsapp";
+    var externalId = phoneOrExternalId || "";
+    return request("/channels/accounts", {
       method: "POST",
-      body: { label: label || phone || "واتساپ", phone: phone || "" }
+      body: {
+        channel: ch,
+        label: label || (ch === "divar" ? "دیوار" : "واتساپ"),
+        external_id: externalId,
+        phone: ch === "whatsapp" ? externalId : ""
+      }
     });
   }
 
   async function heartbeatImpl() {
     var cfg = await getConfig();
     if (!cfg.enabled || !cfg.accountId) return { ok: false, error: "no_account" };
-    return request("/whatsapp/heartbeat", {
+    return request("/channels/heartbeat", {
       method: "POST",
       body: {
         account_id: cfg.accountId,
@@ -207,7 +218,7 @@
     var cfg = await getConfig();
     if (!cfg.enabled || !cfg.accountId) return [];
     var q =
-      "/whatsapp/jobs/claim?account_id=" +
+      "/channels/jobs/claim?account_id=" +
       encodeURIComponent(cfg.accountId) +
       "&device_id=" +
       encodeURIComponent(cfg.deviceId) +
@@ -220,7 +231,7 @@
 
   async function completeJobImpl(jobId, ok, error) {
     return request(
-      "/whatsapp/jobs/" +
+      "/channels/jobs/" +
         encodeURIComponent(jobId) +
         "/complete?ok=" +
         (ok ? "true" : "false") +
@@ -248,13 +259,16 @@
         name: lead.name || "",
         phone: lead.phone || "",
         group_id: lead.groupId || lead.group_id || "",
+        external_chat_id: lead.externalChatId || lead.external_chat_id || "",
+        post_token: lead.postToken || lead.post_token || "",
+        source_channel: lead.sourceChannel || lead.source_channel || cfg.channel || "",
         chat_type: lead.chatType || lead.chat_type || "pv",
         stage: lead.stage || "جدید",
         tags: lead.tags || [],
         notes: lead.notes || "",
         bot_paused: !!lead.botPaused,
         account_id: cfg.accountId || null,
-        chat_name: lead.name || ""
+        chat_name: lead.name || lead.chatName || ""
       }
     });
   }
