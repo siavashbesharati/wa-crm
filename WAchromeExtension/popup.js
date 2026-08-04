@@ -1,11 +1,4 @@
 const versionEl = document.getElementById("ext-version");
-const licenseForm = document.getElementById("license-form");
-const licenseKeyInput = document.getElementById("license-key");
-const licenseBtn = document.getElementById("license-btn");
-const licenseClearBtn = document.getElementById("license-clear");
-const licenseBadge = document.getElementById("license-badge");
-const licenseMessage = document.getElementById("license-message");
-const licenseExpiry = document.getElementById("license-expiry");
 const openCrmBtn = document.getElementById("open-crm");
 
 const cloudBadge = document.getElementById("cloud-badge");
@@ -27,32 +20,8 @@ versionEl.textContent = "v" + manifest.version;
 const footerVersion = document.getElementById("footer-version");
 if (footerVersion) footerVersion.textContent = manifest.version;
 
-function setLicenseUi(status) {
-  const valid = !!status?.valid;
-  licenseBadge.textContent = valid ? "فعال" : "غیرفعال";
-  licenseBadge.classList.toggle("on", valid);
-  licenseBadge.classList.toggle("off", !valid);
-  licenseMessage.textContent =
-    status?.message || "برای استفاده، کلید فعال‌سازی را وارد کنید.";
-
-  if (valid && status.expiresAt) {
-    licenseExpiry.textContent =
-      "تاریخ انقضا: " + new Date(status.expiresAt).toLocaleString("fa-IR");
-  } else {
-    licenseExpiry.textContent = "";
-  }
-}
-
-async function refreshLicenseUi() {
-  const status = await IranexpediaLicense.getStoredLicenseStatus();
-  setLicenseUi(status);
-  updateOpenButton();
-}
-
 function updateOpenButton() {
-  const licenseOn = licenseBadge.classList.contains("on");
-  const cloudOn = cloudBadge.classList.contains("on");
-  openCrmBtn.disabled = !(licenseOn || cloudOn);
+  openCrmBtn.disabled = !cloudBadge.classList.contains("on");
 }
 
 async function fillAccounts() {
@@ -75,11 +44,12 @@ async function refreshCloudUi() {
   if (cfg.accessToken) {
     cloudCodeWrap.classList.remove("hidden");
   }
-  const st = await IranexpediaCloudBridge.status();
-  if (st.connected) {
+  const gate = await IranexpediaAuthGate.verify();
+  if (gate.ok && IranexpediaAuthGate.assertUnlocked()) {
     cloudBadge.textContent = "متصل";
     cloudBadge.classList.add("on");
     cloudBadge.classList.remove("off");
+    const st = await IranexpediaCloudBridge.status();
     const org = st.me && st.me.org ? st.me.org.name : cfg.orgName || "";
     const plan = st.me && st.me.org ? st.me.org.plan : cfg.plan || "";
     cloudStatus.textContent =
@@ -94,42 +64,12 @@ async function refreshCloudUi() {
     cloudBadge.classList.add("off");
     cloudBadge.classList.remove("on");
     cloudStatus.textContent =
-      st.reason === "not_configured"
-        ? "برای کار تیمی به سرور ابری وصل شوید."
-        : "اتصال ناموفق: " + (st.reason || "خطا");
+      gate.reason === "not_enabled" || gate.reason === "not_configured"
+        ? "برای استفاده، با کد OTP به سرور وصل شوید."
+        : "سرور در دسترس نیست یا ورود نامعتبر است: " + (gate.reason || "خطا");
   }
   updateOpenButton();
 }
-
-licenseForm.addEventListener("submit", async function (event) {
-  event.preventDefault();
-  const key = licenseKeyInput.value.trim();
-  licenseBtn.disabled = true;
-  licenseBtn.textContent = "در حال بررسی...";
-  try {
-    const result = await IranexpediaLicense.activateLicense(key);
-    setLicenseUi(result);
-    updateOpenButton();
-  } catch (err) {
-    setLicenseUi({
-      valid: false,
-      message: err.message || "خطا در فعال‌سازی. دوباره تلاش کنید."
-    });
-  } finally {
-    licenseBtn.disabled = false;
-    licenseBtn.textContent = "فعال‌سازی";
-  }
-});
-
-licenseClearBtn.addEventListener("click", async function () {
-  await IranexpediaLicense.clearLicense();
-  licenseKeyInput.value = "";
-  setLicenseUi({
-    valid: false,
-    message: "کلید حذف شد."
-  });
-  updateOpenButton();
-});
 
 cloudOtpBtn.addEventListener("click", async function () {
   cloudOtpBtn.disabled = true;
@@ -139,13 +79,14 @@ cloudOtpBtn.addEventListener("click", async function () {
       cloudApi.value.trim()
     );
     if (!res.ok) {
-      cloudStatus.textContent = "خطا: " + (res.error || "ارسال کد ناموفق");
+      cloudStatus.textContent = "خطا: " + (res.error || "ارسال کد ناموفق — سرور را چک کنید");
       return;
     }
     cloudCodeWrap.classList.remove("hidden");
-    cloudStatus.textContent = res.data && res.data.dev_code
-      ? "کد mock: " + res.data.dev_code
-      : "کد ارسال شد.";
+    cloudStatus.textContent =
+      res.data && res.data.dev_code
+        ? "کد mock: " + res.data.dev_code
+        : "کد ارسال شد.";
   } finally {
     cloudOtpBtn.disabled = false;
   }
@@ -168,6 +109,9 @@ cloudLoginBtn.addEventListener("click", async function () {
       enabled: true,
       role: cloudRole.value
     });
+    if (globalThis.IranexpediaAuthGate) {
+      await IranexpediaAuthGate.verify(true);
+    }
     await refreshCloudUi();
   } finally {
     cloudLoginBtn.disabled = false;
@@ -202,6 +146,7 @@ cloudSaveBtn.addEventListener("click", async function () {
 });
 
 cloudDisconnect.addEventListener("click", async function () {
+  if (globalThis.IranexpediaAuthGate) IranexpediaAuthGate.revoke();
   await IranexpediaCloudBridge.setConfig({
     enabled: false,
     accessToken: "",
@@ -223,7 +168,6 @@ cloudSyncBtn.addEventListener("click", async function () {
       });
     });
     if (!scan.ok && scan.error === "whatsapp_tab_not_found") {
-      // Still push whatever is already in local CRM.
       const syncOnly = await new Promise(function (resolve) {
         chrome.runtime.sendMessage({ type: "cloudSyncContacts" }, function (res) {
           resolve(res || { ok: false });
@@ -255,5 +199,4 @@ openCrmBtn.addEventListener("click", function () {
   chrome.runtime.sendMessage({ type: "openDashboard" });
 });
 
-refreshLicenseUi();
 refreshCloudUi();

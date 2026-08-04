@@ -113,6 +113,9 @@
           </div>
           <form id="drawer-form" class="card form-grid drawer-form">
             <p class="hint" style="grid-column:1/-1">اطلاعات CRM فقط برای شماست و به واتساپ ارسال نمی‌شود.</p>
+            <label class="full" style="grid-column:1/-1">نام مخاطب
+              <input id="drawer-display-name" type="text" required />
+            </label>
             <label>مرحله
               <select id="drawer-stage"></select>
             </label>
@@ -232,10 +235,9 @@
     </div>
   </div>
 
-  <script src="license-config.js"></script>
-  <script src="license-lib.js"></script>
   <script src="crm-store.js"></script>
   <script src="cloud-bridge.js"></script>
+  <script src="auth-gate.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

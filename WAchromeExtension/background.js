@@ -2,11 +2,21 @@
  * Trusted time + CRM task scheduler dispatcher + cloud bridge.
  */
 
-importScripts("cloud-bridge.js");
+importScripts("cloud-bridge.js", "auth-gate.js");
 
 var SWEEP_ALARM = "crm_task_sweep";
 var CLOUD_ALARM = "cloud_bridge_poll";
 var lastCloudContactSyncAt = 0;
+
+async function requireCloudAuth(force) {
+  try {
+    if (typeof IranexpediaAuthGate === "undefined") return false;
+    var res = await IranexpediaAuthGate.verify(!!force);
+    return !!(res && res.ok && IranexpediaAuthGate.assertUnlocked());
+  } catch (_e) {
+    return false;
+  }
+}
 
 function alarmNameForTask(taskId) {
   return "crm_task_" + taskId;
@@ -508,6 +518,9 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
 });
 
 async function syncLocalContactsToCloud() {
+  if (!(await requireCloudAuth(false))) {
+    return { ok: false, error: "auth_required", synced: 0 };
+  }
   var cfg = await IranexpediaCloudBridge.getConfig();
   if (!cfg.enabled || !cfg.accessToken || !cfg.orgId) {
     return { ok: false, error: "cloud_disabled", synced: 0 };
@@ -540,6 +553,7 @@ async function pollCloudBridge() {
   try {
     var cfg = await IranexpediaCloudBridge.getConfig();
     if (!cfg.enabled) return;
+    if (!(await requireCloudAuth(false))) return;
     await IranexpediaCloudBridge.heartbeat();
 
     // Push local CRM contacts → server (real reason backend has leads).

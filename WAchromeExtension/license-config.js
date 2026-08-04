@@ -23,6 +23,12 @@
         hash: "ae4caab68fd14646227ca1b1369b8e2d357e564962b674afb97f1d1f7d1b7b79",
         expiresAt: "2026-12-31T23:59:59.000Z",
         label: "taban"
+      },
+      {
+        // generated for label: ARMIN
+        hash: "fce2f6377f9bfe52a281e057399b61a773ec7c3dc796008ff27efe858de25d02",
+        expiresAt: "2026-12-31T23:59:59.000Z",
+        label: "ARMIN"
       }
     ]
   };

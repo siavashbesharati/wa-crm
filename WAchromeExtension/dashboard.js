@@ -93,21 +93,20 @@
   });
 
   async function ensureLicense() {
-    var status = await IranexpediaLicense.getStoredLicenseStatus();
-    var cloudOk = false;
-    if (globalThis.IranexpediaCloudBridge) {
-      try {
-        var st = await IranexpediaCloudBridge.status();
-        cloudOk = !!st.connected;
-      } catch (_err) {
-        cloudOk = false;
-      }
-    }
-    if (!status.valid && !cloudOk) {
+    if (!globalThis.IranexpediaAuthGate) {
       document.querySelector("main.content").innerHTML =
         '<div class="card" style="max-width:520px;margin:40px auto;text-align:center">' +
-        "<h2>فعال‌سازی لازم است</h2>" +
-        "<p class='hint'>از پاپ‌آپ افزونه کلید لایسنس وارد کنید یا با OTP به ابر تیمی وصل شوید.</p>" +
+        "<h2>ورود ابری لازم است</h2>" +
+        "<p class='hint'>ماژول احراز هویت در دسترس نیست. افزونه را Reload کنید.</p>" +
+        "</div>";
+      return false;
+    }
+    var res = await IranexpediaAuthGate.verify(true);
+    if (!res.ok || !IranexpediaAuthGate.assertUnlocked()) {
+      document.querySelector("main.content").innerHTML =
+        '<div class="card" style="max-width:520px;margin:40px auto;text-align:center">' +
+        "<h2>ورود ابری لازم است</h2>" +
+        "<p class='hint'>از پاپ‌آپ افزونه با OTP به سرور وصل شوید. بدون سرور داشبورد کار نمی‌کند.</p>" +
         "</div>";
       return false;
     }
@@ -233,6 +232,9 @@
       fmt(contact.lastMessageAt || contact.updatedAt);
     fillStageSelect($("drawer-stage"), contact.stage || stages()[0]);
     $("drawer-tags").value = (contact.tags || []).join("، ");
+    if ($("drawer-display-name")) {
+      $("drawer-display-name").value = contact.name || "";
+    }
     syncDrawerIdentityFields(contact);
     $("drawer-notes").value = contact.notes || "";
     $("drawer-bot-paused").checked = !!contact.botPaused;
@@ -690,7 +692,9 @@
       })
       .filter(Boolean);
     var isGroup = (selectedContact.chatType || "pv") === "group";
+    var displayName = ($("drawer-display-name") && $("drawer-display-name").value) || selectedContact.name;
     await IranexpediaCrm.saveContactDetails(selectedContact.id, {
+      name: displayName,
       stage: $("drawer-stage").value,
       tags: tags,
       notes: $("drawer-notes").value || "",

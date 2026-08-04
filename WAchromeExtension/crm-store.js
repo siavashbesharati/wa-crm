@@ -101,6 +101,15 @@
     return normalizeContactKey(a) === normalizeContactKey(b);
   }
 
+  function looksLikePhoneLocal(value) {
+    var t = String(value || "").replace(/[\s\-()]/g, "");
+    return /^\+?\d{8,15}$/.test(t);
+  }
+
+  function normalizePhoneLocal(value) {
+    return String(value || "").replace(/[\s\-()]/g, "").trim();
+  }
+
   async function upsertContact(partial) {
     var name = String((partial && partial.name) || "")
       .normalize("NFC")
@@ -128,10 +137,23 @@
     var now = Date.now();
     if (idx >= 0) {
       var prev = list[idx];
+      var nextName = name || prev.name;
+      // Upgrade placeholder name (was only a number) when a real display name arrives.
+      if (
+        name &&
+        prev.name &&
+        looksLikePhoneLocal(prev.name) &&
+        !looksLikePhoneLocal(name)
+      ) {
+        nextName = name;
+      } else if (namesMatch(prev.name, name)) {
+        nextName = prev.name || name;
+      } else if (name) {
+        nextName = name;
+      }
       list[idx] = Object.assign({}, prev, partial, {
         id: prev.id,
-        // Keep existing Farsi display name when keys match (avoid ي/ی flicker)
-        name: namesMatch(prev.name, name) ? prev.name || name : name || prev.name,
+        name: nextName,
         phone: phone || prev.phone || "",
         groupId: groupId || prev.groupId || "",
         chatType: partial.chatType || prev.chatType || "pv",
@@ -192,6 +214,17 @@
     );
   }
 
+  async function getContactByPhone(phone) {
+    var p = normalizePhoneLocal(phone);
+    if (!p || p.length < 8) return null;
+    var list = await getContacts();
+    return (
+      list.find(function (c) {
+        return normalizePhoneLocal(c.phone) === p;
+      }) || null
+    );
+  }
+
   async function getContactById(id) {
     var list = await getContacts();
     return (
@@ -232,12 +265,25 @@
   async function saveContactDetails(id, patch) {
     var contact = await getContactById(id);
     if (!contact) return null;
+    var nextName =
+      patch.name != null
+        ? String(patch.name)
+            .normalize("NFC")
+            .replace(/[\u200c\u200d\ufeff]/g, "")
+            .trim()
+            .replace(/\s+/g, " ")
+        : contact.name;
+    if (!nextName) nextName = contact.name;
     var next = {
+      name: nextName,
       stage: patch.stage != null ? patch.stage : contact.stage,
       tags: Array.isArray(patch.tags) ? patch.tags : contact.tags,
       notes: patch.notes != null ? String(patch.notes) : contact.notes,
       botPaused: patch.botPaused != null ? !!patch.botPaused : contact.botPaused,
-      phone: patch.phone != null ? String(patch.phone) : contact.phone,
+      phone:
+        patch.phone != null
+          ? normalizePhoneLocal(patch.phone)
+          : contact.phone || "",
       groupId: patch.groupId != null ? String(patch.groupId) : contact.groupId || ""
     };
     var stageChanged = next.stage && next.stage !== contact.stage;
@@ -245,17 +291,17 @@
     if (stageChanged) {
       await addEvent(
         "stage_change",
-        "مرحله «" + contact.name + "»: " + (contact.stage || "-") + " ← " + next.stage,
+        "مرحله «" + nextName + "»: " + (contact.stage || "-") + " ← " + next.stage,
         {
-          contactName: contact.name,
+          contactName: nextName,
           contactId: id,
           from: contact.stage,
           to: next.stage
         }
       );
     } else {
-      await addEvent("contact_update", "به‌روزرسانی مخاطب: " + contact.name, {
-        contactName: contact.name,
+      await addEvent("contact_update", "به‌روزرسانی مخاطب: " + nextName, {
+        contactName: nextName,
         contactId: id
       });
     }
@@ -432,6 +478,7 @@
     updateContact: updateContact,
     deleteContact: deleteContact,
     getContactByName: getContactByName,
+    getContactByPhone: getContactByPhone,
     getContactById: getContactById,
     getEventsForContact: getEventsForContact,
     setContactStage: setContactStage,

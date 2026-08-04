@@ -156,38 +156,29 @@ function log() {
     console.log.apply(console, args);
 }
 
-/* ================= LICENSE (hashed key + expiry + web time) ================= */
+/* ================= AUTH (OTP/cloud only via hardened AuthGate) ================= */
 async function refreshLicenseStatus() {
     try {
-        if (!globalThis.IranexpediaLicense) {
+        if (!globalThis.IranexpediaAuthGate) {
             licenseValid = false;
-            licenseMessage = "خطا در بارگذاری. صفحه را تازه کنید.";
+            licenseMessage = "ماژول احراز هویت بارگذاری نشد.";
             return false;
         }
-        const status = await IranexpediaLicense.getStoredLicenseStatus();
-        let cloudOk = false;
-        if (globalThis.IranexpediaCloudBridge) {
-            try {
-                const st = await IranexpediaCloudBridge.status();
-                cloudOk = !!st.connected;
-            } catch (_e) {
-                cloudOk = false;
-            }
-        }
-        licenseValid = !!status.valid || cloudOk;
-        licenseMessage = status.valid
-            ? status.message || "فعال"
-            : cloudOk
-              ? "فعال با ابر تیمی"
-              : status.message || "غیرفعال";
+        const res = await IranexpediaAuthGate.verify();
+        licenseValid = !!(res && res.ok && IranexpediaAuthGate.assertUnlocked());
+        licenseMessage = licenseValid
+            ? "فعال با ورود OTP ابری"
+            : "سرور در دسترس نیست یا وارد نشده‌اید — از پاپ‌آپ با OTP وصل شوید (" +
+              ((res && res.reason) || IranexpediaAuthGate.getReason()) +
+              ")";
         if (!licenseValid && isEnabled) {
             isEnabled = false;
-            log("فعال‌سازی نامعتبر/منقضی — پاسخ خودکار خاموش شد");
+            log("اتصال ابری قطع — پاسخ خودکار خاموش شد");
         }
         return licenseValid;
     } catch (err) {
         licenseValid = false;
-        licenseMessage = err.message || "خطا در بررسی فعال‌سازی";
+        licenseMessage = err.message || "خطا در بررسی اتصال ابری";
         isEnabled = false;
         return false;
     }
@@ -195,17 +186,25 @@ async function refreshLicenseStatus() {
 
 async function requireLicense(featureName) {
     const ok = await refreshLicenseStatus();
-    if (!ok) {
+    if (!ok || !isCloudAuthorized()) {
         alert(
             "برای استفاده از «" +
                 featureName +
-                "» ابتدا برنامه را فعال کنید.\n\n" +
+                "» ابتدا با OTP به سرور وصل شوید.\n\n" +
                 (licenseMessage || "") +
-                "\n\nکلید را از آیکون افزونه وارد کنید."
+                "\n\nاز آیکون افزونه وارد شوید."
         );
         return false;
     }
     return true;
+}
+
+function isCloudAuthorized() {
+    return (
+        !!licenseValid &&
+        globalThis.IranexpediaAuthGate &&
+        IranexpediaAuthGate.assertUnlocked()
+    );
 }
 
 /* ================= RULES ================= */
@@ -302,12 +301,52 @@ function cleanChatLabel(value) {
         .replace(/\s+/g, " ");
 }
 
+function extractPhoneFromDataId(id) {
+    const s = String(id || "");
+    let m = s.match(/(?:^|[_\s])(\d{8,15})@c\.us\b/);
+    if (m) return normalizePhone(m[1]);
+    m = s.match(/(?:^|[_\s])(\d{8,15})@s\.whatsapp\.net\b/);
+    if (m) return normalizePhone(m[1]);
+    m = s.match(/(\d{8,15})@c\.us/);
+    if (m) return normalizePhone(m[1]);
+    return "";
+}
+
 function extractPeerIdsFromOpenChat() {
     const result = { phone: "", groupId: "", chatType: "" };
+
+    // Header first — often has the peer id without needing scrolled messages.
+    const header = document.querySelector("#main header") || document.querySelector("#main");
+    if (header) {
+        const headerNodes = header.querySelectorAll("[data-id]");
+        for (let i = 0; i < headerNodes.length; i++) {
+            const id = headerNodes[i].getAttribute("data-id") || "";
+            const groupMatch = id.match(/(\d{10,24})@g\.us/);
+            if (groupMatch) {
+                result.groupId = groupMatch[1] + "@g.us";
+                result.chatType = "group";
+                return result;
+            }
+            const phone = extractPhoneFromDataId(id);
+            if (phone && !result.phone) {
+                result.phone = phone;
+                result.chatType = "pv";
+            }
+        }
+        const tel = header.querySelector('a[href^="tel:"]');
+        if (tel && !result.phone) {
+            const telPhone = normalizePhone((tel.getAttribute("href") || "").replace(/^tel:/i, ""));
+            if (looksLikePhone(telPhone)) {
+                result.phone = telPhone;
+                result.chatType = "pv";
+            }
+        }
+    }
+
     const nodes = document.querySelectorAll("#main [data-id]");
     if (!nodes.length) return result;
 
-    const start = Math.max(0, nodes.length - 60);
+    const start = Math.max(0, nodes.length - 120);
     for (let i = nodes.length - 1; i >= start; i--) {
         const id = nodes[i].getAttribute("data-id") || "";
         const groupMatch = id.match(/(\d{10,24})@g\.us/);
@@ -316,9 +355,9 @@ function extractPeerIdsFromOpenChat() {
             result.chatType = "group";
             return result;
         }
-        const phoneMatch = id.match(/(\d{8,15})@c\.us/);
-        if (phoneMatch && !result.phone) {
-            result.phone = normalizePhone(phoneMatch[1]);
+        const phone = extractPhoneFromDataId(id);
+        if (phone && !result.phone) {
+            result.phone = phone;
             result.chatType = "pv";
         }
     }
@@ -345,7 +384,13 @@ function getChatIdentity() {
         if (!name) name = raw;
     }
 
+    // Always prefer peer id phone when available (saved contacts rarely show number in title).
+    if (!phone && peer.phone) phone = peer.phone;
+
+    // Unsaved chat: title is the number — keep both fields (name editable later).
     if (!name && phone) name = phone;
+    // If title was a display name and phone still empty, last try: any phone-looking title already handled;
+    // leave phone blank so user can edit manually.
 
     const isGroup = !!(memberList || peer.groupId || peer.chatType === "group");
     if (isGroup) {
@@ -359,7 +404,7 @@ function getChatIdentity() {
 
     return {
         name: name || "",
-        phone: phone || peer.phone || "",
+        phone: phone || "",
         groupId: "",
         chatType: "pv"
     };
@@ -371,7 +416,7 @@ function getChatName() {
 
 async function saveContactFromIncoming(chatInfo, source) {
     if (!globalThis.IranexpediaCrm) return null;
-    if (!licenseValid) return null;
+    if (!isCloudAuthorized()) return null;
     const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
     if (!name) return null;
 
@@ -379,10 +424,20 @@ async function saveContactFromIncoming(chatInfo, source) {
     const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
     const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
 
-    const existing = await IranexpediaCrm.getContactByName(name);
+    let existing = null;
+    if (phone && IranexpediaCrm.getContactByPhone) {
+        existing = await IranexpediaCrm.getContactByPhone(phone);
+    }
+    if (!existing) {
+        existing = await IranexpediaCrm.getContactByName(name);
+    }
     if (existing) {
         const updated = await IranexpediaCrm.upsertContact({
-            name: existing.name || name,
+            id: existing.id,
+            name:
+                looksLikePhone(existing.name) && name && !looksLikePhone(name)
+                    ? name
+                    : existing.name || name,
             phone: phone || existing.phone || "",
             groupId: groupId || existing.groupId || "",
             chatType: chatType || existing.chatType || "pv",
@@ -492,7 +547,7 @@ async function syncAllLocalContactsToCloud() {
 
 /** Capture contacts on new messages even when auto-reply is OFF */
 function captureContactsFromOpenChat() {
-    if (!licenseValid || !globalThis.IranexpediaCrm) return;
+    if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return;
     if (!document.querySelector("#main")) return;
 
     const text = getLastIncomingText();
@@ -863,7 +918,7 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message.type === "cloudScanSidebarChats") {
         (async function () {
             await refreshLicenseStatus();
-            if (!licenseValid) {
+            if (!licenseValid || !isCloudAuthorized()) {
                 sendResponse({ ok: false, error: "license_or_cloud_required" });
                 return;
             }
@@ -1230,7 +1285,7 @@ function getCellChatName(cell) {
 }
 
 async function captureContactsFromSidebarUnread() {
-    if (!licenseValid || !globalThis.IranexpediaCrm) return;
+    if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return;
     const cells = getSidebarCells();
     for (let i = 0; i < cells.length; i++) {
         const cell = cells[i];
@@ -1263,7 +1318,7 @@ async function captureContactsFromSidebarUnread() {
 
 /** Capture visible chat list → local CRM → cloud (not only unread). */
 async function captureContactsFromSidebarVisible() {
-    if (!licenseValid || !globalThis.IranexpediaCrm) return { saved: 0 };
+    if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return { saved: 0 };
     const cells = getSidebarCells();
     let saved = 0;
     for (let i = 0; i < cells.length; i++) {
@@ -1664,7 +1719,7 @@ setInterval(function () {
 
 // Every ~45s push visible chat list into CRM → cloud (backend feed).
 setInterval(function () {
-    if (!licenseValid) return;
+    if (!isCloudAuthorized()) return;
     captureContactsFromSidebarVisible().then(function () {
         chrome.runtime.sendMessage({ type: "cloudSyncContacts" });
     });
@@ -1696,18 +1751,7 @@ chrome.storage.onChanged.addListener(function (changes, area) {
         refreshLicenseStatus().then(function () {
             ensureButton();
             if (licenseValid) syncAllLocalContactsToCloud();
-        });
-    }
-    if (
-        changes.licenseActivated ||
-        changes.licenseHash ||
-        changes.licenseExpiresAt
-    ) {
-        refreshLicenseStatus().then(function () {
-            ensureButton();
-            if (!licenseValid && isEnabled) {
-                applyAutoReplyEnabled(false, "license-lost");
-            }
+            else if (isEnabled) applyAutoReplyEnabled(false, "cloud-lost");
         });
     }
     if (changes.crmSettings) {

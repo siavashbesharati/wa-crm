@@ -261,12 +261,23 @@
 
   async function statusImpl() {
     var cfg = await getConfig();
-    if (!cfg.enabled || !cfg.accessToken) {
-      return { connected: false, reason: "not_configured", config: cfg };
+    // Fail closed — same conditions AuthGate expects
+    if (!cfg.enabled) {
+      return { connected: false, reason: "not_enabled", config: cfg };
+    }
+    if (!cfg.accessToken || String(cfg.accessToken).length <= 12) {
+      return { connected: false, reason: "no_token", config: cfg };
+    }
+    if (!cfg.orgId || String(cfg.orgId).length <= 4) {
+      return { connected: false, reason: "no_org", config: cfg };
     }
     var me = await request("/auth/me", { method: "GET" });
     if (!me.ok) {
       return { connected: false, reason: me.error || "auth_failed", config: cfg };
+    }
+    var org = me.data && me.data.org;
+    if (!org || !(org.id || org.name)) {
+      return { connected: false, reason: "invalid_session", config: cfg };
     }
     var hb = cfg.accountId ? await heartbeatImpl() : { ok: false, error: "no_account" };
     return {

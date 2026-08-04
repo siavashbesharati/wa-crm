@@ -18,31 +18,12 @@
     <div id="ext-version" class="version">v?</div>
   </header>
 
-  <section class="license-card">
-    <div class="section-title">
-      <h2>فعال‌سازی</h2>
-      <span id="license-badge" class="license-badge off">غیرفعال</span>
-    </div>
-    <p id="license-message" class="license-message">برای استفاده، کلید فعال‌سازی را وارد کنید.</p>
-    <p id="license-expiry" class="license-expiry"></p>
-    <form id="license-form">
-      <label>
-        کلید فعال‌سازی
-        <input id="license-key" type="text" placeholder="کلید خود را وارد کنید" required />
-      </label>
-      <div class="license-actions">
-        <button type="submit" id="license-btn">فعال‌سازی</button>
-        <button type="button" id="license-clear" class="secondary-btn">حذف کلید</button>
-      </div>
-    </form>
-  </section>
-
   <section class="license-card cloud-card">
     <div class="section-title">
-      <h2>ابر تیمی (B2B)</h2>
+      <h2>ورود با OTP</h2>
       <span id="cloud-badge" class="license-badge off">قطع</span>
     </div>
-    <p id="cloud-status" class="license-message">برای کار تیمی به سرور ابری وصل شوید.</p>
+    <p id="cloud-status" class="license-message">برای استفاده، با کد OTP به سرور وصل شوید. بدون سرور افزونه غیرفعال است.</p>
     <form id="cloud-form">
       <label>
         آدرس API
@@ -71,11 +52,11 @@
       </label>
       <div class="license-actions">
         <button type="button" id="cloud-otp-btn">دریافت کد</button>
-        <button type="button" id="cloud-login-btn" class="secondary-btn">ورود ابری</button>
+        <button type="button" id="cloud-login-btn" class="secondary-btn">ورود</button>
       </div>
       <div class="license-actions" style="margin-top:8px">
         <button type="button" id="cloud-save-btn">ذخیره اتصال</button>
-        <button type="button" id="cloud-disconnect" class="secondary-btn">قطع اتصال</button>
+        <button type="button" id="cloud-disconnect" class="secondary-btn">خروج</button>
       </div>
       <div class="license-actions" style="margin-top:8px">
         <button type="button" id="cloud-sync-btn" class="secondary-btn">همگام‌سازی لیدها از واتساپ</button>
@@ -84,14 +65,14 @@
   </section>
 
   <section class="help">
-    <p>۱. کلید یا ورود ابری را فعال کنید</p>
+    <p>۱. با OTP وارد شوید (سرور باید در دسترس باشد)</p>
     <p>۲. واتساپ وب را باز کنید — پنل CRM در سمت راست</p>
-    <p>۳. برای تیم: نقش کانکتور را روی یک سیستم همیشه روشن بگذارید</p>
-    <p>۴. داشبورد ابری: لیدها / اینباکس / KPI بین اپراتورها مشترک است</p>
+    <p>۳. نقش کانکتور را روی یک سیستم همیشه روشن بگذارید</p>
+    <p>۴. داشبورد ابری: لیدها / اینباکس / KPI مشترک است</p>
   </section>
 
   <div class="popup-actions">
-    <button type="button" id="open-crm" class="primary-wide">باز کردن داشبورد</button>
+    <button type="button" id="open-crm" class="primary-wide" disabled>باز کردن داشبورد</button>
   </div>
 
   <footer class="app-footer">
@@ -99,9 +80,8 @@
     <a href="https://iranexpedia.ir" target="_blank" rel="noopener noreferrer">iranexpedia.ir</a>
   </footer>
 
-  <script src="license-config.js"></script>
-  <script src="license-lib.js"></script>
   <script src="cloud-bridge.js"></script>
+  <script src="auth-gate.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

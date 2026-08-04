@@ -87,7 +87,7 @@
       panel.innerHTML =
         '<div class="crm-head"><div class="crm-brand">پنل CRM</div>' +
         '<div class="crm-sub">iranexpedia.ir</div></div>' +
-        '<div class="crm-lock"><p>برای استفاده از CRM و زمان‌بندی، ابتدا افزونه را فعال کنید.</p>' +
+        '<div class="crm-lock"><p>برای استفاده از CRM، با OTP از پاپ‌آپ افزونه به سرور وصل شوید. بدون سرور پنل غیرفعال است.</p>' +
         '<div class="crm-actions" style="justify-content:center;margin-top:12px">' +
         '<button type="button" class="crm-btn" id="crm-open-dash">باز کردن داشبورد</button></div></div>';
       $("#crm-open-dash", panel).onclick = openDashboard;
@@ -129,7 +129,12 @@
             ? " · " + c.phone
             : "";
       contactHtml =
-        '<div class="crm-name"></div>' +
+        '<div class="crm-field"><label>نام</label>' +
+        '<input id="crm-contact-name" type="text" /></div>' +
+        '<div class="crm-field" id="crm-phone-wrap"><label>شماره</label>' +
+        '<input id="crm-contact-phone" type="text" placeholder="98912..." /></div>' +
+        '<div class="crm-field" id="crm-group-wrap" style="display:none"><label>شناسه گروه</label>' +
+        '<input id="crm-contact-group" type="text" /></div>' +
         '<div class="crm-meta">نوع: ' +
         (c.chatType || "pv") +
         idMeta +
@@ -229,7 +234,37 @@
       "</div></div></div>";
 
     if (currentName) {
-      $(".crm-name", panel).textContent = currentName;
+      var identity =
+        typeof window.__iranexpediaGetChatIdentity === "function"
+          ? window.__iranexpediaGetChatIdentity()
+          : null;
+      var chatType =
+        (currentContact && currentContact.chatType) ||
+        (identity && identity.chatType) ||
+        "pv";
+      var nameInput = $("#crm-contact-name", panel);
+      var phoneInput = $("#crm-contact-phone", panel);
+      var groupInput = $("#crm-contact-group", panel);
+      var phoneWrap = $("#crm-phone-wrap", panel);
+      var groupWrap = $("#crm-group-wrap", panel);
+      if (nameInput) {
+        nameInput.value =
+          (currentContact && currentContact.name) || currentName || "";
+      }
+      if (phoneInput) {
+        phoneInput.value =
+          (currentContact && currentContact.phone) ||
+          (identity && identity.phone) ||
+          "";
+      }
+      if (groupInput) {
+        groupInput.value =
+          (currentContact && currentContact.groupId) ||
+          (identity && identity.groupId) ||
+          "";
+      }
+      if (phoneWrap) phoneWrap.style.display = chatType === "group" ? "none" : "";
+      if (groupWrap) groupWrap.style.display = chatType === "group" ? "" : "none";
       $("#crm-tags", panel).value = ((currentContact && currentContact.tags) || []).join(", ");
       $("#crm-notes", panel).value = (currentContact && currentContact.notes) || "";
       $("#crm-save", panel).onclick = saveCurrent;
@@ -302,12 +337,14 @@
   }
 
   async function refreshLicense() {
-    if (!globalThis.IranexpediaLicense) {
+    licenseOk = false;
+    if (!globalThis.IranexpediaAuthGate) return;
+    try {
+      var res = await IranexpediaAuthGate.verify();
+      licenseOk = !!(res && res.ok && IranexpediaAuthGate.assertUnlocked());
+    } catch (_e) {
       licenseOk = false;
-      return;
     }
-    var status = await IranexpediaLicense.getStoredLicenseStatus();
-    licenseOk = !!status.valid;
   }
 
   async function refreshData() {
@@ -325,13 +362,19 @@
     queuedCount = await IranexpediaCrm.getQueuedCount();
     if (currentName) {
       currentContact = await IranexpediaCrm.getContactByName(currentName);
+      if (!currentContact && typeof window.__iranexpediaGetChatIdentity === "function") {
+        var idn = window.__iranexpediaGetChatIdentity();
+        if (idn && idn.phone && IranexpediaCrm.getContactByPhone) {
+          currentContact = await IranexpediaCrm.getContactByPhone(idn.phone);
+        }
+      }
     } else {
       currentContact = null;
     }
   }
 
   async function ensureContact() {
-    if (!currentName || !globalThis.IranexpediaCrm) return;
+    if (!globalThis.IranexpediaCrm) return;
     var identity =
       typeof window.__iranexpediaGetChatIdentity === "function"
         ? window.__iranexpediaGetChatIdentity()
@@ -340,15 +383,31 @@
       (identity && identity.chatType) ||
       (currentContact && currentContact.chatType) ||
       "pv";
+    var phone =
+      chatType === "group"
+        ? ""
+        : (identity && identity.phone) ||
+          (currentContact && currentContact.phone) ||
+          "";
+    var displayName =
+      (currentContact && currentContact.name) ||
+      (identity && identity.name) ||
+      currentName ||
+      "";
+    if (!displayName && !phone) return;
+
+    if (!currentContact && phone && IranexpediaCrm.getContactByPhone) {
+      currentContact = await IranexpediaCrm.getContactByPhone(phone);
+    }
+    if (!currentContact && displayName) {
+      currentContact = await IranexpediaCrm.getContactByName(displayName);
+    }
+
     currentContact = await IranexpediaCrm.upsertContact({
-      name: currentName,
+      id: currentContact && currentContact.id,
+      name: displayName || phone,
       chatType: chatType,
-      phone:
-        chatType === "group"
-          ? ""
-          : (identity && identity.phone) ||
-            (currentContact && currentContact.phone) ||
-            "",
+      phone: phone,
       groupId:
         chatType === "group"
           ? (identity && identity.groupId) ||
@@ -356,10 +415,22 @@
             ""
           : (currentContact && currentContact.groupId) || ""
     });
+    if (currentContact && currentContact.name) currentName = currentContact.name;
   }
 
   async function saveCurrent() {
-    if (!currentName) return;
+    if (!globalThis.IranexpediaCrm) return;
+    var nameEl = $("#crm-contact-name", root);
+    var phoneEl = $("#crm-contact-phone", root);
+    var groupEl = $("#crm-contact-group", root);
+    var editedName = nameEl ? String(nameEl.value || "").trim() : "";
+    var editedPhone = phoneEl ? String(phoneEl.value || "").trim() : "";
+    var editedGroup = groupEl ? String(groupEl.value || "").trim() : "";
+    if (!editedName && !currentName) {
+      alert("نام مخاطب را وارد کنید.");
+      return;
+    }
+    if (editedName) currentName = editedName;
     await ensureContact();
     var tags = ($("#crm-tags", root).value || "")
       .split(/[,،]/)
@@ -367,23 +438,30 @@
         return t.trim();
       })
       .filter(Boolean);
+    var chatType = (currentContact && currentContact.chatType) || "pv";
     if (currentContact && currentContact.id && IranexpediaCrm.saveContactDetails) {
       currentContact = await IranexpediaCrm.saveContactDetails(currentContact.id, {
+        name: editedName || currentContact.name,
         stage: $("#crm-stage", root).value,
         tags: tags,
         notes: $("#crm-notes", root).value || "",
+        phone: chatType === "group" ? "" : editedPhone,
+        groupId: chatType === "group" ? editedGroup : "",
         botPaused: !!(currentContact && currentContact.botPaused)
       });
     } else {
       currentContact = await IranexpediaCrm.upsertContact({
-        name: currentName,
+        name: editedName || currentName,
+        phone: chatType === "group" ? "" : editedPhone,
+        groupId: chatType === "group" ? editedGroup : "",
         stage: $("#crm-stage", root).value,
         tags: tags,
         notes: $("#crm-notes", root).value || "",
         botPaused: !!(currentContact && currentContact.botPaused),
-        chatType: (currentContact && currentContact.chatType) || "pv"
+        chatType: chatType
       });
     }
+    if (currentContact && currentContact.name) currentName = currentContact.name;
     lastRenderKey = "";
     render();
   }
@@ -523,8 +601,7 @@
       changes.crmTemplates ||
       changes.crmTasks ||
       changes.crmSettings ||
-      changes.licenseActivated ||
-      changes.licenseHash ||
+      changes.cloudBridgeConfig ||
       changes.autoReplyEnabled
     ) {
       tick();
