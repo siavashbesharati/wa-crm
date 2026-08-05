@@ -29,8 +29,8 @@ python -m uvicorn app.main:app --reload --port 8000
 cd platform/web
 npm install
 npm run dev
-# http://localhost:3000
-# موبایل: 09120000000  کد: 123456
+# http://localhost:3000/admin  ← سوپر ادمین عمومی (بدون لاگین)
+# کسب‌وکار + شماره مالک بسازید؛ افزونه فقط همان شماره + OTP (mock: 123456)
 
 # 3) Workers (اختیاری)
 cd platform/api

@@ -5,11 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import ai, auth, channels, kpi, leads, messages, orgs, tasks, whatsapp
+from app.routers import admin, ai, auth, channels, kpi, leads, messages, orgs, tasks, whatsapp
 
 settings = get_settings()
 
-app = FastAPI(title="IranExpedia Multi-Channel CRM API", version="1.1.0")
+app = FastAPI(title="IranExpedia Multi-Channel CRM API", version="1.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["http://localhost:3000"],
@@ -25,6 +25,7 @@ app.add_middleware(
 )
 
 ROUTERS = [
+    admin.router,
     auth.router,
     orgs.router,
     leads.router,

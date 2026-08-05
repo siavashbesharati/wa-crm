@@ -24,19 +24,47 @@
     );
   }
 
+  function isExtAlive() {
+    try {
+      return !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (_e) {
+      return false;
+    }
+  }
+
   function storageGet(defaults) {
     return new Promise(function (resolve) {
-      chrome.storage.local.get(defaults, function (data) {
-        resolve(data || defaults);
-      });
+      if (!isExtAlive()) {
+        resolve(defaults || {});
+        return;
+      }
+      try {
+        chrome.storage.local.get(defaults, function (data) {
+          if (chrome.runtime && chrome.runtime.lastError) {
+            resolve(defaults || {});
+            return;
+          }
+          resolve(data || defaults);
+        });
+      } catch (_e) {
+        resolve(defaults || {});
+      }
     });
   }
 
   function storageSet(patch) {
     return new Promise(function (resolve) {
-      chrome.storage.local.set(patch, function () {
+      if (!isExtAlive()) {
         resolve();
-      });
+        return;
+      }
+      try {
+        chrome.storage.local.set(patch, function () {
+          resolve();
+        });
+      } catch (_e) {
+        resolve();
+      }
     });
   }
 
@@ -157,6 +185,7 @@
         phone: phone || prev.phone || "",
         groupId: groupId || prev.groupId || "",
         chatType: partial.chatType || prev.chatType || "pv",
+        channel: partial.channel || prev.channel || "",
         updatedAt: now,
         lastMessageAt: partial.lastMessageAt || prev.lastMessageAt || now
       });
@@ -169,6 +198,7 @@
       phone: phone || "",
       groupId: groupId || "",
       chatType: partial.chatType || "pv",
+      channel: partial.channel || "",
       tags: Array.isArray(partial.tags) ? partial.tags : [],
       stage: partial.stage || STAGES[0],
       notes: partial.notes || "",
@@ -503,4 +533,4 @@
     countSendsInLastHour: countSendsInLastHour,
     acceptRisk: acceptRisk
   };
-})(typeof globalThis !== "undefined" ? globalThis : window);
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this);

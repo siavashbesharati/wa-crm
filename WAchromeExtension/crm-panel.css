@@ -15,7 +15,7 @@
   right: 0;
   bottom: 0;
   width: 340px;
-  z-index: 999998;
+  z-index: 2147483646;
   color: var(--crm-text);
   pointer-events: none;
 }

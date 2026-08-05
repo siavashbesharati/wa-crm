@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>پاسخ خودکار چندکاناله</title>
+  <title>ورود</title>
   <link
     href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
     rel="stylesheet"
@@ -13,78 +13,38 @@
 </head>
 <body>
   <header>
-    <div class="brand">پاسخ خودکار چندکاناله</div>
-    <div class="subtitle">CRM واتساپ و دیوار</div>
+    <div class="brand">ورود</div>
+    <div class="subtitle">فقط شماره و کد</div>
     <div id="ext-version" class="version">v?</div>
   </header>
 
   <section class="license-card cloud-card">
     <div class="section-title">
-      <h2>ورود با OTP</h2>
+      <h2>تأیید هویت</h2>
       <span id="cloud-badge" class="license-badge off">قطع</span>
     </div>
-    <p id="cloud-status" class="license-message">برای استفاده، با کد OTP به سرور وصل شوید. بدون سرور افزونه غیرفعال است.</p>
+    <p id="cloud-status" class="license-message">شماره را وارد کنید.</p>
     <form id="cloud-form">
       <label>
-        آدرس API
-        <input id="cloud-api" type="text" placeholder="http://localhost:8000/api" />
-      </label>
-      <label>
         موبایل
-        <input id="cloud-phone" type="text" placeholder="0912..." />
+        <input id="cloud-phone" type="text" placeholder="0912..." autocomplete="tel" />
       </label>
       <label id="cloud-code-wrap" class="hidden">
-        کد OTP
-        <input id="cloud-code" type="text" placeholder="123456" />
-      </label>
-      <label>
-        نقش این مرورگر
-        <select id="cloud-role">
-          <option value="connector">کانکتور اصلی (پیشنهادی)</option>
-          <option value="agent">اپراتور پشتیبان</option>
-        </select>
-      </label>
-      <label>
-        کانال اکانت
-        <select id="cloud-channel">
-          <option value="whatsapp">واتساپ</option>
-          <option value="divar">دیوار</option>
-        </select>
-      </label>
-      <label>
-        اکانت کانال ابری
-        <select id="cloud-account">
-          <option value="">— انتخاب کنید —</option>
-        </select>
+        کد
+        <input id="cloud-code" type="text" placeholder="OTP" inputmode="numeric" />
       </label>
       <div class="license-actions">
         <button type="button" id="cloud-otp-btn">دریافت کد</button>
-        <button type="button" id="cloud-login-btn" class="secondary-btn">ورود</button>
+        <button type="button" id="cloud-login-btn">ورود</button>
       </div>
       <div class="license-actions" style="margin-top:8px">
-        <button type="button" id="cloud-save-btn">ذخیره اتصال</button>
         <button type="button" id="cloud-disconnect" class="secondary-btn">خروج</button>
-      </div>
-      <div class="license-actions" style="margin-top:8px">
-        <button type="button" id="cloud-sync-btn" class="secondary-btn">همگام‌سازی لیدها از واتساپ</button>
       </div>
     </form>
   </section>
 
-  <section class="help">
-    <p>۱. با OTP وارد شوید و کانال (واتساپ / دیوار) را انتخاب کنید</p>
-    <p>۲. تب مربوطه را باز بگذارید — پنل CRM کنار صفحه می‌آید</p>
-    <p>۳. نقش کانکتور را روی یک سیستم همیشه روشن بگذارید</p>
-    <p>۴. داشبورد ابری: لیدها / اینباکس / KPI مشترک چندکاناله است</p>
-  </section>
-
-  <div class="popup-actions">
-    <button type="button" id="open-crm" class="primary-wide" disabled>باز کردن داشبورد</button>
-  </div>
-
   <footer class="app-footer">
     <div>نسخه <span id="footer-version">?</span></div>
-    <a href="https://iranexpedia.ir" target="_blank" rel="noopener noreferrer">iranexpedia.ir</a>
   </footer>
 
   <script src="cloud-bridge.js"></script>

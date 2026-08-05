@@ -133,4 +133,4 @@
       return "سرور قطع یا نشست نامعتبر است (" + lastReason + ")";
     }
   };
-})(typeof globalThis !== "undefined" ? globalThis : window);
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this);

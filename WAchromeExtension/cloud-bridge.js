@@ -144,10 +144,15 @@
 
   async function requestOtpImpl(phone, apiUrl) {
     var cfg = await getConfig();
-    return rawRequest(apiUrl || cfg.apiUrl, "/auth/otp/request", {
+    var res = await rawRequest(apiUrl || cfg.apiUrl, "/auth/otp/request", {
       method: "POST",
       body: { phone: phone }
     });
+    // Normalize FastAPI detail string onto error for popup UX
+    if (!res.ok && res.data && typeof res.data.detail === "string") {
+      res.error = res.data.detail;
+    }
+    return res;
   }
 
   async function verifyOtpImpl(phone, code, orgName, apiUrl) {
@@ -160,7 +165,12 @@
         org_name: orgName || ""
       }
     });
-    if (!res.ok) return res;
+    if (!res.ok) {
+      if (res.data && typeof res.data.detail === "string") {
+        res.error = res.data.detail;
+      }
+      return res;
+    }
     var token = res.data;
     await setConfig({
       enabled: true,
@@ -293,13 +303,69 @@
     if (!org || !(org.id || org.name)) {
       return { connected: false, reason: "invalid_session", config: cfg };
     }
-    var hb = cfg.accountId ? await heartbeatImpl() : { ok: false, error: "no_account" };
+    // Account/channel is bound later by the open tab — not part of login.
+    var hb = cfg.accountId ? await heartbeatImpl() : { ok: true, error: "" };
     return {
       connected: true,
       heartbeatOk: !!hb.ok,
       me: me.data,
       config: cfg,
       heartbeatError: hb.ok ? "" : hb.error || ""
+    };
+  }
+
+  /**
+   * Bind the connector to a channel based on the open page.
+   * Called by WA / Divar content scripts — never from the popup login UI.
+   */
+  async function ensureChannelAccountImpl(channel) {
+    var ch = String(channel || "whatsapp").toLowerCase();
+    if (ch !== "whatsapp" && ch !== "divar") ch = "whatsapp";
+    var cfg = await getConfig();
+    if (!cfg.enabled || !cfg.accessToken || !cfg.orgId) {
+      return { ok: false, error: "not_logged_in" };
+    }
+
+    var list = await listAccountsImpl();
+    var accounts = list.ok && Array.isArray(list.data) ? list.data : [];
+    var acc = null;
+    for (var i = 0; i < accounts.length; i++) {
+      if (accounts[i] && accounts[i].channel === ch) {
+        acc = accounts[i];
+        break;
+      }
+    }
+    if (!acc) {
+      var created = await createAccountImpl(
+        ch === "divar" ? "دیوار" : "واتساپ",
+        ch === "divar" ? "divar-auto" : cfg.phone || "",
+        ch
+      );
+      if (!created.ok || !created.data) {
+        return {
+          ok: false,
+          error:
+            (created && created.data && created.data.detail) ||
+            (created && created.error) ||
+            "create_account_failed"
+        };
+      }
+      acc = created.data;
+    }
+
+    await setConfig({
+      enabled: true,
+      accountId: acc.id,
+      channel: ch,
+      role: "connector"
+    });
+    var hb = await heartbeatImpl();
+    return {
+      ok: true,
+      channel: ch,
+      account: acc,
+      heartbeatOk: !!hb.ok,
+      error: hb.ok ? "" : hb.error || ""
     };
   }
 
@@ -310,6 +376,7 @@
     verifyOtp: wrap("verifyOtp", verifyOtpImpl),
     listAccounts: wrap("listAccounts", listAccountsImpl),
     createAccount: wrap("createAccount", createAccountImpl),
+    ensureChannelAccount: wrap("ensureChannelAccount", ensureChannelAccountImpl),
     heartbeat: wrap("heartbeat", heartbeatImpl),
     claimJobs: wrap("claimJobs", claimJobsImpl),
     completeJob: wrap("completeJob", completeJobImpl),
@@ -322,6 +389,7 @@
       verifyOtp: verifyOtpImpl,
       listAccounts: listAccountsImpl,
       createAccount: createAccountImpl,
+      ensureChannelAccount: ensureChannelAccountImpl,
       heartbeat: heartbeatImpl,
       claimJobs: claimJobsImpl,
       completeJob: completeJobImpl,
@@ -334,4 +402,4 @@
   };
 
   global.IranexpediaCloudBridge = api;
-})(typeof globalThis !== "undefined" ? globalThis : window);
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this);

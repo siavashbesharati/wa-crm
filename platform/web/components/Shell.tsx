@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/Spinner";
 
 const NAV = [
+  { href: "/admin", label: "ادمین", ico: "★" },
   { href: "/home", label: "میز کار", ico: "⌂" },
   { href: "/leads", label: "لیدها", ico: "☰" },
   { href: "/pipeline", label: "پایپلاین", ico: "▦" },
@@ -44,7 +45,8 @@ export default function Shell({
 
   useEffect(() => {
     if (!getSession()) {
-      router.replace("/login");
+      // Dev: no login wall — pick a business from public super-admin
+      router.replace("/admin");
       return;
     }
     setReady(true);
@@ -117,10 +119,10 @@ export default function Shell({
             className="btn secondary"
             onClick={() => {
               clearSession();
-              router.replace("/login");
+              router.replace("/admin");
             }}
           >
-            <span className="label">خروج</span>
+            <span className="label">تعویض کسب‌وکار</span>
           </button>
         </div>
       </aside>

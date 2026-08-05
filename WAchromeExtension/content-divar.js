@@ -3,7 +3,7 @@
  * Spec: divarref/divar-auto.md
  */
 (function () {
-  const EXT_VERSION = "7.2.0";
+  const EXT_VERSION = "7.2.7";
   const BRAND = "iranexpedia.ir";
   const CHANNEL = "divar";
 
@@ -87,6 +87,21 @@
   window.__iranexpediaSetAutoReplyEnabled = function (enabled) {
     return applyAutoReplyEnabled(enabled, "crm-panel");
   };
+  window.__iranexpediaGetChatName = function () {
+    return getContactName() || getAdTitle() || getOpenChatId() || "";
+  };
+  window.__iranexpediaSendNow = function (text) {
+    return sendText(String(text || "")).then(function (res) {
+      if (!res || !res.ok) {
+        alert(
+          "ارسال انجام نشد" +
+            (res && res.error ? " (" + res.error + ")" : "") +
+            ". چت را باز بگذارید و دوباره تلاش کنید."
+        );
+      }
+      return res;
+    });
+  };
 
   function loadRulesFromStorage() {
     try {
@@ -119,8 +134,18 @@
   }
 
   function getContactName() {
-    const el = document.querySelector(".kt-chat-nav-bar__title");
-    return el ? String(el.textContent || "").trim() : "";
+    // Open-chat title is usually h2; list header "چت و تماس" is h1 — prefer h2
+    const h2 = document.querySelector("h2.kt-chat-nav-bar__title");
+    if (h2) {
+      const t = String(h2.textContent || "").trim();
+      if (t && t !== "چت و تماس") return t;
+    }
+    const titles = document.querySelectorAll(".kt-chat-nav-bar__title");
+    for (let i = 0; i < titles.length; i++) {
+      const t = String(titles[i].textContent || "").trim();
+      if (t && t !== "چت و تماس") return t;
+    }
+    return "";
   }
 
   function getAdTitle() {
@@ -138,10 +163,12 @@
 
   window.__iranexpediaGetChatIdentity = function () {
     const chatId = getOpenChatId();
+    const pretty = getContactName() || getAdTitle() || "";
     return {
-      name: getContactName() || getAdTitle() || chatId,
+      name: pretty || chatId,
       chatType: "pv",
-      phone: "",
+      // Stable CRM key for Divar (phone field reused as chatId)
+      phone: chatId || "",
       groupId: "",
       externalChatId: chatId,
       chatId: chatId,
@@ -217,11 +244,25 @@
     const id = String(chatIdOrHref || "").replace(/^\/chat\//, "");
     if (!id) return false;
     if (getOpenChatId() === id) return true;
-    const link = document.querySelector('a[href="/chat/' + id + '"], a[href="/chat/' + encodeURIComponent(id) + '"]');
+    // Prefer in-SPA click — hard location.href remounts the CRM sidebar.
+    const link = document.querySelector(
+      'a[href="/chat/' +
+        id +
+        '"], a[href="/chat/' +
+        encodeURIComponent(id) +
+        '"], a[href^="/chat/' +
+        id +
+        '"]'
+    );
     if (link) {
       link.click();
     } else {
-      location.href = "/chat/" + id;
+      try {
+        history.pushState({}, "", "/chat/" + id);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      } catch (_e) {
+        location.href = "/chat/" + id;
+      }
     }
     for (let i = 0; i < 20; i++) {
       await sleep(250);
@@ -231,15 +272,22 @@
   }
 
   async function goToInbox() {
-    const back = document.querySelector('button[aria-label="بازگشت"]');
+    // Soft navigation only — avoid full reload that wipes the CRM panel.
+    const back =
+      document.querySelector('button[aria-label="بازگشت"]') ||
+      document.querySelector('a[href="/chat"]') ||
+      document.querySelector('a[href="/chat/"]');
     if (back) {
       back.click();
       await sleep(400);
       return;
     }
     if (!/\/chat\/?$/.test(location.pathname)) {
-      location.href = "/chat";
-      await sleep(800);
+      try {
+        history.pushState({}, "", "/chat");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+        await sleep(500);
+      } catch (_e) {}
     }
   }
 
@@ -248,48 +296,174 @@
     const desc = proto && Object.getOwnPropertyDescriptor(proto, "value");
     if (desc && desc.set) desc.set.call(el, value);
     else el.value = value;
+    // React controlled inputs often keep an internal value tracker
+    try {
+      const tracker = el._valueTracker;
+      if (tracker && typeof tracker.setValue === "function") {
+        tracker.setValue(value === "" ? " " : "");
+      }
+    } catch (_e) {}
+  }
+
+  function findChatInput() {
+    return (
+      document.querySelector("#chat-input") ||
+      document.querySelector("textarea.kt-chat-input__input") ||
+      document.querySelector(".kt-chat-input__input")
+    );
+  }
+
+  function findSendButton() {
+    return (
+      document.querySelector('button.kt-chat-input__button[aria-label="ارسال پیام"]') ||
+      document.querySelector('button[aria-label="ارسال پیام"]') ||
+      document.querySelector("button.kt-chat-input__button.kt-button--primary") ||
+      document.querySelector("button.kt-chat-input__button")
+    );
+  }
+
+  function fillChatInput(input, text) {
+    input.focus();
+    setNativeValue(input, "");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    setNativeValue(input, text);
+    try {
+      input.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          data: text,
+          inputType: "insertText"
+        })
+      );
+    } catch (_e) {
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    // Fallback for editors that only accept execCommand / beforeinput
+    if (!String(input.value || "").trim() && typeof document.execCommand === "function") {
+      try {
+        input.select();
+        document.execCommand("selectAll", false, null);
+        document.execCommand("insertText", false, text);
+      } catch (_e2) {}
+    }
+  }
+
+  async function waitForSendButton(timeoutMs) {
+    const until = Date.now() + (timeoutMs || 2500);
+    while (Date.now() < until) {
+      const btn = findSendButton();
+      if (btn && !btn.disabled) return btn;
+      await sleep(80);
+    }
+    return findSendButton();
+  }
+
+  async function pressEnterToSend(input) {
+    const opts = {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    };
+    input.dispatchEvent(new KeyboardEvent("keydown", opts));
+    input.dispatchEvent(new KeyboardEvent("keypress", opts));
+    input.dispatchEvent(new KeyboardEvent("keyup", opts));
   }
 
   async function sendText(text) {
-    const input = document.querySelector("#chat-input") || document.querySelector(".kt-chat-input__input");
+    const msg = String(text || "").trim();
+    if (!msg) return { ok: false, error: "empty_message" };
+    const input = findChatInput();
     if (!input) return { ok: false, error: "input_not_found" };
-    input.focus();
-    setNativeValue(input, text);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    await sleep(120);
 
-    const sendBtn =
-      document.querySelector('button[aria-label="ارسال پیام"]') ||
-      document.querySelector('button[aria-label="ارسال"]');
+    fillChatInput(input, msg);
+    await sleep(150);
+
+    // Divar only mounts the send button after React sees non-empty text.
+    let sendBtn = await waitForSendButton(2500);
+    if (!sendBtn) {
+      // Retry fill once — some SPA frames drop the first synthetic input.
+      fillChatInput(input, msg);
+      sendBtn = await waitForSendButton(2000);
+    }
+
     if (sendBtn && !sendBtn.disabled) {
       sendBtn.click();
-      await sleep(300);
+      await sleep(350);
       return { ok: true };
     }
 
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        code: "Enter",
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      })
-    );
-    input.dispatchEvent(
-      new KeyboardEvent("keyup", {
-        key: "Enter",
-        code: "Enter",
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      })
-    );
-    await sleep(350);
-    return { ok: true };
+    await pressEnterToSend(input);
+    await sleep(400);
+    // Confirm button disappeared / input cleared as soft success signal
+    const still = findSendButton();
+    if (!still || String(input.value || "").trim() === "") {
+      return { ok: true };
+    }
+    return { ok: false, error: "send_button_not_found" };
+  }
+
+  async function resolveChatId(targetName) {
+    const raw = String(targetName || "").replace(/^\/chat\//, "").trim();
+    if (!raw) return "";
+    if (getOpenChatId() === raw) return raw;
+    if (
+      document.querySelector(
+        'a[href="/chat/' + raw + '"], a[href="/chat/' + encodeURIComponent(raw) + '"]'
+      )
+    ) {
+      return raw;
+    }
+    try {
+      if (globalThis.IranexpediaCrm) {
+        if (IranexpediaCrm.getContactByPhone) {
+          const byPhone = await IranexpediaCrm.getContactByPhone(raw);
+          if (byPhone && byPhone.phone) return String(byPhone.phone);
+        }
+        const byName = await IranexpediaCrm.getContactByName(raw);
+        if (byName && byName.phone) return String(byName.phone);
+      }
+    } catch (_e) {}
+    return raw;
+  }
+
+  async function runScheduledTask(task) {
+    const target = (task && (task.targetName || task.chatId)) || "";
+    const body = String((task && task.message) || "").trim();
+    const chatId = await resolveChatId(target);
+    if (!chatId || !body) return { ok: false, error: "missing_chat_or_body" };
+    if (busy) return { ok: false, error: "busy" };
+    busy = true;
+    try {
+      const opened = await openChat(chatId);
+      if (!opened) return { ok: false, error: "open_failed" };
+      await sleep(600);
+      const sent = await sendText(body);
+      if (!sent.ok) return sent;
+      try {
+        if (globalThis.IranexpediaCloudBridge) {
+          await IranexpediaCloudBridge.ingestMessage({
+            chat_name: getContactName() || getAdTitle() || chatId,
+            body: body,
+            direction: "outbound",
+            external_chat_id: chatId,
+            post_token: getPostToken(),
+            ad_title: getAdTitle(),
+            chat_type: "pv",
+            sender_type: "ai"
+          });
+        }
+      } catch (_e) {}
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    } finally {
+      busy = false;
+    }
   }
 
   async function ingestPeer(chatId, peer) {
@@ -360,6 +534,8 @@
     if (!ok) return;
     busy = true;
     try {
+      // If a chat is already open, only reply there — do not bounce inbox↔chat
+      // (that was constantly remounting the CRM sidebar).
       if (getOpenChatId() && document.querySelector("#chat-input")) {
         await replyInOpenChat();
         return;
@@ -382,7 +558,7 @@
   }
 
   async function handleSendJob(message) {
-    const chatId = String(message.chatId || message.targetName || "").replace(/^\/chat\//, "");
+    const chatId = await resolveChatId(message.chatId || message.targetName || "");
     const body = String(message.message || "").trim();
     if (!chatId || !body) return { ok: false, error: "missing_chat_or_body" };
     const opened = await openChat(chatId);
@@ -393,6 +569,10 @@
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (!message || !message.type) return;
+    if (message.type === "runScheduledTask") {
+      runScheduledTask(message.task || message).then(sendResponse);
+      return true;
+    }
     if (message.type === "sendDivarMessage") {
       handleSendJob(message).then(sendResponse);
       return true;
@@ -412,8 +592,26 @@
     }
   });
 
+  async function activateDivarChannel() {
+    if (!globalThis.IranexpediaCloudBridge || !IranexpediaCloudBridge.ensureChannelAccount) {
+      return;
+    }
+    try {
+      const res = await IranexpediaCloudBridge.ensureChannelAccount(CHANNEL);
+      if (res && res.ok) {
+        log("channel active: divar", res.account && res.account.id);
+      } else {
+        log("channel bind skipped:", (res && res.error) || "not_logged_in");
+      }
+    } catch (err) {
+      log("channel bind error", err);
+    }
+  }
+
   async function boot() {
+    log("boot on", location.href, "chatId=", getOpenChatId());
     loadRulesFromStorage();
+    await activateDivarChannel();
     try {
       const data = await chrome.storage.local.get({ autoReplyEnabled: false });
       if (data.autoReplyEnabled) {
@@ -421,21 +619,11 @@
       }
     } catch (_e) {}
 
-    try {
-      if (globalThis.IranexpediaCloudBridge) {
-        const cfg = await IranexpediaCloudBridge.getConfig();
-        if (cfg.enabled && cfg.channel !== CHANNEL) {
-          // Prefer keeping explicit user choice; only set if empty/whatsapp default on Divar tab
-          if (!cfg.accountId || cfg.channel === "whatsapp") {
-            await IranexpediaCloudBridge.setConfig({ channel: CHANNEL });
-          }
-        }
-      }
-    } catch (_e) {}
-
     setInterval(function () {
       processLoop();
     }, SCAN_MS);
+    // Re-bind if user logs in after the tab was already open
+    setInterval(activateDivarChannel, 20000);
   }
 
   boot();

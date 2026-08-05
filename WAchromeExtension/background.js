@@ -73,10 +73,22 @@ async function findWhatsAppTab() {
 
 async function findDivarTab() {
   var tabs = await chrome.tabs.query({
-    url: ["https://divar.ir/chat/*", "https://chat.divar.ir/*", "https://chat.divar.ir/chat/*"]
+    url: [
+      "https://divar.ir/chat",
+      "https://divar.ir/chat/*",
+      "https://chat.divar.ir/*",
+      "https://chat.divar.ir/chat",
+      "https://chat.divar.ir/chat/*"
+    ]
   });
   if (!tabs || !tabs.length) return null;
   return tabs[0];
+}
+
+function taskChannel(task) {
+  var ch = String((task && task.channel) || "").toLowerCase();
+  if (ch === "divar" || ch === "whatsapp") return ch;
+  return "whatsapp";
 }
 
 async function findChannelTab(channel) {
@@ -188,6 +200,7 @@ async function scheduleTaskFromMessage(input) {
   var message = String((input && input.message) || "").trim();
   var runAt = Number(input && input.runAt) || 0;
   var targetType = (input && input.targetType) || "pv";
+  var channel = taskChannel(input);
 
   if (!targetName || !message) {
     return { ok: false, error: "هدف و متن پیام الزامی است." };
@@ -205,6 +218,7 @@ async function scheduleTaskFromMessage(input) {
       Math.random().toString(36).slice(2, 8),
     targetName: targetName,
     targetType: targetType,
+    channel: channel,
     message: message,
     runAt: runAt,
     status: "queued",
@@ -239,18 +253,23 @@ async function cancelTaskFromMessage(taskId) {
 }
 
 async function sendTaskToContent(task) {
-  var tab = await findWhatsAppTab();
+  var channel = taskChannel(task);
+  var tab = channel === "divar" ? await findDivarTab() : await findWhatsAppTab();
   if (!tab) {
+    var closedMsg =
+      channel === "divar"
+        ? "چت دیوار باز نیست. تب divar.ir/chat را باز بگذارید."
+        : "واتساپ وب باز نیست. تب web.whatsapp.com را باز بگذارید.";
     await updateTask(task.id, {
       status: "failed",
-      lastError: "واتساپ وب باز نیست. تب web.whatsapp.com را باز بگذارید."
+      lastError: closedMsg
     });
     await addEvent(
       "scheduled_fail",
       "ارسال ناموفق (تب بسته): " + task.targetName,
-      { taskId: task.id }
+      { taskId: task.id, channel: channel }
     );
-    return { ok: false, error: "wa_closed" };
+    return { ok: false, error: channel === "divar" ? "divar_closed" : "wa_closed" };
   }
 
   await updateTask(task.id, {
@@ -259,10 +278,25 @@ async function sendTaskToContent(task) {
   });
 
   try {
-    var res = await chrome.tabs.sendMessage(tab.id, {
-      type: "runScheduledTask",
-      task: task
-    });
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    var res = await chrome.tabs.sendMessage(
+      tab.id,
+      channel === "divar"
+        ? {
+            type: "runScheduledTask",
+            task: task,
+            chatId: task.targetName,
+            targetName: task.targetName,
+            message: task.message
+          }
+        : {
+            type: "runScheduledTask",
+            task: task
+          }
+    );
     if (res && res.ok) {
       await updateTask(task.id, {
         status: "sent",
@@ -271,7 +305,7 @@ async function sendTaskToContent(task) {
       await addEvent(
         "scheduled_sent",
         "ارسال زمان‌بندی‌شده به «" + task.targetName + "»",
-        { taskId: task.id }
+        { taskId: task.id, channel: channel }
       );
       await clearAlarmForTask(task.id);
       return { ok: true };
@@ -307,7 +341,10 @@ async function sendTaskToContent(task) {
     var msg = String((err && err.message) || err);
     await updateTask(task.id, {
       status: "failed",
-      lastError: "ارتباط با صفحه واتساپ برقرار نشد. صفحه را تازه کنید."
+      lastError:
+        channel === "divar"
+          ? "ارتباط با صفحه دیوار برقرار نشد. صفحه چت را تازه کنید."
+          : "ارتباط با صفحه واتساپ برقرار نشد. صفحه را تازه کنید."
     });
     await addEvent("scheduled_fail", "خطا: " + task.targetName + " — " + msg, {
       taskId: task.id
@@ -427,9 +464,28 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
   }
 
   if (message.type === "openDashboard") {
-    chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+    chrome.tabs.create({ url: "http://localhost:3000/admin" });
     sendResponse({ ok: true });
     return;
+  }
+
+  if (message.type === "openDivarChat") {
+    chrome.tabs.create({ url: "https://divar.ir/chat" });
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message.type === "focusOrOpenDivarChat") {
+    chrome.tabs.query({ url: ["https://divar.ir/chat*", "https://chat.divar.ir/*"] }, function (tabs) {
+      if (tabs && tabs[0]) {
+        chrome.tabs.update(tabs[0].id, { active: true, url: tabs[0].url || "https://divar.ir/chat" });
+        if (tabs[0].windowId != null) chrome.windows.update(tabs[0].windowId, { focused: true });
+      } else {
+        chrome.tabs.create({ url: "https://divar.ir/chat" });
+      }
+      sendResponse({ ok: true });
+    });
+    return true;
   }
 
   if (message.type === "scheduleTask") {
@@ -562,45 +618,52 @@ async function syncLocalContactsToCloud() {
   return { ok: true, synced: synced, total: contacts.length, errors: errors };
 }
 
+async function runJobsForChannel(channel) {
+  var tab = await findChannelTab(channel);
+  if (!tab) return;
+  var bound = await IranexpediaCloudBridge.ensureChannelAccount(channel);
+  if (!bound || !bound.ok) return;
+  await IranexpediaCloudBridge.heartbeat();
+  var jobs = await IranexpediaCloudBridge.claimJobs(3);
+  if (!jobs || !jobs.length) return;
+  for (var i = 0; i < jobs.length; i++) {
+    var job = jobs[i];
+    try {
+      var msg =
+        channel === "divar"
+          ? {
+              type: "sendDivarMessage",
+              chatId: job.target_name,
+              targetName: job.target_name,
+              message: job.body
+            }
+          : {
+              type: "sendTemplateNow",
+              targetName: job.target_name,
+              message: job.body
+            };
+      var res = await chrome.tabs.sendMessage(tab.id, msg);
+      await IranexpediaCloudBridge.completeJob(job.id, !!(res && res.ok), (res && res.error) || "");
+    } catch (err) {
+      await IranexpediaCloudBridge.completeJob(job.id, false, String(err && err.message || err));
+    }
+  }
+}
+
 async function pollCloudBridge() {
   try {
     var cfg = await IranexpediaCloudBridge.getConfig();
     if (!cfg.enabled) return;
     if (!(await requireCloudAuth(false))) return;
-    await IranexpediaCloudBridge.heartbeat();
 
-    // Push local CRM contacts → server (real reason backend has leads).
+    // Push local CRM contacts → server
     if (Date.now() - lastCloudContactSyncAt > 45 * 1000) {
       await syncLocalContactsToCloud();
     }
 
-    var jobs = await IranexpediaCloudBridge.claimJobs(3);
-    if (!jobs.length) return;
-    var channel = cfg.channel || "whatsapp";
-    var tab = await findChannelTab(channel);
-    if (!tab) return;
-    for (var i = 0; i < jobs.length; i++) {
-      var job = jobs[i];
-      try {
-        var msg =
-          channel === "divar"
-            ? {
-                type: "sendDivarMessage",
-                chatId: job.target_name,
-                targetName: job.target_name,
-                message: job.body
-              }
-            : {
-                type: "sendTemplateNow",
-                targetName: job.target_name,
-                message: job.body
-              };
-        var res = await chrome.tabs.sendMessage(tab.id, msg);
-        await IranexpediaCloudBridge.completeJob(job.id, !!(res && res.ok), (res && res.error) || "");
-      } catch (err) {
-        await IranexpediaCloudBridge.completeJob(job.id, false, String(err && err.message || err));
-      }
-    }
+    // Activate + claim per open tab — no manual channel choice
+    if (await findWhatsAppTab()) await runJobsForChannel("whatsapp");
+    if (await findDivarTab()) await runJobsForChannel("divar");
   } catch (_err) {
     // ignore transient bridge errors
   }

@@ -1,12 +1,9 @@
 /**
  * Build obfuscated extension → WAchromeExtension-dist/
  *
- * Sensitive auth / verification paths get HARD obfuscation
- * (control-flow flattening, string encryption, dead code).
- * Other UI scripts get a safer MEDIUM profile that still resists casual reading.
- *
- * Note: Obfuscation raises the bar; it cannot make a client-side Chrome extension
- * impossible to patch. Server OTP remains the authority.
+ * IMPORTANT: Service-worker scripts must NEVER use disableConsoleOutput /
+ * debugProtection — javascript-obfuscator injects `window` fallbacks that
+ * crash MV3 workers (status 15: ReferenceError window is not defined).
  */
 import fs from "fs";
 import path from "path";
@@ -24,17 +21,48 @@ const RESERVED = [
   "^IranexpediaCrm$",
   "^IranexpediaCloudBridge$",
   "^IranexpediaAuthGate$",
-  "^IranexpediaLicense$"
+  "^IranexpediaLicense$",
+  "^self$",
+  "^globalThis$"
 ];
 
-/** UI / storage helpers — readable enough to stay stable in Chrome MV3 */
+/** Safe for service worker + importScripts (no window references). */
+const SW_SAFE_OPTIONS = {
+  compact: true,
+  controlFlowFlattening: false,
+  deadCodeInjection: false,
+  debugProtection: false,
+  disableConsoleOutput: false,
+  identifierNamesGenerator: "hexadecimal",
+  numbersToExpressions: false,
+  renameGlobals: false,
+  selfDefending: false,
+  simplify: true,
+  splitStrings: true,
+  splitStringsChunkLength: 8,
+  stringArray: true,
+  stringArrayCallsTransform: false,
+  stringArrayEncoding: ["base64"],
+  stringArrayIndexShift: true,
+  stringArrayRotate: true,
+  stringArrayShuffle: true,
+  stringArrayWrappersCount: 1,
+  stringArrayWrappersChainedCalls: false,
+  stringArrayWrappersType: "function",
+  stringArrayThreshold: 0.75,
+  transformObjectKeys: false,
+  unicodeEscapeSequence: false,
+  reservedNames: RESERVED
+};
+
+/** Content scripts / popup — may reference window. */
 const MEDIUM_OPTIONS = {
   compact: true,
   controlFlowFlattening: true,
-  controlFlowFlatteningThreshold: 0.4,
+  controlFlowFlatteningThreshold: 0.35,
   deadCodeInjection: false,
   debugProtection: false,
-  disableConsoleOutput: true,
+  disableConsoleOutput: false,
   identifierNamesGenerator: "hexadecimal",
   numbersToExpressions: true,
   renameGlobals: false,
@@ -55,53 +83,32 @@ const MEDIUM_OPTIONS = {
   stringArrayThreshold: 0.85,
   transformObjectKeys: true,
   unicodeEscapeSequence: false,
-  reservedNames: RESERVED,
-  reservedStrings: []
-};
-
-/**
- * Auth, bridge, content gating — maximize friction for bypass attempts
- * (patching `connected` / `licenseValid` / token checks).
- */
-const HARD_OPTIONS = {
-  compact: true,
-  controlFlowFlattening: true,
-  controlFlowFlatteningThreshold: 0.85,
-  deadCodeInjection: true,
-  deadCodeInjectionThreshold: 0.35,
-  debugProtection: false,
-  disableConsoleOutput: true,
-  identifierNamesGenerator: "hexadecimal",
-  numbersToExpressions: true,
-  renameGlobals: false,
-  selfDefending: false,
-  simplify: true,
-  splitStrings: true,
-  splitStringsChunkLength: 4,
-  stringArray: true,
-  stringArrayCallsTransform: true,
-  stringArrayCallsTransformThreshold: 0.75,
-  stringArrayEncoding: ["rc4"],
-  stringArrayIndexShift: true,
-  stringArrayRotate: true,
-  stringArrayShuffle: true,
-  stringArrayWrappersCount: 3,
-  stringArrayWrappersChainedCalls: true,
-  stringArrayWrappersParametersMaxCount: 4,
-  stringArrayWrappersType: "function",
-  stringArrayThreshold: 1,
-  transformObjectKeys: true,
-  unicodeEscapeSequence: false,
   reservedNames: RESERVED
 };
 
-/** Files where verification / OTP / gating / unlock UI lives — HARD profile */
-const HARD_FILES = new Set([
+const HARD_OPTIONS = {
+  ...MEDIUM_OPTIONS,
+  controlFlowFlatteningThreshold: 0.75,
+  deadCodeInjection: true,
+  deadCodeInjectionThreshold: 0.25,
+  splitStringsChunkLength: 4,
+  stringArrayCallsTransformThreshold: 0.75,
+  stringArrayEncoding: ["rc4"],
+  stringArrayWrappersCount: 3,
+  stringArrayThreshold: 1
+};
+
+/** Loaded in service worker via importScripts — MUST be SW-safe. */
+const SW_SAFE_FILES = new Set([
+  "background.js",
   "cloud-bridge.js",
+  "auth-gate.js"
+]);
+
+/** Page scripts — harder obfuscation OK. */
+const HARD_FILES = new Set([
   "content.js",
   "content-divar.js",
-  "background.js",
-  "auth-gate.js",
   "popup.js",
   "dashboard.js",
   "crm-panel.js"
@@ -127,6 +134,18 @@ function copyDir(relPath) {
   fs.cpSync(from, to, { recursive: true });
 }
 
+function profileFor(file) {
+  if (SW_SAFE_FILES.has(file)) return "sw";
+  if (HARD_FILES.has(file)) return "hard";
+  return "medium";
+}
+
+function optionsFor(profile) {
+  if (profile === "sw") return SW_SAFE_OPTIONS;
+  if (profile === "hard") return HARD_OPTIONS;
+  return MEDIUM_OPTIONS;
+}
+
 function obfuscateJs(relPath, profile) {
   const from = path.join(srcDir, relPath);
   if (!fs.existsSync(from)) {
@@ -134,11 +153,23 @@ function obfuscateJs(relPath, profile) {
     return;
   }
   const source = fs.readFileSync(from, "utf8");
-  const options = profile === "hard" ? HARD_OPTIONS : MEDIUM_OPTIONS;
-  const result = JavaScriptObfuscator.obfuscate(source, options);
+  const result = JavaScriptObfuscator.obfuscate(source, optionsFor(profile));
+  const code = result.getObfuscatedCode();
+  // Safety net: never ship SW code that still mentions bare window
+  if (profile === "sw" && /\bwindow\b/.test(code)) {
+    console.warn(
+      "WARN:",
+      relPath,
+      "still contains 'window' after obfuscation — copying source instead"
+    );
+    fs.mkdirSync(path.dirname(path.join(outDir, relPath)), { recursive: true });
+    fs.writeFileSync(path.join(outDir, relPath), source, "utf8");
+    console.log(`copied [sw-fallback]:`, relPath);
+    return;
+  }
   const to = path.join(outDir, relPath);
   fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.writeFileSync(to, result.getObfuscatedCode(), "utf8");
+  fs.writeFileSync(to, code, "utf8");
   console.log(`obfuscated [${profile}]:`, relPath);
 }
 
@@ -149,7 +180,6 @@ function main() {
 
   ensureCleanOutDir();
 
-  // Non-JS assets only (never ship readable sensitive JS as plain copy)
   copyFile("manifest.json");
   copyFile("popup.html");
   copyFile("popup.css");
@@ -174,15 +204,13 @@ function main() {
   ];
 
   for (const file of jsFiles) {
-    const profile = HARD_FILES.has(file) ? "hard" : "medium";
-    obfuscateJs(file, profile);
+    obfuscateJs(file, profileFor(file));
   }
 
   console.log("\nDone.");
   console.log("Load unpacked in Chrome:");
   console.log(" ", outDir);
-  console.log("\nSource remains readable in WAchromeExtension/ (dev only).");
-  console.log("Ship WAchromeExtension-dist/ to customers.");
+  console.log("\nDev tip: load WAchromeExtension/ (source) to avoid SW obfuscation issues.");
 }
 
 main();

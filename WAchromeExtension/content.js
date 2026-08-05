@@ -1725,9 +1725,27 @@ setInterval(function () {
     });
 }, 45 * 1000);
 
+async function activateWhatsAppChannel() {
+    if (!globalThis.IranexpediaCloudBridge) return;
+    try {
+        const cfg = await IranexpediaCloudBridge.getConfig();
+        if (!cfg.enabled || !cfg.accessToken) return;
+        const res = await IranexpediaCloudBridge.ensureChannelAccount("whatsapp");
+        if (res && res.ok) {
+            log("channel active: whatsapp", res.account && res.account.id);
+        } else {
+            log("channel activate failed", res && res.error);
+        }
+    } catch (err) {
+        log("channel activate error", err);
+    }
+}
+
 loadRules();
 refreshCrmSettings();
-refreshLicenseStatus().then(function () {
+activateWhatsAppChannel().then(function () {
+    return refreshLicenseStatus();
+}).then(function () {
     ensureButton();
     log("وضعیت فعال‌سازی:", licenseValid ? "فعال" : "غیرفعال", "-", licenseMessage);
     if (licenseValid) syncAllLocalContactsToCloud();
@@ -1743,6 +1761,7 @@ refreshLicenseStatus().then(function () {
         }
     });
 });
+setInterval(activateWhatsAppChannel, 20000);
 
 chrome.storage.onChanged.addListener(function (changes, area) {
     if (area !== "local") return;

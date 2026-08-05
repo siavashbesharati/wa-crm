@@ -11,6 +11,59 @@
   var queuedCount = 0;
   var lastRenderKey = "";
   var autoReplyOn = false;
+  var lastPathname = "";
+  var tickTimer = null;
+  var deadContext = false;
+  var ticking = false;
+
+  function isExtAlive() {
+    try {
+      return !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function markDeadContext() {
+    if (deadContext) return;
+    deadContext = true;
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+    try {
+      if (root) {
+        var panel = $("#iranexpedia-crm-panel", root);
+        if (panel) {
+          panel.innerHTML =
+            '<div class="crm-head"><div class="crm-brand">پنل CRM</div>' +
+            '<div class="crm-sub">iranexpedia.ir</div></div>' +
+            '<div class="crm-lock"><p>افزونه به‌روزرسانی شد. صفحه را یک‌بار رفرش کنید.</p>' +
+            '<div class="crm-actions" style="justify-content:center;margin-top:12px">' +
+            '<button type="button" class="crm-btn" id="crm-reload-page">رفرش صفحه</button></div></div>';
+          var btn = $("#crm-reload-page", panel);
+          if (btn) btn.onclick = function () { location.reload(); };
+        }
+      }
+    } catch (_e) {}
+  }
+
+  function safeRuntimeSend(message) {
+    if (!isExtAlive()) {
+      markDeadContext();
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(message, function () {
+        if (chrome.runtime && chrome.runtime.lastError) {
+          var msg = String(chrome.runtime.lastError.message || "");
+          if (msg.indexOf("Extension context invalidated") !== -1) markDeadContext();
+        }
+      });
+    } catch (_e) {
+      markDeadContext();
+    }
+  }
 
   function detectHostChannel() {
     try {
@@ -26,6 +79,14 @@
     if (!root) return false;
     var active = document.activeElement;
     return !!(active && root.contains(active) && /INPUT|TEXTAREA|SELECT/.test(active.tagName));
+  }
+
+  function pathKey() {
+    try {
+      return String(location.pathname || "");
+    } catch (_e) {
+      return "";
+    }
   }
 
   function renderKey() {
@@ -47,6 +108,20 @@
     ].join("::");
   }
 
+  function fullRenderKey() {
+    // Path must stay in the same key used for skip + after render (was mismatched before).
+    return renderKey() + "##" + pathKey();
+  }
+
+  function resolveActiveChatName() {
+    if (hostChannel === "divar") {
+      // Prefer stable chatId so the panel does not flip name ↔ chatId every tick.
+      var chatId = getDivarChatIdFromUrl();
+      if (chatId) return chatId;
+    }
+    return getChatNameSafe();
+  }
+
   function $(sel, el) {
     return (el || document).querySelector(sel);
   }
@@ -58,21 +133,77 @@
   }
 
   function injectCss() {
-    if (document.getElementById("iranexpedia-crm-css")) return;
-    var link = document.createElement("link");
-    link.id = "iranexpedia-crm-css";
-    link.rel = "stylesheet";
-    link.href = chrome.runtime.getURL("crm-panel.css");
-    document.documentElement.appendChild(link);
+    if (!document.getElementById("iranexpedia-crm-css")) {
+      var link = document.createElement("link");
+      link.id = "iranexpedia-crm-css";
+      link.rel = "stylesheet";
+      link.href = chrome.runtime.getURL("crm-panel.css");
+      (document.head || document.documentElement).appendChild(link);
+    }
+    // Fallback if host CSP delays/blocks the stylesheet (common on Divar)
+    if (!document.getElementById("iranexpedia-crm-inline")) {
+      var style = document.createElement("style");
+      style.id = "iranexpedia-crm-inline";
+      style.textContent =
+        "#iranexpedia-crm-root{position:fixed!important;top:0;right:0;bottom:0;width:340px;z-index:2147483646!important;pointer-events:none;direction:rtl;font-family:Tahoma,sans-serif}" +
+        "#iranexpedia-crm-toggle{pointer-events:auto;position:absolute;top:72px;right:340px;width:34px;height:88px;border:0;border-radius:14px 0 0 14px;background:#2563eb;color:#fff;font-size:11px;font-weight:800;writing-mode:vertical-rl;cursor:pointer}" +
+        "#iranexpedia-crm-root.is-collapsed #iranexpedia-crm-toggle{right:0}" +
+        "#iranexpedia-crm-panel{pointer-events:auto;height:100%;width:340px;background:#f4f6f9;border-left:1px solid #e2e8f0;overflow:auto;color:#0f172a}" +
+        "#iranexpedia-crm-root.is-collapsed #iranexpedia-crm-panel{display:none}";
+      (document.head || document.documentElement).appendChild(style);
+    }
   }
 
   function openDashboard() {
-    chrome.runtime.sendMessage({ type: "openDashboard" });
+    safeRuntimeSend({ type: "openDashboard" });
+  }
+
+  function openDivarChatPage() {
+    safeRuntimeSend({ type: "focusOrOpenDivarChat" });
+  }
+
+  function isDivarChatPath() {
+    try {
+      return /^\/chat(\/|$)/.test(String(location.pathname || ""));
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function getDivarChatIdFromUrl() {
+    try {
+      var m = String(location.pathname || "").match(/\/chat\/([^/?#]+)/);
+      if (!m) return "";
+      var id = decodeURIComponent(m[1]);
+      return !id || id === "postchi" ? "" : id;
+    } catch (_e) {
+      return "";
+    }
   }
 
   function getChatNameSafe() {
     if (typeof window.__iranexpediaGetChatName === "function") {
-      return window.__iranexpediaGetChatName() || "";
+      var n = window.__iranexpediaGetChatName() || "";
+      if (n && n !== "چت و تماس") return n;
+    }
+    if (typeof window.__iranexpediaGetChatIdentity === "function") {
+      try {
+        var idn = window.__iranexpediaGetChatIdentity();
+        if (idn && (idn.name || idn.externalChatId || idn.chatId)) {
+          var nm = String(idn.name || idn.externalChatId || idn.chatId || "");
+          if (nm && nm !== "چت و تماس") return nm;
+        }
+      } catch (_e) {}
+    }
+    var h2 = document.querySelector("h2.kt-chat-nav-bar__title");
+    if (h2) {
+      var h2t = String(h2.textContent || "").trim();
+      if (h2t && h2t !== "چت و تماس") return h2t;
+    }
+    var divarTitles = document.querySelectorAll(".kt-chat-nav-bar__title");
+    for (var di = 0; di < divarTitles.length; di++) {
+      var dt = String(divarTitles[di].textContent || "").trim();
+      if (dt && dt !== "چت و تماس") return dt;
     }
     var spans = document.querySelectorAll(
       '#main header span[dir="auto"], #main header span[title]'
@@ -88,18 +219,90 @@
     return "";
   }
 
+  function renderDivarGate(panel) {
+    var onChat = isDivarChatPath();
+    var chatId = getDivarChatIdFromUrl();
+    var name = currentName || getChatNameSafe();
+    if (name === chatId) name = getChatNameSafe() || name;
+    var identity =
+      typeof window.__iranexpediaGetChatIdentity === "function"
+        ? window.__iranexpediaGetChatIdentity()
+        : null;
+    var ad = (identity && identity.adTitle) || "";
+    var body =
+      '<div class="crm-head"><div class="crm-brand">پنل CRM دیوار</div>' +
+      '<div class="crm-sub">iranexpedia.ir · ' +
+      (licenseOk ? "متصل" : "ورود لازم") +
+      "</div></div>";
+
+    if (!onChat) {
+      body +=
+        '<div class="crm-lock">' +
+        "<p>صفحه چت دیوار باز نیست.</p>" +
+        '<div class="crm-actions" style="justify-content:center;margin-top:12px;flex-direction:column;gap:8px">' +
+        '<button type="button" class="crm-btn" id="crm-open-divar-chat">باز کردن چت دیوار</button>' +
+        '<button type="button" class="crm-btn secondary" id="crm-open-dash">پنل ادمین</button>' +
+        "</div></div>";
+      panel.innerHTML = body;
+      var btnChat0 = $("#crm-open-divar-chat", panel);
+      var btnDash0 = $("#crm-open-dash", panel);
+      if (btnChat0) btnChat0.onclick = openDivarChatPage;
+      if (btnDash0) btnDash0.onclick = openDashboard;
+      return;
+    }
+
+    body +=
+      '<div class="crm-body"><div class="crm-card"><h3>گفتگوی فعلی</h3>' +
+      (name || chatId
+        ? "<p><strong>" +
+          (name || "بدون نام") +
+          "</strong></p>" +
+          (ad ? '<p class="crm-empty">' + ad + "</p>" : "") +
+          (chatId ? '<p class="crm-empty">chatId: ' + chatId + "</p>" : "")
+        : '<p class="crm-empty">یک گفتگو را از لیست چپ انتخاب کنید.</p>') +
+      "</div>";
+
+    body +=
+      '<div class="crm-card"><h3>' +
+      (licenseOk ? "وضعیت" : "ورود") +
+      "</h3>" +
+      (licenseOk
+        ? '<p class="crm-empty">وصل هستید. گفتگو را باز نگه دارید.</p>'
+        : '<p class="crm-empty">از پاپ‌آپ افزونه فقط شماره و کد را بزنید تا پاسخ خودکار فعال شود.</p>') +
+      '<div class="crm-actions" style="flex-wrap:wrap;gap:8px">' +
+      '<button type="button" class="crm-btn" id="crm-open-divar-chat">چت دیوار</button>' +
+      '<button type="button" class="crm-btn secondary" id="crm-open-dash">پنل ادمین</button>' +
+      "</div></div></div>";
+
+    panel.innerHTML = body;
+    var b1 = $("#crm-open-divar-chat", panel);
+    var b2 = $("#crm-open-dash", panel);
+    if (b1) b1.onclick = openDivarChatPage;
+    if (b2) b2.onclick = openDashboard;
+  }
+
   function render() {
     if (!root) return;
     root.classList.toggle("is-collapsed", collapsed);
 
     var panel = $("#iranexpedia-crm-panel", root);
+
+    // Divar: show chat CTA / current chat even before OTP; full CRM only when logged in + chat open
+    if (hostChannel === "divar") {
+      var divarReady = licenseOk && currentName && isDivarChatPath();
+      if (!divarReady) {
+        renderDivarGate(panel);
+        return;
+      }
+    }
+
     if (!licenseOk) {
       panel.innerHTML =
         '<div class="crm-head"><div class="crm-brand">پنل CRM</div>' +
         '<div class="crm-sub">iranexpedia.ir</div></div>' +
-        '<div class="crm-lock"><p>برای استفاده از CRM، با OTP از پاپ‌آپ افزونه به سرور وصل شوید. بدون سرور پنل غیرفعال است.</p>' +
+        '<div class="crm-lock"><p>از پاپ‌آپ افزونه فقط شماره و کد را وارد کنید.</p>' +
         '<div class="crm-actions" style="justify-content:center;margin-top:12px">' +
-        '<button type="button" class="crm-btn" id="crm-open-dash">باز کردن داشبورد</button></div></div>';
+        '<button type="button" class="crm-btn" id="crm-open-dash">پنل ادمین</button></div></div>';
       $("#crm-open-dash", panel).onclick = openDashboard;
       return;
     }
@@ -108,7 +311,9 @@
     if (!currentName) {
       contactHtml =
         hostChannel === "divar"
-          ? '<p class="crm-empty">یک گفتگو را در دیوار باز کنید تا کارت مخاطب نمایش داده شود.</p>'
+          ? '<p class="crm-empty">یک گفتگو را در دیوار باز کنید تا کارت مخاطب نمایش داده شود.</p>' +
+            '<div class="crm-actions" style="margin-top:10px">' +
+            '<button type="button" class="crm-btn" id="crm-open-divar-chat-inline">باز کردن چت دیوار</button></div>'
           : '<p class="crm-empty">یک چت را در واتساپ باز کنید تا کارت مخاطب نمایش داده شود.</p>';
     } else {
       var c = currentContact || {
@@ -325,8 +530,12 @@
       };
     });
 
-    $("#crm-open-dash", panel).onclick = openDashboard;
-    $("#crm-schedule", panel).onclick = scheduleLater;
+    var openDashBtn = $("#crm-open-dash", panel);
+    if (openDashBtn) openDashBtn.onclick = openDashboard;
+    var openDivarInline = $("#crm-open-divar-chat-inline", panel);
+    if (openDivarInline) openDivarInline.onclick = openDivarChatPage;
+    var scheduleBtn = $("#crm-schedule", panel);
+    if (scheduleBtn) scheduleBtn.onclick = scheduleLater;
 
     var membersBtn = $("#crm-download-members", panel);
     if (membersBtn) {
@@ -363,43 +572,62 @@
       later.value = d.toISOString().slice(0, 16);
     }
 
-    lastRenderKey = renderKey();
+    lastRenderKey = fullRenderKey();
   }
 
   async function refreshLicense() {
-    licenseOk = false;
+    if (!isExtAlive()) {
+      markDeadContext();
+      return;
+    }
     if (!globalThis.IranexpediaAuthGate) return;
     try {
       var res = await IranexpediaAuthGate.verify();
+      // Keep previous licenseOk until we have a definitive result (avoids gate flicker).
       licenseOk = !!(res && res.ok && IranexpediaAuthGate.assertUnlocked());
-    } catch (_e) {
+    } catch (e) {
+      var m = String((e && e.message) || e || "");
+      if (m.indexOf("Extension context invalidated") !== -1) markDeadContext();
       licenseOk = false;
     }
   }
 
   async function refreshData() {
-    if (typeof window.__iranexpediaGetAutoReplyEnabled === "function") {
-      autoReplyOn = !!window.__iranexpediaGetAutoReplyEnabled();
-    } else {
-      autoReplyOn = await new Promise(function (resolve) {
-        chrome.storage.local.get({ autoReplyEnabled: false }, function (data) {
-          resolve(!!data.autoReplyEnabled);
-        });
-      });
+    if (!isExtAlive()) {
+      markDeadContext();
+      return;
     }
-    if (!globalThis.IranexpediaCrm) return;
-    templates = await IranexpediaCrm.getTemplates();
-    queuedCount = await IranexpediaCrm.getQueuedCount();
-    if (currentName) {
-      currentContact = await IranexpediaCrm.getContactByName(currentName);
-      if (!currentContact && typeof window.__iranexpediaGetChatIdentity === "function") {
-        var idn = window.__iranexpediaGetChatIdentity();
-        if (idn && idn.phone && IranexpediaCrm.getContactByPhone) {
-          currentContact = await IranexpediaCrm.getContactByPhone(idn.phone);
-        }
+    try {
+      if (typeof window.__iranexpediaGetAutoReplyEnabled === "function") {
+        autoReplyOn = !!window.__iranexpediaGetAutoReplyEnabled();
+      } else {
+        autoReplyOn = await new Promise(function (resolve) {
+          try {
+            chrome.storage.local.get({ autoReplyEnabled: false }, function (data) {
+              resolve(!!(data && data.autoReplyEnabled));
+            });
+          } catch (_e) {
+            resolve(false);
+          }
+        });
       }
-    } else {
-      currentContact = null;
+      if (!globalThis.IranexpediaCrm) return;
+      templates = await IranexpediaCrm.getTemplates();
+      queuedCount = await IranexpediaCrm.getQueuedCount();
+      if (currentName) {
+        currentContact = await IranexpediaCrm.getContactByName(currentName);
+        if (!currentContact && typeof window.__iranexpediaGetChatIdentity === "function") {
+          var idn = window.__iranexpediaGetChatIdentity();
+          if (idn && idn.phone && IranexpediaCrm.getContactByPhone) {
+            currentContact = await IranexpediaCrm.getContactByPhone(idn.phone);
+          }
+        }
+      } else {
+        currentContact = null;
+      }
+    } catch (e) {
+      var msg = String((e && e.message) || e || "");
+      if (msg.indexOf("Extension context invalidated") !== -1) markDeadContext();
     }
   }
 
@@ -413,16 +641,36 @@
       (identity && identity.chatType) ||
       (currentContact && currentContact.chatType) ||
       "pv";
+    var divarChatId =
+      hostChannel === "divar"
+        ? (identity && (identity.externalChatId || identity.chatId)) ||
+          getDivarChatIdFromUrl() ||
+          ""
+        : "";
     var phone =
       chatType === "group"
         ? ""
-        : (identity && identity.phone) ||
-          (currentContact && currentContact.phone) ||
-          "";
-    var displayName =
-      (currentContact && currentContact.name) ||
+        : hostChannel === "divar"
+          ? divarChatId ||
+            (identity && identity.phone) ||
+            (currentContact && currentContact.phone) ||
+            ""
+          : (identity && identity.phone) ||
+            (currentContact && currentContact.phone) ||
+            "";
+    var prettyName =
       (identity && identity.name) ||
+      getChatNameSafe() ||
+      "";
+    // Keep a previously saved human name; do not overwrite with raw chatId.
+    var displayName =
+      (currentContact &&
+        currentContact.name &&
+        currentContact.name !== phone &&
+        currentContact.name) ||
+      (prettyName && prettyName !== "چت و تماس" ? prettyName : "") ||
       currentName ||
+      phone ||
       "";
     if (!displayName && !phone) return;
 
@@ -438,6 +686,7 @@
       name: displayName || phone,
       chatType: chatType,
       phone: phone,
+      channel: hostChannel,
       groupId:
         chatType === "group"
           ? (identity && identity.groupId) ||
@@ -445,7 +694,12 @@
             ""
           : (currentContact && currentContact.groupId) || ""
     });
-    if (currentContact && currentContact.name) currentName = currentContact.name;
+    // Divar: keep stable key = chatId so tick() does not thrash on title changes.
+    if (hostChannel === "divar" && (divarChatId || phone)) {
+      currentName = divarChatId || phone;
+    } else if (currentContact && currentContact.name) {
+      currentName = currentContact.name;
+    }
   }
 
   async function saveCurrent() {
@@ -558,6 +812,7 @@
         task: {
           targetName: currentName,
           targetType: targetType,
+          channel: hostChannel,
           message: message,
           runAt: runAt
         }
@@ -596,48 +851,75 @@
   }
 
   async function tick() {
-    build();
-    await refreshLicense();
-    var name = getChatNameSafe();
-    var nameChanged = name !== currentName;
-    if (nameChanged) {
-      currentName = name;
-      if (currentName && licenseOk) await ensureContact();
+    if (deadContext || ticking) return;
+    if (!isExtAlive()) {
+      markDeadContext();
+      return;
     }
-    await refreshData();
+    ticking = true;
+    try {
+      build();
+      await refreshLicense();
+      var pathNow = pathKey();
+      var pathChanged = pathNow !== lastPathname;
+      lastPathname = pathNow;
 
-    var key = renderKey();
-    if (key === lastRenderKey && !nameChanged) {
-      var chip = $("#crm-chip-q", root);
-      if (chip) {
-        chip.textContent = queuedCount + " در صف";
-        chip.className = "crm-chip" + (queuedCount ? " warn" : "");
+      var name = resolveActiveChatName();
+      var nameChanged = name !== currentName;
+      if (nameChanged) {
+        currentName = name;
+        if (currentName && licenseOk) await ensureContact();
       }
-      return;
-    }
+      await refreshData();
 
-    if (isTypingInPanel() && !nameChanged && key.split("::")[0] === lastRenderKey.split("::")[0]) {
-      return;
-    }
+      var key = fullRenderKey();
+      if (key === lastRenderKey && !nameChanged && !pathChanged) {
+        var chip = $("#crm-chip-q", root);
+        if (chip) {
+          chip.textContent = queuedCount + " در صف";
+          chip.className = "crm-chip" + (queuedCount ? " warn" : "");
+        }
+        return;
+      }
 
-    lastRenderKey = key;
-    render();
+      // Never wipe inputs while the user is editing (unless chat/path really changed).
+      if (isTypingInPanel() && !nameChanged && !pathChanged) {
+        return;
+      }
+
+      lastRenderKey = key;
+      render();
+    } catch (err) {
+      var msg = String((err && err.message) || err || "");
+      if (msg.indexOf("Extension context invalidated") !== -1) {
+        markDeadContext();
+      }
+    } finally {
+      ticking = false;
+    }
   }
 
-  chrome.storage.onChanged.addListener(function (changes, area) {
-    if (area !== "local") return;
-    if (
-      changes.crmContacts ||
-      changes.crmTemplates ||
-      changes.crmTasks ||
-      changes.crmSettings ||
-      changes.cloudBridgeConfig ||
-      changes.autoReplyEnabled
-    ) {
-      tick();
-    }
-  });
+  try {
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (deadContext || !isExtAlive()) return;
+      if (area !== "local") return;
+      // Avoid wiping the form mid-edit when our own upsert writes storage.
+      if (isTypingInPanel()) return;
+      if (
+        changes.crmContacts ||
+        changes.crmTemplates ||
+        changes.crmTasks ||
+        changes.crmSettings ||
+        changes.cloudBridgeConfig ||
+        changes.autoReplyEnabled
+      ) {
+        tick();
+      }
+    });
+  } catch (_e) {
+    markDeadContext();
+  }
 
   tick();
-  setInterval(tick, 2500);
+  tickTimer = setInterval(tick, 2500);
 })();

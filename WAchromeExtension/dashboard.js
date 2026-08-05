@@ -660,12 +660,22 @@
       return;
     }
     var runAt = new Date(at).getTime();
+    var channel =
+      selectedContact.channel === "divar" ||
+      (selectedContact.phone &&
+        !/^\+?\d{8,15}$/.test(String(selectedContact.phone).replace(/[\s\-()]/g, "")))
+        ? "divar"
+        : "whatsapp";
     chrome.runtime.sendMessage(
       {
         type: "scheduleTask",
         task: {
-          targetName: selectedContact.name,
+          targetName:
+            channel === "divar"
+              ? selectedContact.phone || selectedContact.name
+              : selectedContact.name,
           targetType: selectedContact.chatType || "pv",
+          channel: channel,
           message: message,
           runAt: runAt
         }

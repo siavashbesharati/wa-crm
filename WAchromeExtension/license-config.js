@@ -32,4 +32,4 @@
       }
     ]
   };
-})(typeof globalThis !== "undefined" ? globalThis : window);
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this);
