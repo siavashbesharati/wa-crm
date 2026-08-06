@@ -14,13 +14,33 @@ settings = get_settings()
 ALGORITHM = "HS256"
 
 
-def create_access_token(user_id: str, org_id: str, role: str) -> str:
+def create_access_token(
+    user_id: str,
+    org_id: str,
+    role: str,
+    *,
+    scope: str = "org",
+    seat_id: str = "",
+    install_id: str = "",
+) -> str:
     exp = datetime.utcnow() + timedelta(minutes=settings.jwt_access_minutes)
-    return jwt.encode(
-        {"sub": user_id, "org_id": org_id, "role": role, "exp": exp, "type": "access"},
-        settings.jwt_secret,
-        algorithm=ALGORITHM,
-    )
+    payload = {
+        "sub": user_id,
+        "org_id": org_id or "",
+        "role": role,
+        "scope": scope,
+        "exp": exp,
+        "type": "access",
+    }
+    if seat_id:
+        payload["seat_id"] = seat_id
+    if install_id:
+        payload["install_id"] = install_id
+    return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
+
+
+def create_platform_access_token(user_id: str) -> str:
+    return create_access_token(user_id, "", "super_admin", scope="platform")
 
 
 def create_refresh_token(db: Session, user_id: str) -> str:

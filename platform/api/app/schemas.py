@@ -24,6 +24,8 @@ class TokenOut(BaseModel):
     user_id: str
     org_id: str
     role: str
+    is_new: bool = False
+    onboarding_step: str = "done"
 
 
 class OrgOut(BaseModel):
@@ -31,6 +33,25 @@ class OrgOut(BaseModel):
     name: str
     plan: str
     limits: dict[str, Any]
+    onboarding_step: str = "done"
+    industry: str = ""
+    city: str = ""
+
+
+class OnboardingProfileIn(BaseModel):
+    org_name: str = Field(min_length=2)
+    display_name: str = ""
+    industry: str = ""
+    city: str = ""
+
+
+class OnboardingPlanIn(BaseModel):
+    plan: str
+
+
+class OnboardingPayIn(BaseModel):
+    plan: str = ""
+    mock_card: str = "4242"
 
 
 class MemberOut(BaseModel):

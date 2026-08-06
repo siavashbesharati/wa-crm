@@ -58,11 +58,20 @@
   async function getConfig() {
     var data = await chrome.storage.local.get({
       cloudBridgeConfig: null,
-      cloudDeviceId: null
+      cloudDeviceId: null,
+      cloudInstallId: null
     });
+    var patchLocal = {};
     if (!data.cloudDeviceId) {
       data.cloudDeviceId = uuid();
-      await chrome.storage.local.set({ cloudDeviceId: data.cloudDeviceId });
+      patchLocal.cloudDeviceId = data.cloudDeviceId;
+    }
+    if (!data.cloudInstallId) {
+      data.cloudInstallId = uuid();
+      patchLocal.cloudInstallId = data.cloudInstallId;
+    }
+    if (Object.keys(patchLocal).length) {
+      await chrome.storage.local.set(patchLocal);
     }
     var cfg = data.cloudBridgeConfig || {};
     return {
@@ -77,7 +86,10 @@
       phone: cfg.phone || "",
       orgName: cfg.orgName || "",
       plan: cfg.plan || "",
-      deviceId: data.cloudDeviceId
+      seatId: cfg.seatId || "",
+      seatTokenPrefix: cfg.seatTokenPrefix || "",
+      deviceId: data.cloudDeviceId,
+      installId: data.cloudInstallId
     };
   }
 
@@ -96,7 +108,9 @@
         role: next.role,
         phone: next.phone,
         orgName: next.orgName,
-        plan: next.plan
+        plan: next.plan,
+        seatId: next.seatId || "",
+        seatTokenPrefix: next.seatTokenPrefix || ""
       }
     });
     return getConfig();
@@ -156,6 +170,7 @@
   }
 
   async function verifyOtpImpl(phone, code, orgName, apiUrl) {
+    // Legacy web-style OTP — kept for bridge compatibility; popup uses seat tokens.
     var cfg = await getConfig();
     var res = await rawRequest(apiUrl || cfg.apiUrl, "/auth/otp/verify", {
       method: "POST",
@@ -188,6 +203,49 @@
         plan: me.data.org.plan
       });
     }
+    return { ok: true, data: token };
+  }
+
+  async function activateSeatImpl(seatToken, apiUrl) {
+    var cfg = await getConfig();
+    var res = await rawRequest(apiUrl || cfg.apiUrl, "/seats/activate", {
+      method: "POST",
+      body: {
+        token: String(seatToken || "").trim(),
+        install_id: cfg.installId,
+        device_id: cfg.deviceId,
+        label_hint: ""
+      }
+    });
+    if (!res.ok) {
+      if (res.data && typeof res.data.detail === "string") {
+        res.error = res.data.detail;
+      }
+      return res;
+    }
+    var token = res.data;
+    var prefix = String(seatToken || "").trim().slice(0, 12);
+    await setConfig({
+      enabled: true,
+      apiUrl: apiUrl || cfg.apiUrl,
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      orgId: token.org_id,
+      role: "connector",
+      seatId: "",
+      seatTokenPrefix: prefix
+    });
+    var me = await request("/auth/me", { method: "GET" });
+    if (me.ok && me.data && me.data.org) {
+      await setConfig({
+        orgId: me.data.org.id || token.org_id,
+        orgName: me.data.org.name || "",
+        plan: me.data.org.plan || ""
+      });
+    }
+    try {
+      await request("/seats/heartbeat", { method: "POST", body: {} });
+    } catch (_e) {}
     return { ok: true, data: token };
   }
 
@@ -374,6 +432,7 @@
     setConfig: setConfig,
     requestOtp: wrap("requestOtp", requestOtpImpl),
     verifyOtp: wrap("verifyOtp", verifyOtpImpl),
+    activateSeat: wrap("activateSeat", activateSeatImpl),
     listAccounts: wrap("listAccounts", listAccountsImpl),
     createAccount: wrap("createAccount", createAccountImpl),
     ensureChannelAccount: wrap("ensureChannelAccount", ensureChannelAccountImpl),
@@ -387,6 +446,7 @@
     __impl: {
       requestOtp: requestOtpImpl,
       verifyOtp: verifyOtpImpl,
+      activateSeat: activateSeatImpl,
       listAccounts: listAccountsImpl,
       createAccount: createAccountImpl,
       ensureChannelAccount: ensureChannelAccountImpl,

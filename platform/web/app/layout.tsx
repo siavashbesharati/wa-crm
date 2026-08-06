@@ -3,8 +3,8 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "CRM واتساپ | پنل ابری",
-  description: "پلتفرم چنداپراتوره CRM واتساپ"
+  title: "CRM چندکاناله | پنل ابری",
+  description: "پلتفرم چنداپراتوره CRM واتساپ و دیوار"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

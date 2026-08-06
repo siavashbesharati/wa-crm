@@ -78,6 +78,46 @@ def main() -> None:
                 if "phone" in acc_cols:
                     conn.execute(text("UPDATE channel_accounts SET external_id = COALESCE(phone, '')"))
 
+        # Dual-dashboard: platform super-admin + org status
+        user_cols = _cols("users")
+        if user_cols and "is_platform_admin" not in user_cols:
+            conn.execute(
+                text("ALTER TABLE users ADD COLUMN is_platform_admin BOOLEAN DEFAULT 0")
+            )
+            print("ALTER TABLE users ADD COLUMN is_platform_admin")
+
+        org_cols = _cols("organizations")
+        if org_cols and "status" not in org_cols:
+            conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN status VARCHAR(40) DEFAULT 'active'")
+            )
+            print("ALTER TABLE organizations ADD COLUMN status")
+        if org_cols and "onboarding_step" not in org_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE organizations ADD COLUMN onboarding_step VARCHAR(40) DEFAULT 'done'"
+                )
+            )
+            print("ALTER TABLE organizations ADD COLUMN onboarding_step")
+        if org_cols and "industry" not in org_cols:
+            conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN industry VARCHAR(120) DEFAULT ''")
+            )
+            print("ALTER TABLE organizations ADD COLUMN industry")
+        if org_cols and "city" not in org_cols:
+            conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN city VARCHAR(120) DEFAULT ''")
+            )
+            print("ALTER TABLE organizations ADD COLUMN city")
+
+        # extension_seats created via Base.metadata.create_all
+        seat_cols = _cols("extension_seats")
+        if seat_cols and "token_plain" not in seat_cols:
+            conn.execute(
+                text("ALTER TABLE extension_seats ADD COLUMN token_plain VARCHAR(120) DEFAULT ''")
+            )
+            print("ALTER TABLE extension_seats ADD COLUMN token_plain")
+
     print("Migration done.")
 
 

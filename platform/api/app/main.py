@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import admin, ai, auth, channels, kpi, leads, messages, orgs, tasks, whatsapp
+from app.routers import admin, ai, auth, channels, kpi, leads, messages, orgs, seats, tasks, whatsapp
 
 settings = get_settings()
 
@@ -28,6 +28,7 @@ ROUTERS = [
     admin.router,
     auth.router,
     orgs.router,
+    seats.router,
     leads.router,
     tasks.router,
     channels.router,

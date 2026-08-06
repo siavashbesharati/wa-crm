@@ -58,13 +58,13 @@ def list_accounts(
 @router.post("/accounts", response_model=ChannelAccountOut)
 def create_account(
     body: ChannelAccountIn,
-    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    auth: AuthContext = Depends(
+        require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)
+    ),
     db: Session = Depends(get_db),
 ):
-    limits = plan_limits(auth.org.plan)
-    count = db.query(ChannelAccount).filter(ChannelAccount.org_id == auth.org.id).count()
-    if count >= limits["max_channel_accounts"]:
-        raise HTTPException(status_code=402, detail="سقف تعداد اکانت کانال پلن پر شده است")
+    # Channels are unlimited; plan limits concurrent extension seats instead.
+    _ = plan_limits(auth.org.plan)
 
     ch = _parse_channel(body.channel)
     external_id = (body.external_id or body.phone or "").strip()

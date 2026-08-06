@@ -73,8 +73,8 @@ export default function TeamPage() {
           {org && (
             <Card title={org.name}>
               <div className="hint">
-                پلن {org.plan} — حداکثر {String(org.limits.max_seats)} کاربر /{" "}
-                {String(org.limits.max_channel_accounts || org.limits.max_wa_numbers)} اکانت کانال
+                پلن {org.plan} — حداکثر {String(org.limits.max_seats)} صندلی افزونه هم‌زمان
+                (کانال‌ها نامحدود)
               </div>
               <div className="row-actions" style={{ marginTop: 12 }}>
                 <select value={plan} onChange={(e) => setPlan(e.target.value)} style={{ width: "auto" }}>

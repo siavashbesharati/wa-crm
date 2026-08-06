@@ -2,70 +2,53 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearSession, getSession, api } from "@/lib/api";
 import { useEffect, useState } from "react";
+import {
+  api,
+  clearPlatformSession,
+  getPlatformSession
+} from "@/lib/api";
 import { Spinner } from "@/components/ui/Spinner";
 
 const NAV = [
-  { href: "/home", label: "میز کار", ico: "⌂" },
-  { href: "/leads", label: "لیدها", ico: "☰" },
-  { href: "/pipeline", label: "پایپلاین", ico: "▦" },
-  { href: "/inbox", label: "اینباکس", ico: "✉" },
-  { href: "/tasks", label: "وظایف", ico: "☑" },
-  { href: "/channels", label: "کانال‌ها", ico: "☎" },
-  { href: "/seats", label: "صندلی افزونه", ico: "🔑" },
-  { href: "/team", label: "تیم", ico: "☺" },
-  { href: "/knowledge", label: "دانش AI", ico: "✦" },
-  { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
-  { href: "/kpi", label: "KPI / OKR", ico: "◉" }
+  { href: "/super/businesses", label: "کسب‌وکارها", ico: "▣" },
+  { href: "/super/ai", label: "تنظیمات AI", ico: "✦" },
+  { href: "/super/system", label: "سیستم", ico: "◉" }
 ];
 
-export default function Shell({
+export default function SuperShell({
   title,
   sub,
   children,
-  actions,
-  search,
-  onSearch
+  actions
 }: {
   title: string;
   sub: string;
   children: React.ReactNode;
   actions?: React.ReactNode;
-  search?: string;
-  onSearch?: (v: string) => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [orgName, setOrgName] = useState("");
-  const [userLabel, setUserLabel] = useState("");
+  const [userLabel, setUserLabel] = useState("سوپر ادمین");
 
   useEffect(() => {
-    if (!getSession()) {
-      router.replace("/login");
+    if (!getPlatformSession()) {
+      router.replace("/super/login");
       return;
     }
     setReady(true);
-    api<{
-      org: { name: string };
-      user: { display_name: string; phone: string };
-      needs_onboarding?: boolean;
-      onboarding_step?: string;
-    }>("/auth/me")
+    api<{ user: { display_name: string; phone: string } }>("/admin/me", {
+      platform: true
+    })
       .then((me) => {
-        if (me.needs_onboarding || (me.onboarding_step && me.onboarding_step !== "done")) {
-          router.replace("/onboarding");
-          return;
-        }
-        setOrgName(me.org?.name || "");
-        setUserLabel(me.user?.display_name || me.user?.phone || "");
+        setUserLabel(me.user?.display_name || me.user?.phone || "سوپر ادمین");
       })
       .catch(() => {
-        clearSession();
-        router.replace("/login");
+        clearPlatformSession();
+        router.replace("/super/login");
       });
   }, [router]);
 
@@ -77,20 +60,20 @@ export default function Shell({
     return (
       <div className="page-loading" style={{ minHeight: "100vh" }}>
         <Spinner dark lg />
-        <span>در حال بارگذاری…</span>
+        <span>در حال بارگذاری پنل پلتفرم…</span>
       </div>
     );
   }
 
-  const initials = (userLabel || "ک").trim().slice(0, 1);
+  const initials = (userLabel || "س").trim().slice(0, 1);
 
   return (
-    <div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
+    <div className={`app-shell super-shell ${collapsed ? "collapsed" : ""}`}>
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-block">
-            <div className="brand">CRM چندکاناله</div>
-            <div className="brand-sub">پنل کسب‌وکار</div>
+            <div className="brand">سوپر ادمین</div>
+            <div className="brand-sub">مالک پلتفرم</div>
           </div>
           <button
             type="button"
@@ -105,12 +88,12 @@ export default function Shell({
         <div className="user-chip">
           <div className="user-avatar">{initials}</div>
           <div className="user-meta">
-            <strong>{userLabel || "کاربر"}</strong>
-            <span>{orgName || "سازمان"}</span>
+            <strong>{userLabel}</strong>
+            <span>دسترسی سراسری</span>
           </div>
         </div>
 
-        <div className="nav-label">منو</div>
+        <div className="nav-label">پلتفرم</div>
         <nav className="nav">
           {NAV.map((item) => (
             <Link
@@ -126,14 +109,17 @@ export default function Shell({
         </nav>
 
         <div className="sidebar-foot">
+          <Link href="/login" className="btn secondary" style={{ textAlign: "center" }}>
+            <span className="label">ورود کسب‌وکار</span>
+          </Link>
           <button
             className="btn secondary"
             onClick={() => {
-              clearSession();
-              router.replace("/login");
+              clearPlatformSession();
+              router.replace("/super/login");
             }}
           >
-            <span className="label">خروج</span>
+            <span className="label">خروج سوپر ادمین</span>
           </button>
         </div>
       </aside>
@@ -143,7 +129,6 @@ export default function Shell({
           <button
             type="button"
             className="icon-btn"
-            style={{ display: undefined }}
             aria-label="منو"
             onClick={() => {
               if (window.matchMedia("(max-width: 960px)").matches) {
@@ -159,14 +144,6 @@ export default function Shell({
             <h1 className="page-title">{title}</h1>
             <p className="page-sub">{sub}</p>
           </div>
-          {onSearch && (
-            <input
-              className="top-search"
-              placeholder="جستجو…"
-              value={search || ""}
-              onChange={(e) => onSearch(e.target.value)}
-            />
-          )}
           <div className="topbar-actions">{actions}</div>
         </header>
         <main className="main">{children}</main>

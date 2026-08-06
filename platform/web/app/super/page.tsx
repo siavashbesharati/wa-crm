@@ -2,12 +2,12 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getPlatformSession } from "@/lib/api";
 
-/** Legacy route — platform console lives under /super */
-export default function AdminRedirectPage() {
+export default function SuperIndexPage() {
   const router = useRouter();
   useEffect(() => {
-    router.replace("/super");
+    router.replace(getPlatformSession() ? "/super/businesses" : "/super/login");
   }, [router]);
   return null;
 }

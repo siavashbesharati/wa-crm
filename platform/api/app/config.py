@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     jwt_access_minutes: int = 60
     jwt_refresh_days: int = 30
     mock_otp_code: str = "123456"
+    # Platform owner (super admin) — change in production
+    super_admin_phone: str = "09000000000"
+    super_admin_password: str = "admin123"
     embedding_dim: int = 384
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"

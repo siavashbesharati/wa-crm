@@ -81,8 +81,7 @@ export default function HomePage() {
               <strong>{me.org.name}</strong>
               <div className="hint" style={{ marginTop: 6 }}>
                 پلن {me.org.plan} · نقش شما: {me.role} · سقف{" "}
-                {String(me.org.limits.max_seats)} کاربر /{" "}
-                {String(me.org.limits.max_channel_accounts || me.org.limits.max_wa_numbers)} اکانت کانال
+                {String(me.org.limits.max_seats)} صندلی افزونه هم‌زمان (کانال‌ها نامحدود)
               </div>
             </Card>
           )}

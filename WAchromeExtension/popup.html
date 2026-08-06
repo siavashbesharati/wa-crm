@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ورود</title>
+  <title>ورود افزونه</title>
   <link
     href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
     rel="stylesheet"
@@ -13,34 +13,39 @@
 </head>
 <body>
   <header>
-    <div class="brand">ورود</div>
-    <div class="subtitle">فقط شماره و کد</div>
+    <div class="brand">اتصال افزونه</div>
+    <div class="subtitle">توکن صندلی یکتا برای این نصب</div>
     <div id="ext-version" class="version">v?</div>
   </header>
 
   <section class="license-card cloud-card">
     <div class="section-title">
-      <h2>تأیید هویت</h2>
+      <h2>توکن صندلی</h2>
       <span id="cloud-badge" class="license-badge off">قطع</span>
     </div>
-    <p id="cloud-status" class="license-message">شماره را وارد کنید.</p>
+    <p id="cloud-status" class="license-message">
+      توکن را از پنل کسب‌وکار → صندلی‌های افزونه کپی کنید.
+    </p>
     <form id="cloud-form">
       <label>
-        موبایل
-        <input id="cloud-phone" type="text" placeholder="0912..." autocomplete="tel" />
-      </label>
-      <label id="cloud-code-wrap" class="hidden">
-        کد
-        <input id="cloud-code" type="text" placeholder="OTP" inputmode="numeric" />
+        توکن صندلی
+        <input
+          id="cloud-seat-token"
+          type="text"
+          placeholder="seat_..."
+          autocomplete="off"
+          spellcheck="false"
+        />
       </label>
       <div class="license-actions">
-        <button type="button" id="cloud-otp-btn">دریافت کد</button>
-        <button type="button" id="cloud-login-btn">ورود</button>
-      </div>
-      <div class="license-actions" style="margin-top:8px">
-        <button type="button" id="cloud-disconnect" class="secondary-btn">خروج</button>
+        <button type="button" id="cloud-login-btn">اتصال</button>
+        <button type="button" id="cloud-disconnect" class="secondary-btn">قطع اتصال</button>
       </div>
     </form>
+    <p class="hint" style="margin-top:10px;font-size:11px;opacity:.85;line-height:1.6">
+      هر توکن فقط روی یک نصب Chrome قفل می‌شود. برای دستگاه دیگر توکن جدید بسازید یا
+      مدیر صندلی را ریست کند.
+    </p>
   </section>
 
   <footer class="app-footer">

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build:ext": "node scripts/obfuscate-extension.mjs",
+    "pack:ext": "node scripts/pack-extension-download.mjs",
     "obfuscate": "npm run build:ext",
     "license:gen": "node scripts/generate-license-key.mjs",
     "api:dev": "cd platform/api && python -m uvicorn app.main:app --reload --port 8000",

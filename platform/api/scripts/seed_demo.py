@@ -58,7 +58,11 @@ def main() -> None:
     if membership:
         org = db.get(Organization, membership.org_id)
     else:
-        org = Organization(name="آژانس دمو iranexpedia", plan="growth")
+        org = Organization(
+            name="آژانس دمو iranexpedia",
+            plan="growth",
+            onboarding_step="done",
+        )
         db.add(org)
         db.flush()
         db.add(Membership(org_id=org.id, user_id=user.id, role=MemberRole.owner))
