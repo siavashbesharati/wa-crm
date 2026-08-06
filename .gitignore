@@ -8,8 +8,10 @@ platform/api/**/__pycache__/
 platform/api/.venv/
 *.pyc
 
-# Built / obfuscated extension (generate with npm run build:ext)
+# Built / obfuscated extension (generate with npm run release:ext / start:all)
 WAchromeExtension-dist/
+WAchromeExtension-dist.zip
+_ext_zip_stage/
 
 # Environment / secrets
 .env

@@ -16,22 +16,18 @@ type Account = {
   status: string;
 };
 
-type Session = {
-  id: string;
-  account_id: string;
-  device_id: string;
-  role: string;
-  last_seen_at: string;
-};
-
 const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "واتساپ",
   divar: "دیوار"
 };
 
+function isOn(status: string) {
+  const s = (status || "").toLowerCase();
+  return s === "online" || s === "connected" || s === "ready" || s === "on";
+}
+
 export default function ChannelsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
 
@@ -39,7 +35,6 @@ export default function ChannelsPage() {
     setLoading(true);
     try {
       setAccounts(await api<Account[]>("/channels/accounts"));
-      setSessions(await api<Session[]>("/channels/sessions"));
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -51,8 +46,7 @@ export default function ChannelsPage() {
     load();
     const t = setInterval(() => {
       api<Account[]>("/channels/accounts").then(setAccounts).catch(() => undefined);
-      api<Session[]>("/channels/sessions").then(setSessions).catch(() => undefined);
-    }, 15000);
+    }, 10000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -60,31 +54,31 @@ export default function ChannelsPage() {
   return (
     <Shell
       title="کانال‌ها"
-      sub="به‌صورت خودکار از افزونه‌ای که با توکن صندلی وصل شده شناسایی می‌شوند"
+      sub="وضعیت زنده از افزونه — وقتی تب واتساپ یا دیوار باز باشد، کانال روشن است"
     >
       {loading ? (
         <PageLoading />
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          <Card title="اکانت‌های شناسایی‌شده">
-            {accounts.length === 0 ? (
-              <EmptyState
-                title="هنوز کانالی نیست"
-                text="توکن صندلی را در افزونه وارد کنید و تب واتساپ یا دیوار را باز بگذارید — کانال خودش ثبت می‌شود."
-              />
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>کانال</th>
-                    <th>برچسب</th>
-                    <th>شناسه</th>
-                    <th>وضعیت</th>
-                    <th>شناسه سیستم</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {accounts.map((a) => (
+        <Card title="اکانت‌های من">
+          {accounts.length === 0 ? (
+            <EmptyState
+              title="هنوز کانالی نیست"
+              text="توکن صندلی را در افزونه وارد کنید و تب واتساپ یا دیوار را باز بگذارید — کانال خودش ثبت می‌شود."
+            />
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>کانال</th>
+                  <th>برچسب</th>
+                  <th>شناسه</th>
+                  <th>وضعیت</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((a) => {
+                  const on = isOn(a.status);
+                  return (
                     <tr key={a.id}>
                       <td>
                         <Badge tone="accent">{CHANNEL_LABELS[a.channel] || a.channel}</Badge>
@@ -92,50 +86,15 @@ export default function ChannelsPage() {
                       <td>{a.label}</td>
                       <td>{a.external_id || a.phone || "-"}</td>
                       <td>
-                        <Badge tone={a.status === "online" ? "online" : "offline"}>
-                          {a.status}
-                        </Badge>
+                        <Badge tone={on ? "online" : "offline"}>{on ? "روشن" : "خاموش"}</Badge>
                       </td>
-                      <td className="hint">{a.id}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-
-          <Card title="نشست‌های آنلاین">
-            {sessions.length === 0 ? (
-              <EmptyState
-                title="نشست آنلاینی نیست"
-                text="وقتی افزونه روی تب واتساپ یا دیوار فعال باشد، heartbeat اینجا دیده می‌شود."
-              />
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>نقش</th>
-                    <th>device</th>
-                    <th>اکانت</th>
-                    <th>آخرین دیده شدن</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((s) => (
-                    <tr key={s.id}>
-                      <td>
-                        <Badge tone="accent">{s.role}</Badge>
-                      </td>
-                      <td className="hint">{s.device_id}</td>
-                      <td className="hint">{s.account_id}</td>
-                      <td>{new Date(s.last_seen_at).toLocaleString("fa-IR")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-        </div>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </Card>
       )}
     </Shell>
   );

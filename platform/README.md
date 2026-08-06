@@ -33,9 +33,10 @@
 
 **نسخه افزونه (منبع واحد):** `config/extension.json`  
 - همگام‌سازی: `npm run sync:ext-version`  
-- obfuscate + ZIP دانلود (جایگزین قبلی): `npm run release:ext`  
+- obfuscate + pack در ریشه: `WAchromeExtension-dist/` و `WAchromeExtension-dist.zip` → `npm run release:ext`  
 - افزایش patch + release: `npm run release:ext:bump`  
-- اجرای همه (release + API + Web + Workers): `npm run start:all` یا دوبار کلیک روی `start-all.cmd`  
+- اجرای همه: `npm run start:all` (همان pack + API/Web/Workers)  
+- کپی ZIP برای پنل: `platform/web/public/downloads/iranexpedia-extension.zip`  
 - پنل نسخه را از `GET /api/extension/latest` می‌خواند.
 
 ## اجزا

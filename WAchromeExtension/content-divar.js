@@ -133,17 +133,30 @@
     return id;
   }
 
+  /** "~ کاربر: یاسر سپهری" → "یاسر سپهری" */
+  function cleanDivarPeerName(raw) {
+    var t = String(raw || "")
+      .replace(/\u200c/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!t || t === "چت و تماس") return "";
+    t = t.replace(/^~\s*/, "");
+    t = t.replace(/^کاربر\s*[:：]\s*/i, "");
+    t = t.replace(/^user\s*[:：]\s*/i, "");
+    return t.trim();
+  }
+
   function getContactName() {
-    // Open-chat title is usually h2; list header "چت و تماس" is h1 — prefer h2
+    // Open-chat title: h2.kt-chat-nav-bar__title (e.g. "~ کاربر: یاسر سپهری")
     const h2 = document.querySelector("h2.kt-chat-nav-bar__title");
     if (h2) {
-      const t = String(h2.textContent || "").trim();
-      if (t && t !== "چت و تماس") return t;
+      const cleaned = cleanDivarPeerName(h2.textContent);
+      if (cleaned) return cleaned;
     }
     const titles = document.querySelectorAll(".kt-chat-nav-bar__title");
     for (let i = 0; i < titles.length; i++) {
-      const t = String(titles[i].textContent || "").trim();
-      if (t && t !== "چت و تماس") return t;
+      const cleaned = cleanDivarPeerName(titles[i].textContent);
+      if (cleaned) return cleaned;
     }
     return "";
   }
@@ -622,8 +635,8 @@
     setInterval(function () {
       processLoop();
     }, SCAN_MS);
-    // Re-bind if user logs in after the tab was already open
-    setInterval(activateDivarChannel, 20000);
+    // Keep channel heartbeat fresh for panel "روشن" status
+    setInterval(activateDivarChannel, 12000);
   }
 
   boot();

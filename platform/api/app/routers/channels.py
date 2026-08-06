@@ -22,15 +22,35 @@ from app.schemas import ChannelAccountIn, ChannelAccountOut, HeartbeatIn
 router = APIRouter(prefix="/channels", tags=["channels"])
 
 
-def _account_out(r: ChannelAccount) -> ChannelAccountOut:
+def _account_out(r: ChannelAccount, *, live_online: bool | None = None) -> ChannelAccountOut:
+    if live_online is None:
+        status = r.status or "disconnected"
+    else:
+        status = "online" if live_online else "offline"
     return ChannelAccountOut(
         id=r.id,
         channel=r.channel.value if isinstance(r.channel, ChannelType) else str(r.channel),
         label=r.label,
         external_id=r.external_id or "",
         phone=r.phone or (r.external_id if r.channel == ChannelType.whatsapp else ""),
-        status=r.status,
+        status=status,
     )
+
+
+def _online_account_ids(db: Session, org_id: str, within_seconds: int = 90) -> set[str]:
+    """Accounts with a connector session seen recently."""
+    cutoff = datetime.utcnow() - timedelta(seconds=within_seconds)
+    rows = (
+        db.query(ConnectorSession.account_id)
+        .filter(
+            ConnectorSession.org_id == org_id,
+            ConnectorSession.last_seen_at >= cutoff,
+            ConnectorSession.status == "online",
+        )
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows if row[0]}
 
 
 def _parse_channel(raw: str | None, default: ChannelType = ChannelType.whatsapp) -> ChannelType:
@@ -52,7 +72,18 @@ def list_accounts(
     if channel:
         q = q.filter(ChannelAccount.channel == _parse_channel(channel))
     rows = q.order_by(ChannelAccount.created_at.asc()).all()
-    return [_account_out(r) for r in rows]
+    online_ids = _online_account_ids(db, auth.org.id)
+    # Keep stored status in sync with live presence
+    dirty = False
+    for r in rows:
+        want = "online" if r.id in online_ids else "offline"
+        if (r.status or "") != want:
+            r.status = want
+            db.add(r)
+            dirty = True
+    if dirty:
+        db.commit()
+    return [_account_out(r, live_online=(r.id in online_ids)) for r in rows]
 
 
 @router.post("/accounts", response_model=ChannelAccountOut)
@@ -109,8 +140,10 @@ def heartbeat(body: HeartbeatIn, auth: AuthContext = Depends(get_auth), db: Sess
             org_id=auth.org.id,
             account_id=body.account_id,
             user_id=auth.user.id,
-            device_id=body.device_id,
+            device_id=body.device_id or "unknown",
             role=role,
+            status="online",
+            last_seen_at=datetime.utcnow(),
         )
         db.add(session)
     else:
@@ -123,11 +156,13 @@ def heartbeat(body: HeartbeatIn, auth: AuthContext = Depends(get_auth), db: Sess
     acc.status = "online"
     db.add(acc)
     db.commit()
+    db.refresh(session)
     return {
         "ok": True,
         "session_id": session.id,
         "role": session.role.value,
         "channel": acc.channel.value,
+        "account_status": "online",
     }
 
 

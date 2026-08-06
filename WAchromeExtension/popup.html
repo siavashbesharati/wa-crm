@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ورود افزونه</title>
+  <title>اتصال افزونه</title>
   <link
     href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
     rel="stylesheet"
@@ -12,13 +12,39 @@
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">اتصال افزونه</div>
-    <div class="subtitle">توکن صندلی یکتا برای این نصب</div>
+  <header class="popup-header">
+    <div class="brand-row">
+      <img class="brand-logo" src="icons/icon32.png" alt="" width="28" height="28" />
+      <div>
+        <div class="brand">iranexpedia</div>
+        <div class="subtitle">افزونه چندکاناله</div>
+      </div>
+    </div>
     <div id="ext-version" class="version">v?</div>
   </header>
 
-  <section class="license-card cloud-card">
+  <!-- Connected: icon + status + logout only -->
+  <section id="connected-view" class="connected-card hidden">
+    <div class="connected-icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
+        <circle cx="24" cy="24" r="22" fill="#dcfce7" />
+        <circle cx="24" cy="24" r="22" stroke="#86efac" stroke-width="2" />
+        <path
+          d="M14 25.5 20.5 32 34 16.5"
+          stroke="#16a34a"
+          stroke-width="3.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </div>
+    <h2 class="connected-title">متصل</h2>
+    <p id="connected-org" class="connected-org"></p>
+    <button type="button" id="cloud-disconnect" class="logout-btn">خروج</button>
+  </section>
+
+  <!-- Login form -->
+  <section id="login-view" class="license-card cloud-card">
     <div class="section-title">
       <h2>توکن صندلی</h2>
       <span id="cloud-badge" class="license-badge off">قطع</span>
@@ -37,14 +63,10 @@
           spellcheck="false"
         />
       </label>
-      <div class="license-actions">
-        <button type="button" id="cloud-login-btn">اتصال</button>
-        <button type="button" id="cloud-disconnect" class="secondary-btn">قطع اتصال</button>
-      </div>
+      <button type="button" id="cloud-login-btn" class="primary-wide">اتصال</button>
     </form>
-    <p class="hint" style="margin-top:10px;font-size:11px;opacity:.85;line-height:1.6">
-      هر توکن فقط روی یک نصب Chrome قفل می‌شود. برای دستگاه دیگر توکن جدید بسازید یا
-      مدیر صندلی را ریست کند.
+    <p class="hint-line">
+      هر توکن فقط روی یک نصب Chrome قفل می‌شود.
     </p>
   </section>
 

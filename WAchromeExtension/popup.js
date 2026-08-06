@@ -3,6 +3,9 @@ const cloudStatus = document.getElementById("cloud-status");
 const cloudSeatToken = document.getElementById("cloud-seat-token");
 const cloudLoginBtn = document.getElementById("cloud-login-btn");
 const cloudDisconnect = document.getElementById("cloud-disconnect");
+const loginView = document.getElementById("login-view");
+const connectedView = document.getElementById("connected-view");
+const connectedOrg = document.getElementById("connected-org");
 const versionEl = document.getElementById("ext-version");
 const footerVersion = document.getElementById("footer-version");
 
@@ -19,6 +22,18 @@ function errText(res) {
   return "خطا";
 }
 
+function setConnected(connected, orgName) {
+  if (connected) {
+    loginView.classList.add("hidden");
+    connectedView.classList.remove("hidden");
+    connectedOrg.textContent = orgName ? orgName : "";
+  } else {
+    connectedView.classList.add("hidden");
+    loginView.classList.remove("hidden");
+    connectedOrg.textContent = "";
+  }
+}
+
 async function refreshUi() {
   const cfg = await IranexpediaCloudBridge.getConfig();
   if (cfg.seatTokenPrefix && cloudSeatToken && !cloudSeatToken.value) {
@@ -32,13 +47,12 @@ async function refreshUi() {
     cloudBadge.classList.remove("off");
     const st = await IranexpediaCloudBridge.status();
     const org = st.me && st.me.org ? st.me.org.name : cfg.orgName || "";
-    cloudStatus.textContent = org
-      ? "قفل روی این نصب — «" + org + "». تب واتساپ/دیوار را باز کنید."
-      : "متصل و قفل روی این نصب. تب کانال را باز کنید.";
+    setConnected(true, org);
   } else {
     cloudBadge.textContent = "قطع";
     cloudBadge.classList.add("off");
     cloudBadge.classList.remove("on");
+    setConnected(false);
     if (!cloudStatus.dataset.sticky) {
       cloudStatus.textContent = "توکن را از پنل کسب‌وکار → صندلی‌های افزونه کپی کنید.";
     }
@@ -70,9 +84,8 @@ cloudLoginBtn.addEventListener("click", async function () {
     if (globalThis.IranexpediaAuthGate) {
       await IranexpediaAuthGate.verify(true);
     }
-    cloudStatus.textContent = "اتصال موفق. این توکن روی این نصب قفل شد.";
-    delete cloudStatus.dataset.sticky;
     cloudSeatToken.value = "";
+    delete cloudStatus.dataset.sticky;
     await refreshUi();
   } finally {
     cloudLoginBtn.disabled = false;

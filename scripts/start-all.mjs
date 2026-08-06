@@ -30,11 +30,13 @@ function log(msg) {
   console.log(`\n==> ${msg}`);
 }
 
-function runSync(command, cmdArgs, cwd) {
+function runSync(command, cmdArgs, cwd, { shell = false } = {}) {
+  // Never shell-wrap absolute paths like C:\Program Files\nodejs\node.exe
+  // — Windows cmd splits on spaces and fails with "'C:\\Program' is not recognized".
   const r = spawnSync(command, cmdArgs, {
     cwd,
     stdio: "inherit",
-    shell: true,
+    shell,
     env: process.env
   });
   if (r.status !== 0) {
@@ -44,6 +46,7 @@ function runSync(command, cmdArgs, cwd) {
 
 function start(name, command, cmdArgs, cwd) {
   log(`Start ${name}`);
+  // npm/python on Windows need shell so .cmd shims resolve
   const child = spawn(command, cmdArgs, {
     cwd,
     stdio: "inherit",
@@ -78,20 +81,20 @@ async function main() {
     log("Release extension (sync version → obfuscate → pack downloads ZIP)");
     const releaseArgs = ["scripts/release-extension.mjs"];
     if (bump) releaseArgs.push("--bump");
-    runSync(process.execPath, releaseArgs, root);
+    runSync(process.execPath, releaseArgs, root, { shell: false });
   } else {
     log("Skipping extension release (--skip-ext)");
   }
 
   if (!existsSync(join(webDir, "node_modules"))) {
     log("Install web dependencies");
-    runSync("npm", ["install"], webDir);
+    runSync("npm", ["install"], webDir, { shell: true });
   }
 
   if (seed) {
     log("Migrate + seed API database");
-    runSync("python", ["scripts/migrate_multichannel.py"], apiDir);
-    runSync("python", ["scripts/seed_demo.py"], apiDir);
+    runSync("python", ["scripts/migrate_multichannel.py"], apiDir, { shell: true });
+    runSync("python", ["scripts/seed_demo.py"], apiDir, { shell: true });
   }
 
   start("api", "python", ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"], apiDir);
@@ -113,7 +116,8 @@ async function main() {
   API:      http://localhost:8000/api/health
   Business: http://localhost:3000/login
   Super:    http://localhost:3000/super/login
-  Ext ZIP:  platform/web/public/downloads/iranexpedia-extension.zip
+  Ext folder: WAchromeExtension-dist/
+  Ext ZIP:    WAchromeExtension-dist.zip  (+ panel copy in public/downloads)
   Ext ver:  v${version}
  Press Ctrl+C to stop all
 --------------------------------------------------

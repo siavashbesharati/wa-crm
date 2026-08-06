@@ -1,16 +1,25 @@
 /**
- * Bump / sync / obfuscate / pack the Chrome extension into the web downloads folder.
+ * Bump / sync / obfuscate / pack the Chrome extension.
  *
- * Reads version from config/extension.json (single source of truth).
- * Writes obfuscated build to WAchromeExtension-dist/, then zips it to
- * platform/web/public/downloads/iranexpedia-extension.zip (replaces previous).
+ * Output (repo root):
+ *   WAchromeExtension-dist/          ← obfuscated Load unpacked folder
+ *   WAchromeExtension-dist.zip       ← package ZIP at root (replaces previous)
+ *
+ * Also copies ZIP to platform/web/public/downloads/ for the business panel.
  *
  * Usage (repo root):
  *   node scripts/release-extension.mjs
- *   node scripts/release-extension.mjs --bump        # bump patch (7.3.1 → 7.3.2)
+ *   node scripts/release-extension.mjs --bump
  *   node scripts/release-extension.mjs --skip-obfuscate
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -24,9 +33,9 @@ const skipObfuscate = args.has("--skip-obfuscate");
 const configPath = join(root, "config", "extension.json");
 const srcDir = join(root, "WAchromeExtension");
 const distDir = join(root, "WAchromeExtension-dist");
-const outDir = join(root, "platform", "web", "public", "downloads");
-const outZip = join(outDir, "iranexpedia-extension.zip");
-const packFolderName = "iranexpedia-extension";
+const rootZip = join(root, "WAchromeExtension-dist.zip");
+const webDownloadsDir = join(root, "platform", "web", "public", "downloads");
+const webZip = join(webDownloadsDir, "iranexpedia-extension.zip");
 
 function log(msg) {
   console.log(`\n==> ${msg}`);
@@ -53,27 +62,36 @@ function runNode(scriptRel, extraArgs = []) {
   }
 }
 
-function zipFolder(folderPath, zipPath) {
-  mkdirSync(dirname(zipPath), { recursive: true });
+/** Zip a folder so the archive root entry is the folder name. */
+function zipFolderAs(folderPath, zipPath, entryName) {
   if (existsSync(zipPath)) rmSync(zipPath);
 
   const isWin = process.platform === "win32";
   if (isWin) {
+    // Stage with the desired entry name, then Compress-Archive that folder
+    const stageParent = join(root, "_ext_zip_stage");
+    const stageFolder = join(stageParent, entryName);
+    rmSync(stageParent, { recursive: true, force: true });
+    mkdirSync(stageParent, { recursive: true });
     execFileSync(
       "powershell.exe",
       [
         "-NoProfile",
         "-Command",
-        `Compress-Archive -Path '${folderPath.replace(/'/g, "''")}' -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`
+        [
+          `Copy-Item -Path '${folderPath.replace(/'/g, "''")}' -Destination '${stageFolder.replace(/'/g, "''")}' -Recurse -Force;`,
+          `Compress-Archive -Path '${stageFolder.replace(/'/g, "''")}' -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`
+        ].join(" ")
       ],
       { stdio: "inherit" }
     );
+    rmSync(stageParent, { recursive: true, force: true });
+  // On Windows we stage; on Unix zip the dist folder by name from repo root
   } else {
-    execFileSync(
-      "zip",
-      ["-r", zipPath, packFolderName, "-x", "*.DS_Store", "*__pycache__*"],
-      { cwd: dirname(folderPath), stdio: "inherit" }
-    );
+    execFileSync("zip", ["-r", zipPath, entryName, "-x", "*.DS_Store", "*__pycache__*", "*.zip"], {
+      cwd: root,
+      stdio: "inherit"
+    });
   }
 }
 
@@ -103,7 +121,6 @@ function main() {
     throw new Error("WAchromeExtension-dist missing; run without --skip-obfuscate");
   }
 
-  // Ensure dist manifest has the synced version (obfuscate copies after sync)
   const distManifest = join(distDir, "manifest.json");
   if (existsSync(distManifest)) {
     const m = JSON.parse(readFileSync(distManifest, "utf8"));
@@ -111,49 +128,33 @@ function main() {
     writeFileSync(distManifest, JSON.stringify(m, null, 2) + "\n");
   }
 
-  log("Pack obfuscated build into downloads (replace old ZIP)");
-  mkdirSync(outDir, { recursive: true });
+  log("Pack → WAchromeExtension-dist.zip (repo root)");
+  zipFolderAs(distDir, rootZip, "WAchromeExtension-dist");
 
-  // Stage as iranexpedia-extension/ so unzip is clean for Load unpacked
-  const stageParent = join(outDir, "_stage");
-  const stageFolder = join(stageParent, packFolderName);
-  rmSync(stageParent, { recursive: true, force: true });
-  mkdirSync(stageParent, { recursive: true });
-
-  if (process.platform === "win32") {
-    execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-Command",
-        `Copy-Item -Path '${distDir.replace(/'/g, "''")}' -Destination '${stageFolder.replace(/'/g, "''")}' -Recurse -Force`
-      ],
-      { stdio: "inherit" }
-    );
-  } else {
-    execFileSync("cp", ["-R", distDir, stageFolder], { stdio: "inherit" });
-  }
-
-  zipFolder(stageFolder, outZip);
-  rmSync(stageParent, { recursive: true, force: true });
+  log("Copy ZIP → platform/web/public/downloads (panel download)");
+  mkdirSync(webDownloadsDir, { recursive: true });
+  if (existsSync(webZip)) rmSync(webZip);
+  copyFileSync(rootZip, webZip);
 
   const meta = {
     version: String(cfg.version),
     file: "iranexpedia-extension.zip",
     download_path: "/downloads/iranexpedia-extension.zip",
+    root_zip: "WAchromeExtension-dist.zip",
+    dist_folder: "WAchromeExtension-dist",
     packed_at: new Date().toISOString(),
     obfuscated: !skipObfuscate
   };
-  writeFileSync(join(outDir, "extension-meta.json"), JSON.stringify(meta, null, 2) + "\n");
+  writeFileSync(join(webDownloadsDir, "extension-meta.json"), JSON.stringify(meta, null, 2) + "\n");
   writeFileSync(
     join(root, "platform", "api", "app", "extension_version.json"),
     JSON.stringify(meta, null, 2) + "\n"
   );
 
   log(`Done. Extension v${cfg.version}`);
-  console.log("  Dist:     ", distDir);
-  console.log("  Download: ", outZip);
-  console.log("  Meta:     ", join(outDir, "extension-meta.json"));
+  console.log("  Dist folder: ", distDir);
+  console.log("  Root ZIP:    ", rootZip);
+  console.log("  Panel ZIP:   ", webZip);
 }
 
 try {

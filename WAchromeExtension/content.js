@@ -1761,7 +1761,7 @@ activateWhatsAppChannel().then(function () {
         }
     });
 });
-setInterval(activateWhatsAppChannel, 20000);
+setInterval(activateWhatsAppChannel, 12000);
 
 chrome.storage.onChanged.addListener(function (changes, area) {
     if (area !== "local") return;

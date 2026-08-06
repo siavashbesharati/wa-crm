@@ -181,29 +181,43 @@
     }
   }
 
+  function cleanDivarPeerName(raw) {
+    var t = String(raw || "")
+      .replace(/\u200c/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!t || t === "چت و تماس") return "";
+    t = t.replace(/^~\s*/, "");
+    t = t.replace(/^کاربر\s*[:：]\s*/i, "");
+    t = t.replace(/^user\s*[:：]\s*/i, "");
+    return t.trim();
+  }
+
   function getChatNameSafe() {
     if (typeof window.__iranexpediaGetChatName === "function") {
-      var n = window.__iranexpediaGetChatName() || "";
-      if (n && n !== "چت و تماس") return n;
+      var n = cleanDivarPeerName(window.__iranexpediaGetChatName() || "");
+      if (n) return n;
     }
     if (typeof window.__iranexpediaGetChatIdentity === "function") {
       try {
         var idn = window.__iranexpediaGetChatIdentity();
-        if (idn && (idn.name || idn.externalChatId || idn.chatId)) {
-          var nm = String(idn.name || idn.externalChatId || idn.chatId || "");
-          if (nm && nm !== "چت و تماس") return nm;
+        if (idn) {
+          var nm = cleanDivarPeerName(idn.name || "");
+          if (nm) return nm;
+          var fallback = String(idn.externalChatId || idn.chatId || "");
+          if (fallback && fallback !== "چت و تماس") return fallback;
         }
       } catch (_e) {}
     }
     var h2 = document.querySelector("h2.kt-chat-nav-bar__title");
     if (h2) {
-      var h2t = String(h2.textContent || "").trim();
-      if (h2t && h2t !== "چت و تماس") return h2t;
+      var h2t = cleanDivarPeerName(h2.textContent);
+      if (h2t) return h2t;
     }
     var divarTitles = document.querySelectorAll(".kt-chat-nav-bar__title");
     for (var di = 0; di < divarTitles.length; di++) {
-      var dt = String(divarTitles[di].textContent || "").trim();
-      if (dt && dt !== "چت و تماس") return dt;
+      var dt = cleanDivarPeerName(divarTitles[di].textContent);
+      if (dt) return dt;
     }
     var spans = document.querySelectorAll(
       '#main header span[dir="auto"], #main header span[title]'
@@ -223,7 +237,9 @@
     var onChat = isDivarChatPath();
     var chatId = getDivarChatIdFromUrl();
     var name = currentName || getChatNameSafe();
+    name = cleanDivarPeerName(name) || name;
     if (name === chatId) name = getChatNameSafe() || name;
+    name = cleanDivarPeerName(name) || name;
     var identity =
       typeof window.__iranexpediaGetChatIdentity === "function"
         ? window.__iranexpediaGetChatIdentity()
@@ -479,8 +495,26 @@
       var phoneWrap = $("#crm-phone-wrap", panel);
       var groupWrap = $("#crm-group-wrap", panel);
       if (nameInput) {
-        nameInput.value =
-          (currentContact && currentContact.name) || currentName || "";
+        var livePretty =
+          hostChannel === "divar"
+            ? cleanDivarPeerName(
+                (identity && identity.name) || getChatNameSafe() || ""
+              )
+            : "";
+        var storedName = (currentContact && currentContact.name) || "";
+        if (hostChannel === "divar") {
+          storedName = cleanDivarPeerName(storedName) || storedName;
+          // Prefer live title over chatId / raw prefix leftovers
+          if (livePretty) {
+            nameInput.value = livePretty;
+          } else if (storedName && storedName !== (identity && (identity.chatId || identity.externalChatId))) {
+            nameInput.value = storedName;
+          } else {
+            nameInput.value = "";
+          }
+        } else {
+          nameInput.value = storedName || currentName || "";
+        }
       }
       if (phoneInput) {
         phoneInput.value =
@@ -658,20 +692,23 @@
           : (identity && identity.phone) ||
             (currentContact && currentContact.phone) ||
             "";
-    var prettyName =
-      (identity && identity.name) ||
-      getChatNameSafe() ||
-      "";
-    // Keep a previously saved human name; do not overwrite with raw chatId.
+    var prettyName = cleanDivarPeerName(
+      (identity && identity.name) || getChatNameSafe() || ""
+    );
+    // Prefer live Divar nav-bar name; keep previously saved human name if still same chat.
     var displayName =
+      (prettyName && prettyName !== "چت و تماس" ? prettyName : "") ||
       (currentContact &&
         currentContact.name &&
         currentContact.name !== phone &&
+        !/^~?\s*کاربر\s*:/i.test(currentContact.name) &&
         currentContact.name) ||
-      (prettyName && prettyName !== "چت و تماس" ? prettyName : "") ||
       currentName ||
       phone ||
       "";
+    // Never keep the raw "~ کاربر: …" prefix in CRM
+    displayName = cleanDivarPeerName(displayName) || displayName;
+    if (displayName === "چت و تماس") displayName = phone || "";
     if (!displayName && !phone) return;
 
     if (!currentContact && phone && IranexpediaCrm.getContactByPhone) {

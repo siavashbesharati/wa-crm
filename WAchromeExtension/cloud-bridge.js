@@ -272,11 +272,12 @@
   async function heartbeatImpl() {
     var cfg = await getConfig();
     if (!cfg.enabled || !cfg.accountId) return { ok: false, error: "no_account" };
+    var deviceId = cfg.deviceId || cfg.installId || "ext-device";
     return request("/channels/heartbeat", {
       method: "POST",
       body: {
         account_id: cfg.accountId,
-        device_id: cfg.deviceId,
+        device_id: deviceId,
         role: cfg.role || "connector"
       }
     });
@@ -418,12 +419,16 @@
       role: "connector"
     });
     var hb = await heartbeatImpl();
+    if (!hb || !hb.ok) {
+      // Retry once — first bind sometimes races storage write
+      hb = await heartbeatImpl();
+    }
     return {
       ok: true,
       channel: ch,
       account: acc,
-      heartbeatOk: !!hb.ok,
-      error: hb.ok ? "" : hb.error || ""
+      heartbeatOk: !!(hb && hb.ok),
+      error: hb && hb.ok ? "" : (hb && hb.error) || "heartbeat_failed"
     };
   }
 
