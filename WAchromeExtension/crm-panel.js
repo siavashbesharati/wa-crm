@@ -241,7 +241,7 @@
         "<p>صفحه چت دیوار باز نیست.</p>" +
         '<div class="crm-actions" style="justify-content:center;margin-top:12px;flex-direction:column;gap:8px">' +
         '<button type="button" class="crm-btn" id="crm-open-divar-chat">باز کردن چت دیوار</button>' +
-        '<button type="button" class="crm-btn secondary" id="crm-open-dash">پنل ادمین</button>' +
+        '<button type="button" class="crm-btn secondary" id="crm-open-dash">داشبورد کسب‌وکار</button>' +
         "</div></div>";
       panel.innerHTML = body;
       var btnChat0 = $("#crm-open-divar-chat", panel);
@@ -271,7 +271,7 @@
         : '<p class="crm-empty">از پاپ‌آپ افزونه فقط شماره و کد را بزنید تا پاسخ خودکار فعال شود.</p>') +
       '<div class="crm-actions" style="flex-wrap:wrap;gap:8px">' +
       '<button type="button" class="crm-btn" id="crm-open-divar-chat">چت دیوار</button>' +
-      '<button type="button" class="crm-btn secondary" id="crm-open-dash">پنل ادمین</button>' +
+      '<button type="button" class="crm-btn secondary" id="crm-open-dash">داشبورد کسب‌وکار</button>' +
       "</div></div></div>";
 
     panel.innerHTML = body;
@@ -302,7 +302,7 @@
         '<div class="crm-sub">iranexpedia.ir</div></div>' +
         '<div class="crm-lock"><p>از پاپ‌آپ افزونه فقط شماره و کد را وارد کنید.</p>' +
         '<div class="crm-actions" style="justify-content:center;margin-top:12px">' +
-        '<button type="button" class="crm-btn" id="crm-open-dash">پنل ادمین</button></div></div>';
+        '<button type="button" class="crm-btn" id="crm-open-dash">داشبورد کسب‌وکار</button></div></div>';
       $("#crm-open-dash", panel).onclick = openDashboard;
       return;
     }

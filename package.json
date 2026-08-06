@@ -5,7 +5,12 @@
   "type": "module",
   "scripts": {
     "build:ext": "node scripts/obfuscate-extension.mjs",
+    "sync:ext-version": "node scripts/sync-extension-version.mjs",
     "pack:ext": "node scripts/pack-extension-download.mjs",
+    "release:ext": "node scripts/release-extension.mjs",
+    "release:ext:bump": "node scripts/release-extension.mjs --bump",
+    "start:all": "node scripts/start-all.mjs",
+    "start:all:bump": "node scripts/start-all.mjs --bump",
     "obfuscate": "npm run build:ext",
     "license:gen": "node scripts/generate-license-key.mjs",
     "api:dev": "cd platform/api && python -m uvicorn app.main:app --reload --port 8000",

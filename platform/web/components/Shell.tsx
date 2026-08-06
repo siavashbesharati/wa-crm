@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearSession, getSession, api } from "@/lib/api";
+import {
+  EXTENSION_DOWNLOAD_NAME,
+  EXTENSION_DOWNLOAD_URL,
+  EXTENSION_VERSION_FALLBACK,
+  type ExtensionMeta
+} from "@/lib/extension";
 import { useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/Spinner";
 
@@ -42,6 +48,7 @@ export default function Shell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [userLabel, setUserLabel] = useState("");
+  const [extVersion, setExtVersion] = useState(EXTENSION_VERSION_FALLBACK);
 
   useEffect(() => {
     if (!getSession()) {
@@ -68,6 +75,33 @@ export default function Shell({
         router.replace("/login");
       });
   }, [router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const latest = await api<ExtensionMeta & { ok?: boolean }>("/extension/latest", {
+          auth: false
+        });
+        if (!cancelled && latest?.version) {
+          setExtVersion(latest.version);
+          return;
+        }
+      } catch {
+        /* fall through to static meta */
+      }
+      try {
+        const r = await fetch("/downloads/extension-meta.json", { cache: "no-store" });
+        const meta = r.ok ? ((await r.json()) as ExtensionMeta) : null;
+        if (!cancelled && meta?.version) setExtVersion(meta.version);
+      } catch {
+        /* keep fallback */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -126,6 +160,20 @@ export default function Shell({
         </nav>
 
         <div className="sidebar-foot">
+          <a
+            className="ext-download-btn"
+            href={EXTENSION_DOWNLOAD_URL}
+            download={EXTENSION_DOWNLOAD_NAME}
+            title={`دانلود افزونه نسخه ${extVersion}`}
+          >
+            <span className="ext-download-ico" aria-hidden>
+              ↓
+            </span>
+            <span className="label ext-download-meta">
+              <strong>دانلود افزونه</strong>
+              <em>نسخه {extVersion}</em>
+            </span>
+          </a>
           <button
             className="btn secondary"
             onClick={() => {

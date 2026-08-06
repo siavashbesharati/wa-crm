@@ -464,7 +464,8 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
   }
 
   if (message.type === "openDashboard") {
-    chrome.tabs.create({ url: "http://localhost:3000/admin" });
+    // Business CRM panel (not super-admin /super)
+    chrome.tabs.create({ url: "http://localhost:3000/home" });
     sendResponse({ ok: true });
     return;
   }

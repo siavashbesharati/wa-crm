@@ -31,8 +31,12 @@
 - شماره موجود با onboarding تمام‌شده → داشبورد  
 - شماره موجود با ویزارد ناتمام → ادامه `/onboarding`  
 
-**دانلود افزونه در ویزارد:** فایل در `platform/web/public/downloads/iranexpedia-extension.zip`  
-برای بازسازی ZIP از ریشه ریپو: `npm run pack:ext`
+**نسخه افزونه (منبع واحد):** `config/extension.json`  
+- همگام‌سازی: `npm run sync:ext-version`  
+- obfuscate + ZIP دانلود (جایگزین قبلی): `npm run release:ext`  
+- افزایش patch + release: `npm run release:ext:bump`  
+- اجرای همه (release + API + Web + Workers): `npm run start:all` یا دوبار کلیک روی `start-all.cmd`  
+- پنل نسخه را از `GET /api/extension/latest` می‌خواند.
 
 ## اجزا
 
@@ -54,12 +58,16 @@
 
 ## اجرای سریع (دمو فروش)
 
-
+پیشنهادی از ریشه ریپو:
 
 ```bash
+npm run start:all
+```
 
+سپس دستی اگر لازم بود:
+
+```bash
 # 1) API (SQLite محلی)
-
 cd platform/api
 
 pip install -r requirements.txt

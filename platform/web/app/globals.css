@@ -221,6 +221,57 @@ button, input, select, textarea {
 
 .sidebar-foot { margin-top: auto; display: grid; gap: 8px; }
 
+.ext-download-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: linear-gradient(180deg, rgba(224, 242, 254, 0.95), rgba(186, 230, 253, 0.55));
+  color: #0c4a6e;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.12);
+}
+.ext-download-btn:hover {
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(56, 189, 248, 0.2);
+}
+.ext-download-ico {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.75);
+  flex-shrink: 0;
+}
+.ext-download-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.25;
+}
+.ext-download-meta strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+.ext-download-meta em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0369a1;
+  opacity: 0.9;
+}
+.collapsed .ext-download-btn {
+  justify-content: center;
+  padding: 10px;
+}
+.collapsed .ext-download-btn .label { display: none; }
+
 .main-wrap {
   display: flex;
   flex-direction: column;

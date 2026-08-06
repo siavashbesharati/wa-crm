@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, clearSession, getSession } from "@/lib/api";
+import {
+  EXTENSION_DOWNLOAD_NAME,
+  EXTENSION_DOWNLOAD_URL,
+  EXTENSION_VERSION_FALLBACK
+} from "@/lib/extension";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
@@ -65,6 +70,7 @@ export default function OnboardingPage() {
     amount_irr: number;
   } | null>(null);
   const [seatToken, setSeatToken] = useState<string | null>(null);
+  const [extVersion, setExtVersion] = useState(EXTENSION_VERSION_FALLBACK);
 
   const load = useCallback(async () => {
     if (!getSession()) {
@@ -97,6 +103,14 @@ export default function OnboardingPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    api<{ version?: string }>("/extension/latest", { auth: false })
+      .then((r) => {
+        if (r?.version) setExtVersion(r.version);
+      })
+      .catch(() => undefined);
+  }, []);
 
   async function saveProfile() {
     if (orgName.trim().length < 2) {
@@ -424,10 +438,10 @@ export default function OnboardingPage() {
                 <div className="wizard-actions">
                   <a
                     className="btn wizard-btn"
-                    href="/downloads/iranexpedia-extension.zip"
-                    download="iranexpedia-extension.zip"
+                    href={EXTENSION_DOWNLOAD_URL}
+                    download={EXTENSION_DOWNLOAD_NAME}
                   >
-                    دانلود افزونه (ZIP)
+                    دانلود افزونه v{extVersion}
                   </a>
                   <Button className="wizard-btn" loading={busy} onClick={finish}>
                     ورود به داشبورد
