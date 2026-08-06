@@ -74,6 +74,10 @@
   }
 
   var hostChannel = detectHostChannel();
+  var DEFAULT_API = "http://localhost:8000/api";
+  var authStatusMsg = "";
+  var authBusy = false;
+  var connectedOrgName = "";
 
   function isTypingInPanel() {
     if (!root) return false;
@@ -93,6 +97,9 @@
     return [
       licenseOk ? "1" : "0",
       collapsed ? "1" : "0",
+      authBusy ? "1" : "0",
+      authStatusMsg || "",
+      connectedOrgName || "",
       currentName || "",
       queuedCount,
       templates.length,
@@ -156,6 +163,149 @@
 
   function openDashboard() {
     safeRuntimeSend({ type: "openDashboard" });
+  }
+
+  function seatAuthErrorText(res) {
+    if (!res) return "خطای ناشناخته";
+    if (typeof res.error === "string") return res.error;
+    if (res.data && typeof res.data.detail === "string") return res.data.detail;
+    return "خطا";
+  }
+
+  async function connectWithSeatToken(token) {
+    var raw = String(token || "").trim();
+    if (!raw) {
+      authStatusMsg = "توکن صندلی را وارد کنید.";
+      return false;
+    }
+    if (!globalThis.IranexpediaCloudBridge) {
+      authStatusMsg = "پل ابری در دسترس نیست — صفحه را رفرش کنید.";
+      return false;
+    }
+    authBusy = true;
+    authStatusMsg = "در حال اتصال…";
+    try {
+      await IranexpediaCloudBridge.setConfig({ apiUrl: DEFAULT_API });
+      var res = await IranexpediaCloudBridge.activateSeat(raw, DEFAULT_API);
+      if (!res || !res.ok) {
+        authStatusMsg = seatAuthErrorText(res);
+        return false;
+      }
+      await IranexpediaCloudBridge.setConfig({
+        enabled: true,
+        apiUrl: DEFAULT_API,
+        role: "connector",
+        accountId: "",
+        channel: ""
+      });
+      if (globalThis.IranexpediaAuthGate) {
+        await IranexpediaAuthGate.verify(true);
+      }
+      authStatusMsg = "";
+      licenseOk = true;
+      try {
+        var st = await IranexpediaCloudBridge.status();
+        connectedOrgName =
+          (st && st.me && st.me.org && st.me.org.name) ||
+          (st && st.config && st.config.orgName) ||
+          "";
+      } catch (_e) {
+        connectedOrgName = "";
+      }
+      return true;
+    } catch (err) {
+      authStatusMsg = String((err && err.message) || err || "خطا");
+      return false;
+    } finally {
+      authBusy = false;
+    }
+  }
+
+  async function disconnectSeat() {
+    authBusy = true;
+    try {
+      if (globalThis.IranexpediaAuthGate) IranexpediaAuthGate.revoke();
+      if (globalThis.IranexpediaCloudBridge) {
+        await IranexpediaCloudBridge.setConfig({
+          enabled: false,
+          accessToken: "",
+          refreshToken: "",
+          orgId: "",
+          accountId: "",
+          channel: "",
+          phone: "",
+          seatId: "",
+          seatTokenPrefix: "",
+          orgName: "",
+          plan: ""
+        });
+      }
+      licenseOk = false;
+      connectedOrgName = "";
+      authStatusMsg = "";
+      currentContact = null;
+    } finally {
+      authBusy = false;
+    }
+  }
+
+  function wireSeatAuthForm(panel) {
+    var input = $("#crm-seat-token", panel);
+    var btn = $("#crm-seat-connect", panel);
+    var msg = $("#crm-seat-status", panel);
+    if (!btn) return;
+    btn.onclick = async function () {
+      if (authBusy) return;
+      btn.disabled = true;
+      var ok = await connectWithSeatToken(input ? input.value : "");
+      if (input && ok) input.value = "";
+      if (msg) msg.textContent = authStatusMsg || (ok ? "اتصال موفق" : "");
+      lastRenderKey = "";
+      await tick();
+      btn.disabled = false;
+    };
+    if (input) {
+      input.onkeydown = function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          btn.click();
+        }
+      };
+    }
+  }
+
+  function renderSeatAuthGate(panel) {
+    var ver = "";
+    try {
+      ver = chrome.runtime.getManifest().version || "";
+    } catch (_e) {}
+    panel.innerHTML =
+      '<div class="crm-head">' +
+      '<div class="crm-brand">ورود افزونه</div>' +
+      '<div class="crm-sub">iranexpedia.ir' +
+      (ver ? " · v" + ver : "") +
+      "</div></div>" +
+      '<div class="crm-body">' +
+      '<div class="crm-card crm-auth-card">' +
+      '<div class="crm-auth-badge">قطع</div>' +
+      "<h3>توکن صندلی</h3>" +
+      '<p class="crm-empty" id="crm-seat-status">' +
+      (authStatusMsg ||
+        "توکن را از پنل کسب‌وکار → صندلی‌های افزونه کپی کنید.") +
+      "</p>" +
+      '<div class="crm-field"><label>توکن صندلی</label>' +
+      '<input id="crm-seat-token" type="text" placeholder="seat_..." autocomplete="off" spellcheck="false" /></div>' +
+      '<button type="button" class="crm-btn" id="crm-seat-connect"' +
+      (authBusy ? " disabled" : "") +
+      ">اتصال</button>" +
+      '<p class="crm-empty" style="margin-top:10px">هر توکن فقط روی یک نصب Chrome قفل می‌شود.</p>' +
+      "</div>" +
+      '<div class="crm-actions" style="margin-top:12px;justify-content:center">' +
+      '<button type="button" class="crm-btn secondary" id="crm-open-dash">داشبورد کسب‌وکار</button>' +
+      "</div></div>";
+    wireSeatAuthForm(panel);
+    var dash = $("#crm-open-dash", panel);
+    if (dash) dash.onclick = openDashboard;
   }
 
   function openDivarChatPage() {
@@ -283,18 +433,32 @@
       (licenseOk ? "وضعیت" : "ورود") +
       "</h3>" +
       (licenseOk
-        ? '<p class="crm-empty">وصل هستید. گفتگو را باز نگه دارید.</p>'
-        : '<p class="crm-empty">از پاپ‌آپ افزونه فقط شماره و کد را بزنید تا پاسخ خودکار فعال شود.</p>') +
+        ? '<p class="crm-empty">وصل هستید. گفتگو را باز نگه دارید.</p>' +
+          (connectedOrgName
+            ? '<p class="crm-empty">' + connectedOrgName + "</p>"
+            : "")
+        : '<p class="crm-empty">برای ادامه، از همین پنل با توکن صندلی وارد شوید.</p>') +
       '<div class="crm-actions" style="flex-wrap:wrap;gap:8px">' +
       '<button type="button" class="crm-btn" id="crm-open-divar-chat">چت دیوار</button>' +
       '<button type="button" class="crm-btn secondary" id="crm-open-dash">داشبورد کسب‌وکار</button>' +
+      (licenseOk
+        ? '<button type="button" class="crm-btn danger" id="crm-seat-logout">خروج از صندلی</button>'
+        : "") +
       "</div></div></div>";
 
     panel.innerHTML = body;
     var b1 = $("#crm-open-divar-chat", panel);
     var b2 = $("#crm-open-dash", panel);
+    var bLogout = $("#crm-seat-logout", panel);
     if (b1) b1.onclick = openDivarChatPage;
     if (b2) b2.onclick = openDashboard;
+    if (bLogout) {
+      bLogout.onclick = async function () {
+        await disconnectSeat();
+        lastRenderKey = "";
+        await tick();
+      };
+    }
   }
 
   function render() {
@@ -303,24 +467,18 @@
 
     var panel = $("#iranexpedia-crm-panel", root);
 
-    // Divar: show chat CTA / current chat even before OTP; full CRM only when logged in + chat open
+    if (!licenseOk) {
+      renderSeatAuthGate(panel);
+      return;
+    }
+
+    // Divar: need an open chat for the full CRM card
     if (hostChannel === "divar") {
-      var divarReady = licenseOk && currentName && isDivarChatPath();
+      var divarReady = currentName && isDivarChatPath();
       if (!divarReady) {
         renderDivarGate(panel);
         return;
       }
-    }
-
-    if (!licenseOk) {
-      panel.innerHTML =
-        '<div class="crm-head"><div class="crm-brand">پنل CRM</div>' +
-        '<div class="crm-sub">iranexpedia.ir</div></div>' +
-        '<div class="crm-lock"><p>از پاپ‌آپ افزونه فقط شماره و کد را وارد کنید.</p>' +
-        '<div class="crm-actions" style="justify-content:center;margin-top:12px">' +
-        '<button type="button" class="crm-btn" id="crm-open-dash">داشبورد کسب‌وکار</button></div></div>';
-      $("#crm-open-dash", panel).onclick = openDashboard;
-      return;
     }
 
     var contactHtml;
@@ -452,6 +610,7 @@
         ? ""
         : '<button type="button" class="crm-btn crm-members-btn" id="crm-download-members">دانلود اعضای گروه</button>') +
       '<button type="button" class="crm-btn secondary" id="crm-open-dash">باز کردن داشبورد کامل</button>' +
+      '<button type="button" class="crm-btn danger" id="crm-seat-logout">خروج از صندلی</button>' +
       "</div>" +
       '<div class="crm-banner">' +
       (hostChannel === "divar"
@@ -566,6 +725,14 @@
 
     var openDashBtn = $("#crm-open-dash", panel);
     if (openDashBtn) openDashBtn.onclick = openDashboard;
+    var logoutBtn = $("#crm-seat-logout", panel);
+    if (logoutBtn) {
+      logoutBtn.onclick = async function () {
+        await disconnectSeat();
+        lastRenderKey = "";
+        await tick();
+      };
+    }
     var openDivarInline = $("#crm-open-divar-chat-inline", panel);
     if (openDivarInline) openDivarInline.onclick = openDivarChatPage;
     var scheduleBtn = $("#crm-schedule", panel);
@@ -619,10 +786,23 @@
       var res = await IranexpediaAuthGate.verify();
       // Keep previous licenseOk until we have a definitive result (avoids gate flicker).
       licenseOk = !!(res && res.ok && IranexpediaAuthGate.assertUnlocked());
+      if (licenseOk && globalThis.IranexpediaCloudBridge) {
+        try {
+          var st = await IranexpediaCloudBridge.status();
+          connectedOrgName =
+            (st && st.me && st.me.org && st.me.org.name) ||
+            (st && st.config && st.config.orgName) ||
+            connectedOrgName ||
+            "";
+        } catch (_e) {}
+      } else if (!licenseOk) {
+        connectedOrgName = "";
+      }
     } catch (e) {
       var m = String((e && e.message) || e || "");
       if (m.indexOf("Extension context invalidated") !== -1) markDeadContext();
       licenseOk = false;
+      connectedOrgName = "";
     }
   }
 

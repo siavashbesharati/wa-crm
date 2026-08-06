@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>اتصال افزونه</title>
+  <title>وضعیت افزونه</title>
   <link
     href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
     rel="stylesheet"
@@ -23,7 +23,6 @@
     <div id="ext-version" class="version">v?</div>
   </header>
 
-  <!-- Connected: icon + status + logout only -->
   <section id="connected-view" class="connected-card hidden">
     <div class="connected-icon" aria-hidden="true">
       <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
@@ -40,34 +39,38 @@
     </div>
     <h2 class="connected-title">متصل</h2>
     <p id="connected-org" class="connected-org"></p>
+    <p class="hint-line">ورود و مدیریت از پنل کناری واتساپ / دیوار</p>
     <button type="button" id="cloud-disconnect" class="logout-btn">خروج</button>
   </section>
 
-  <!-- Login form -->
   <section id="login-view" class="license-card cloud-card">
     <div class="section-title">
-      <h2>توکن صندلی</h2>
+      <h2>ورود از پنل کناری</h2>
       <span id="cloud-badge" class="license-badge off">قطع</span>
     </div>
     <p id="cloud-status" class="license-message">
-      توکن را از پنل کسب‌وکار → صندلی‌های افزونه کپی کنید.
+      تب <strong>واتساپ وب</strong> یا <strong>چت دیوار</strong> را باز کنید و در پنل کناری توکن صندلی را وارد کنید.
     </p>
-    <form id="cloud-form">
-      <label>
-        توکن صندلی
-        <input
-          id="cloud-seat-token"
-          type="text"
-          placeholder="seat_..."
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </label>
-      <button type="button" id="cloud-login-btn" class="primary-wide">اتصال</button>
-    </form>
-    <p class="hint-line">
-      هر توکن فقط روی یک نصب Chrome قفل می‌شود.
-    </p>
+    <a
+      class="primary-wide"
+      id="open-wa"
+      href="https://web.whatsapp.com"
+      target="_blank"
+      rel="noopener"
+      style="display:block;text-align:center;text-decoration:none;margin-bottom:8px"
+    >
+      باز کردن واتساپ
+    </a>
+    <a
+      class="primary-wide"
+      id="open-divar"
+      href="https://divar.ir/chat"
+      target="_blank"
+      rel="noopener"
+      style="display:block;text-align:center;text-decoration:none;background:#0f172a;border-color:#0f172a"
+    >
+      باز کردن چت دیوار
+    </a>
   </section>
 
   <footer class="app-footer">

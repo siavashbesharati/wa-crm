@@ -27,6 +27,18 @@ type SeatsResponse = {
   seats: Seat[];
 };
 
+function statusLabel(status: string) {
+  if (status === "locked") return "در حال استفاده";
+  if (status === "available") return "آماده اتصال";
+  return status;
+}
+
+function statusTone(status: string): "accent" | "success" | "danger" {
+  if (status === "locked") return "accent";
+  if (status === "available") return "success";
+  return "danger";
+}
+
 export default function SeatsPage() {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
@@ -49,6 +61,15 @@ export default function SeatsPage() {
     load();
   }, [load]);
 
+  async function copyToken(token: string) {
+    try {
+      await navigator.clipboard.writeText(token);
+      toast.push("توکن کپی شد — در پنل کناری افزونه بچسبانید", "ok");
+    } catch {
+      toast.push("کپی نشد؛ دستی انتخاب کنید", "err");
+    }
+  }
+
   async function createSeat() {
     setBusy(true);
     try {
@@ -57,12 +78,7 @@ export default function SeatsPage() {
         body: JSON.stringify({ label: label.trim() })
       });
       if (seat.token) {
-        try {
-          await navigator.clipboard.writeText(seat.token);
-          toast.push("توکن ساخته و کپی شد", "ok");
-        } catch {
-          toast.push("توکن ساخته شد", "ok");
-        }
+        await copyToken(seat.token);
       } else {
         toast.push("صندلی افزوده شد", "ok");
       }
@@ -76,7 +92,7 @@ export default function SeatsPage() {
   }
 
   async function resetSeat(id: string) {
-    if (!confirm("قفل این توکن برداشته شود تا روی نصب دیگری قابل استفاده باشد؟")) return;
+    if (!confirm("این صندلی آزاد شود تا روی Chrome دیگری وصل شود؟")) return;
     setBusy(true);
     try {
       await api(`/seats/${id}/reset`, { method: "POST" });
@@ -90,11 +106,11 @@ export default function SeatsPage() {
   }
 
   async function revokeSeat(id: string) {
-    if (!confirm("این توکن برای همیشه لغو شود؟")) return;
+    if (!confirm("این توکن حذف شود؟ دیگر قابل استفاده نیست.")) return;
     setBusy(true);
     try {
       await api(`/seats/${id}`, { method: "DELETE" });
-      toast.push("توکن حذف شد", "ok");
+      toast.push("حذف شد", "ok");
       await load();
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
@@ -106,114 +122,80 @@ export default function SeatsPage() {
   return (
     <Shell
       title="صندلی‌های افزونه"
-      sub="هر نصب Chrome یک توکن یکتا — سقف هم‌زمانی بر اساس پلن"
+      sub="هر کامپیوتر/Chrome یک توکن — کپی کنید و در پنل کناری واتساپ یا دیوار وصل شوید"
     >
       {loading || !data ? (
         <PageLoading />
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          <Card title="ظرفیت پلن">
-            <p style={{ margin: 0 }}>
-              استفاده: <strong>{data.used}</strong> از <strong>{data.max_seats}</strong>
+        <div className="seats-page">
+          <Card title="چطور کار می‌کند؟">
+            <ol className="seats-howto">
+              <li>یک صندلی بسازید و توکن را کپی کنید.</li>
+              <li>در Chrome افزونه را باز کنید → تب واتساپ یا دیوار.</li>
+              <li>در پنل کناری توکن را بچسبانید و «اتصال» بزنید.</li>
+            </ol>
+            <p className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+              ظرفیت پلن شما: <strong>{data.used}</strong> از <strong>{data.max_seats}</strong>
               {" · "}
-              قفل‌شده: <strong>{data.locked}</strong>
+              آماده: <strong>{data.available}</strong>
               {" · "}
-              آزاد: <strong>{data.available}</strong>
-            </p>
-            <p className="hint" style={{ marginTop: 8 }}>
-              کانال‌ها (واتساپ، دیوار، …) در همه پلن‌ها آزادند. محدودیت فقط تعداد افزونه‌های
-              هم‌زمان است.
+              در حال استفاده: <strong>{data.locked}</strong>
             </p>
           </Card>
 
-          <Card title="ساخت توکن جدید">
-            <div className="form-grid">
+          <Card title="صندلی جدید">
+            <div className="seats-create">
               <label>
-                برچسب (مثلاً لپ‌تاپ فروش)
+                نام (مثلاً لپ‌تاپ فروش یا املاک)
                 <input
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                   placeholder="اختیاری"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") createSeat();
+                  }}
                 />
               </label>
-            </div>
-            <div style={{ marginTop: 12 }}>
               <Button
                 loading={busy}
                 disabled={data.used >= data.max_seats}
                 onClick={createSeat}
               >
-                افزودن صندلی / توکن
+                ساخت و کپی توکن
               </Button>
             </div>
+            {data.used >= data.max_seats ? (
+              <p className="hint" style={{ marginTop: 10, marginBottom: 0, color: "var(--danger)" }}>
+                سقف پلن پر است.
+              </p>
+            ) : null}
           </Card>
 
-          <Card title="توکن‌ها">
+          <Card title="صندلی‌های شما">
             {!data.seats.length ? (
               <EmptyState
-                title="هنوز صندلی نیست"
-                text="یک توکن بسازید و در پاپ‌آپ افزونه وارد کنید."
+                title="هنوز صندلی ندارید"
+                text="با دکمه بالا یک توکن بسازید."
               />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>برچسب</th>
-                    <th>توکن</th>
-                    <th>وضعیت</th>
-                    <th>نصب</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.seats.map((s) => (
-                    <tr key={s.id}>
-                      <td>
-                        <strong>{s.label || "—"}</strong>
-                      </td>
-                      <td>
-                        {s.token ? (
-                          <div style={{ display: "grid", gap: 6 }}>
-                            <code style={{ wordBreak: "break-all", fontSize: 12 }}>{s.token}</code>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={async () => {
-                                await navigator.clipboard.writeText(s.token!);
-                                toast.push("کپی شد", "ok");
-                              }}
-                            >
-                              کپی
-                            </Button>
+              <div className="seats-list">
+                {data.seats.map((s) => {
+                  const token = s.token || "";
+                  return (
+                    <article key={s.id} className="seat-item">
+                      <div className="seat-item-top">
+                        <div>
+                          <strong className="seat-item-title">{s.label || "بدون نام"}</strong>
+                          <div className="seat-item-meta">
+                            <Badge tone={statusTone(s.status)}>{statusLabel(s.status)}</Badge>
+                            <span className="hint">
+                              {s.status === "locked" && s.bound_install_id
+                                ? "وصل به یک Chrome"
+                                : "هنوز به افزونه وصل نشده"}
+                            </span>
                           </div>
-                        ) : (
-                          <code>{s.token_prefix}…</code>
-                        )}
-                      </td>
-                      <td>
-                        <Badge
-                          tone={
-                            s.status === "locked"
-                              ? "accent"
-                              : s.status === "available"
-                                ? "success"
-                                : "danger"
-                          }
-                        >
-                          {s.status === "locked"
-                            ? "قفل‌شده"
-                            : s.status === "available"
-                              ? "آزاد"
-                              : s.status}
-                        </Badge>
-                      </td>
-                      <td className="hint">
-                        {s.bound_install_id
-                          ? s.bound_install_id.slice(0, 8) + "…"
-                          : "—"}
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        </div>
+                        <div className="seat-item-actions">
                           {s.status === "locked" ? (
                             <Button
                               size="sm"
@@ -221,7 +203,7 @@ export default function SeatsPage() {
                               loading={busy}
                               onClick={() => resetSeat(s.id)}
                             >
-                              ریست قفل
+                              آزاد کردن
                             </Button>
                           ) : null}
                           <Button
@@ -233,11 +215,26 @@ export default function SeatsPage() {
                             حذف
                           </Button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+
+                      {token ? (
+                        <div className="seat-token-row">
+                          <code className="seat-token-value" title={token}>
+                            {token}
+                          </code>
+                          <Button size="sm" onClick={() => copyToken(token)}>
+                            کپی توکن
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="hint" style={{ margin: "10px 0 0" }}>
+                          توکن کامل در دسترس نیست — یک صندلی جدید بسازید.
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
             )}
           </Card>
         </div>

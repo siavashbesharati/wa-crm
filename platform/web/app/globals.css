@@ -435,6 +435,88 @@ tr:hover td { background: #fafbfc; }
 
 .hint { color: var(--muted); font-size: 13px; font-weight: 600; }
 
+/* ——— Seats page ——— */
+.seats-page { display: grid; gap: 16px; }
+.seats-howto {
+  margin: 0;
+  padding-right: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.7;
+  color: var(--text);
+}
+.seats-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.seats-create label {
+  flex: 1 1 220px;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.seats-list { display: grid; gap: 12px; }
+.seat-item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2, #f8fafc);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+.seat-item-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.seat-item-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+.seat-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.seat-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.seat-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px dashed #cbd5e1;
+}
+.seat-token-value {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+  direction: ltr;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ——— Onboarding wizard ——— */
 .wizard-wrap {
   min-height: 100vh;
