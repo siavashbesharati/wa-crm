@@ -308,8 +308,15 @@ def update_plan(
     auth: AuthContext = Depends(require_roles(MemberRole.owner)),
     db: Session = Depends(get_db),
 ):
+    """Free starter switch only — paid plans go through /payments/start."""
     if body.plan not in PLANS:
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
+    price = int(plan_limits(body.plan).get("price_irr") or 0)
+    if price > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="برای ارتقا یا تمدید پلن پولی از صفحه اشتراک (/billing) و پرداخت استفاده کنید",
+        )
     auth.org.plan = body.plan
     db.add(auth.org)
     db.commit()

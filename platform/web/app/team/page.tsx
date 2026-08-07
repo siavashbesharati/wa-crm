@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
@@ -17,7 +18,6 @@ export default function TeamPage() {
   const [org, setOrg] = useState<Org | null>(null);
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("agent");
-  const [plan, setPlan] = useState("starter");
   const [loading, setLoading] = useState(true);
   const { busy, run } = useMutation();
   const toast = useToast();
@@ -26,9 +26,7 @@ export default function TeamPage() {
     setLoading(true);
     try {
       setMembers(await api<Member[]>("/orgs/members"));
-      const o = await api<Org>("/orgs/current");
-      setOrg(o);
-      setPlan(o.plan);
+      setOrg(await api<Org>("/orgs/current"));
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -56,14 +54,6 @@ export default function TeamPage() {
     }
   }
 
-  async function updatePlan() {
-    const ok = await run(
-      () => api("/orgs/plan", { method: "PATCH", body: JSON.stringify({ plan }) }),
-      { success: "پلن به‌روز شد" }
-    );
-    if (ok) await load();
-  }
-
   return (
     <Shell title="اعضای تیم" sub="نقش‌ها و سقف پلن">
       {loading ? (
@@ -77,14 +67,9 @@ export default function TeamPage() {
                 (کانال‌ها نامحدود)
               </div>
               <div className="row-actions" style={{ marginTop: 12 }}>
-                <select value={plan} onChange={(e) => setPlan(e.target.value)} style={{ width: "auto" }}>
-                  <option value="starter">Starter</option>
-                  <option value="growth">Growth</option>
-                  <option value="scale">Scale</option>
-                </select>
-                <Button variant="secondary" loading={busy} onClick={updatePlan}>
-                  تغییر پلن
-                </Button>
+                <Link className="btn secondary" href="/billing">
+                  تمدید / ارتقای اشتراک
+                </Link>
               </div>
             </Card>
           )}

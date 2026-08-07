@@ -21,6 +21,7 @@ const NAV = [
   { href: "/channels", label: "کانال‌ها", ico: "☎" },
   { href: "/seats", label: "صندلی افزونه", ico: "🔑" },
   { href: "/team", label: "تیم", ico: "☺" },
+  { href: "/billing", label: "اشتراک", ico: "💳" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
   { href: "/kpi", label: "KPI / OKR", ico: "◉" }

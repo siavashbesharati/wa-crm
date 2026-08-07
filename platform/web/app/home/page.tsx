@@ -83,6 +83,11 @@ export default function HomePage() {
                 پلن {me.org.plan} · نقش شما: {me.role} · سقف{" "}
                 {String(me.org.limits.max_seats)} صندلی افزونه هم‌زمان (کانال‌ها نامحدود)
               </div>
+              <div className="row-actions" style={{ marginTop: 12 }}>
+                <Link className="btn secondary" href="/billing">
+                  تمدید / ارتقای اشتراک
+                </Link>
+              </div>
             </Card>
           )}
 

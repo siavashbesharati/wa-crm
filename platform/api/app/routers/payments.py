@@ -31,6 +31,12 @@ class PaymentStartIn(BaseModel):
     plan: str
 
 
+def _post_pay_path(purpose: str) -> str:
+    if purpose == "onboarding":
+        return "onboarding"
+    return "billing"
+
+
 def _provider() -> str:
     p = (get_settings().payment_provider or "mock").strip().lower()
     return p if p in ("mock", "zibal") else "mock"
@@ -192,7 +198,7 @@ def zibal_callback(
 
     # Already paid — idempotent
     if payment.status == "paid":
-        dest = "onboarding" if payment.purpose == "onboarding" else "home"
+        dest = _post_pay_path(payment.purpose)
         q = urlencode({"paid": "1", "ref": payment.ref_number or ""})
         return RedirectResponse(f"{web}/{dest}?{q}", status_code=302)
 
@@ -210,7 +216,7 @@ def zibal_callback(
         )
         db.add(payment)
         db.commit()
-        dest = "onboarding" if payment.purpose == "onboarding" else "home"
+        dest = _post_pay_path(payment.purpose)
         err = "cancelled" if status == 3 else f"gateway_status_{status or 0}"
         q = urlencode({"paid": "0", "error": err})
         return RedirectResponse(f"{web}/{dest}?{q}", status_code=302)
@@ -221,7 +227,7 @@ def zibal_callback(
         mark_payment_failed(payment, raw_verify=payment.raw_verify)
         db.add(payment)
         db.commit()
-        dest = "onboarding" if payment.purpose == "onboarding" else "home"
+        dest = _post_pay_path(payment.purpose)
         q = urlencode(
             {
                 "paid": "0",
@@ -246,6 +252,6 @@ def zibal_callback(
     db.add(payment)
     db.commit()
 
-    dest = "onboarding" if payment.purpose == "onboarding" else "home"
+    dest = _post_pay_path(payment.purpose)
     q = urlencode({"paid": "1", "ref": payment.ref_number or ""})
     return RedirectResponse(f"{web}/{dest}?{q}", status_code=302)

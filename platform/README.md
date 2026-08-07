@@ -32,7 +32,8 @@
 - شماره موجود با ویزارد ناتمام → ادامه `/onboarding`  
 
 **پرداخت:** پیش‌فرض `PAYMENT_PROVIDER=mock` (دمو آفلاین). برای زیبال: `zibal` + merchant تستی `zibal`. مبالغ پلن‌ها همان **ریال** است و بدون تبدیل به درگاه فرستاده می‌شود.  
-Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboarding?paid=1`. برای تست لوکال API باید از اینترنت در دسترس باشد (tunnel). اسکلت تمدید/ارتقا: `POST /api/payments/start`.
+Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboarding?paid=1` یا `/billing?paid=1`. برای تست لوکال API باید از اینترنت در دسترس باشد (tunnel).  
+در پنل کسب‌وکار: صفحه **`/billing`** برای تمدید همان پلن یا ارتقا (مالک، از طریق `POST /api/payments/start`).
 
 **نسخه افزونه (منبع واحد):** `config/extension.json`  
 - همگام‌سازی: `npm run sync:ext-version`  
