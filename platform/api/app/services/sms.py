@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -14,6 +16,11 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 
 logger = logging.getLogger("sms_ir")
+
+SMS_IR_VERIFY_URL = "https://api.sms.ir/v1/send/verify"
+# Per-attempt timeout (connect+read). sms.ir can be slow / flaky from some networks.
+SMS_TIMEOUT_SEC = 12
+SMS_MAX_ATTEMPTS = 3
 
 
 def normalize_mobile_for_sms_ir(phone: str) -> str:
@@ -121,8 +128,34 @@ def build_verify_parameters(template: dict[str, Any], *, otp_code: str) -> list[
     return params_out
 
 
+def _post_verify(payload: dict[str, Any], api_key: str, *, proxy: str = "") -> dict[str, Any]:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        SMS_IR_VERIFY_URL,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "x-api-key": api_key,
+        },
+    )
+    opener = urllib.request.build_opener()
+    if proxy:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"https": proxy, "http": proxy})
+        )
+    with opener.open(req, timeout=SMS_TIMEOUT_SEC) as res:
+        raw = res.read().decode("utf-8", errors="replace")
+    try:
+        return json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        logger.error("sms.ir invalid JSON: %s", raw[:300])
+        raise HTTPException(status_code=502, detail="پاسخ نامعتبر از سرویس پیامک")
+
+
 def send_otp(phone: str, code: str, *, db: Session | None = None) -> None:
-    """Send verification SMS via sms.ir /v1/send/verify."""
+    """Send verification SMS via sms.ir /v1/send/verify (with retries on timeout)."""
     settings = get_settings()
     api_key = (settings.sms_ir_api_key or "").strip()
     if not api_key:
@@ -141,49 +174,71 @@ def send_otp(phone: str, code: str, *, db: Session | None = None) -> None:
         "templateId": template_id,
         "parameters": parameters,
     }
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.sms.ir/v1/send/verify",
-        data=body,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "x-api-key": api_key,
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=20) as res:
-            raw = res.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-        logger.error("sms.ir HTTP %s: %s", e.code, err_body)
-        raise HTTPException(
-            status_code=502,
-            detail="ارسال پیامک ناموفق بود — بعداً دوباره تلاش کنید",
-        ) from e
-    except urllib.error.URLError as e:
-        logger.error("sms.ir network error: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail="ارتباط با سرویس پیامک برقرار نشد",
-        ) from e
+    proxy = (settings.sms_ir_https_proxy or "").strip()
 
-    try:
-        data = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
-        logger.error("sms.ir invalid JSON: %s", raw[:300])
-        raise HTTPException(status_code=502, detail="پاسخ نامعتبر از سرویس پیامک")
+    last_err: Exception | None = None
+    for attempt in range(1, SMS_MAX_ATTEMPTS + 1):
+        try:
+            data = _post_verify(payload, api_key, proxy=proxy)
+            status = data.get("status")
+            if status != 1:
+                msg = data.get("message") or "خطا در ارسال پیامک"
+                logger.error("sms.ir failed status=%s message=%s", status, msg)
+                raise HTTPException(status_code=502, detail=str(msg))
 
-    status = data.get("status")
-    if status != 1:
-        msg = data.get("message") or "خطا در ارسال پیامک"
-        logger.error("sms.ir failed status=%s message=%s", status, msg)
-        raise HTTPException(status_code=502, detail=str(msg))
+            logger.info(
+                "sms.ir OTP sent mobile=%s templateId=%s messageId=%s attempt=%s",
+                mobile,
+                template_id,
+                (data.get("data") or {}).get("messageId"),
+                attempt,
+            )
+            return
+        except HTTPException:
+            raise
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            logger.error("sms.ir HTTP %s: %s", e.code, err_body)
+            if e.code >= 500 and attempt < SMS_MAX_ATTEMPTS:
+                last_err = e
+                time.sleep(0.6 * attempt)
+                continue
+            raise HTTPException(
+                status_code=502,
+                detail="ارسال پیامک ناموفق بود — بعداً دوباره تلاش کنید",
+            ) from e
+        except (
+            TimeoutError,
+            socket.timeout,
+            urllib.error.URLError,
+            ConnectionError,
+            OSError,
+        ) as e:
+            last_err = e
+            logger.warning(
+                "sms.ir network/timeout attempt=%s/%s: %s",
+                attempt,
+                SMS_MAX_ATTEMPTS,
+                e,
+            )
+            if attempt < SMS_MAX_ATTEMPTS:
+                time.sleep(0.6 * attempt)
+                continue
+            break
 
-    logger.info(
-        "sms.ir OTP sent mobile=%s templateId=%s messageId=%s",
-        mobile,
-        template_id,
-        (data.get("data") or {}).get("messageId"),
-    )
+    logger.error("sms.ir give up after %s attempts: %s", SMS_MAX_ATTEMPTS, last_err)
+
+    # Local/dev: keep login usable when Iranian SMS API is blocked (VPN, etc.)
+    if settings.app_env == "development" and settings.sms_ir_dev_fallback:
+        logger.error(
+            "DEV SMS FALLBACK — OTP for %s is %s (sms.ir unreachable). "
+            "Turn off foreign VPN or set sms_ir_https_proxy.",
+            mobile,
+            code,
+        )
+        return
+
+    raise HTTPException(
+        status_code=502,
+        detail="ارتباط با سرویس پیامک قطع شد یا زمان‌بر شد — VPN/فیلترشکن خارجی را خاموش کنید یا دوباره تلاش کنید",
+    ) from last_err

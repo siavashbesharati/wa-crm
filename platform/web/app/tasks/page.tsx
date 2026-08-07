@@ -93,6 +93,10 @@ export default function TasksPage() {
 
   return (
     <Shell title="وظایف تیمی" sub="ارجاع کار بین اپراتورها">
+      {loading ? (
+        <PageLoading />
+      ) : (
+        <>
       <Card title="وظیفه جدید">
         <div className="form-grid">
           <label>
@@ -132,9 +136,7 @@ export default function TasksPage() {
       </Card>
 
       <Card title="فهرست وظایف">
-        {loading ? (
-          <PageLoading />
-        ) : tasks.length === 0 ? (
+        {tasks.length === 0 ? (
           <EmptyState title="وظیفه‌ای نیست" text="از فرم بالا یک وظیفه بسازید." />
         ) : (
           <table>
@@ -175,6 +177,8 @@ export default function TasksPage() {
           </table>
         )}
       </Card>
+        </>
+      )}
     </Shell>
   );
 }

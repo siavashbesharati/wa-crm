@@ -818,16 +818,56 @@ a.btn.wizard-btn:hover {
   color: var(--muted);
   font-weight: 700;
 }
-
+.shell-boot {
+  padding: 24px;
+  align-content: start;
+}
+.page-shimmer {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 2px 0 8px;
+}
+.page-shimmer-compact {
+  gap: 10px;
+  padding: 12px;
+}
+.shimmer-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.shimmer-block {
+  border-radius: var(--radius) !important;
+}
+.shimmer-list-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
 .skeleton {
   background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 50%, #eef2f7 75%);
   background-size: 200% 100%;
-  animation: shimmer 1.2s ease infinite;
+  animation: shimmer 1.15s ease-in-out infinite;
   border-radius: 8px;
 }
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+@media (max-width: 960px) {
+  .shimmer-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .shimmer-stats {
+    grid-template-columns: 1fr;
+  }
 }
 
 .empty-state {

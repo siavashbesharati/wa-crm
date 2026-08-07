@@ -47,6 +47,9 @@ export function saveSession(session: Session) {
 
 export function clearSession() {
   localStorage.removeItem(ORG_KEY);
+  if (typeof window !== "undefined") {
+    void import("./me-cache").then((m) => m.clearOrgMeCache());
+  }
 }
 
 export function getSession() {
@@ -59,6 +62,9 @@ export function savePlatformSession(session: PlatformSession) {
 
 export function clearPlatformSession() {
   localStorage.removeItem(PLATFORM_KEY);
+  if (typeof window !== "undefined") {
+    void import("./me-cache").then((m) => m.clearPlatformMeCache());
+  }
 }
 
 export function getPlatformSession() {

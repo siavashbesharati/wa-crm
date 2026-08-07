@@ -54,6 +54,10 @@ export default function KnowledgePage() {
 
   return (
     <Shell title="پایگاه دانش AI" sub="منبع پاسخ‌های برداری‌شده فارسی">
+      {loading ? (
+        <PageLoading />
+      ) : (
+        <>
       <Card title="آپلود دانش">
         <div className="form-grid">
           <label className="full">
@@ -71,9 +75,7 @@ export default function KnowledgePage() {
       </Card>
 
       <Card title="اسناد">
-        {loading ? (
-          <PageLoading />
-        ) : docs.length === 0 ? (
+        {docs.length === 0 ? (
           <EmptyState title="سندی نیست" text="FAQ یا قیمت‌ها را آپلود کنید." />
         ) : (
           <table>
@@ -96,6 +98,8 @@ export default function KnowledgePage() {
           </table>
         )}
       </Card>
+        </>
+      )}
     </Shell>
   );
 }

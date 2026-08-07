@@ -131,7 +131,7 @@ export default function InboxPage() {
             {!active ? (
               <EmptyState title="یک گفتگو را انتخاب کنید" />
             ) : opening ? (
-              <PageLoading label="بارگذاری پیام‌ها…" />
+              <PageLoading label="بارگذاری پیام‌ها…" variant="compact" />
             ) : (
               <>
                 <div style={{ padding: 14, borderBottom: "1px solid var(--border)" }}>

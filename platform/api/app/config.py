@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     sms_ir_api_key: str = "pkHIVpf02aAHthp4eP3DYGdWtw5bc6tL4C9EcvXbjisVPo8g"
     sms_ir_template_id: int = 846743
     sms_ir_otp_param: str = "OTP"
+    # Optional HTTPS proxy for sms.ir (e.g. http://127.0.0.1:10809) when VPN blocks Iranian APIs
+    sms_ir_https_proxy: str = ""
+    # If True and sms.ir is unreachable, log OTP to API console (local only)
+    sms_ir_dev_fallback: bool = True
 
     @classmethod
     def settings_customise_sources(

@@ -114,6 +114,10 @@ export default function LeadsPage() {
       onSearch={setQ}
       actions={<CrmViewToggle mode="list" />}
     >
+      {loading ? (
+        <PageLoading variant="list" />
+      ) : (
+        <>
       <Card title="افزودن لید">
         <div className="form-grid">
           <label>
@@ -152,9 +156,7 @@ export default function LeadsPage() {
           </select>
         }
       >
-        {loading ? (
-          <PageLoading />
-        ) : filtered.length === 0 ? (
+        {filtered.length === 0 ? (
           <EmptyState
             title="هنوز لیدی نیست"
             text="افزونه را Reload کنید، تب واتساپ یا دیوار را باز بگذارید، یا از فرم بالا لید بسازید."
@@ -230,6 +232,8 @@ export default function LeadsPage() {
           </div>
         )}
       </Card>
+        </>
+      )}
     </Shell>
   );
 }

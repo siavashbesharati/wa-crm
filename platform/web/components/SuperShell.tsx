@@ -3,12 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  api,
-  clearPlatformSession,
-  getPlatformSession
-} from "@/lib/api";
-import { Spinner } from "@/components/ui/Spinner";
+import { clearPlatformSession, getPlatformSession } from "@/lib/api";
+import { getCachedPlatformMe, loadPlatformMe } from "@/lib/me-cache";
+import { PageLoading } from "@/components/ui/Spinner";
 
 const NAV = [
   { href: "/super/businesses", label: "کسب‌وکارها", ico: "▣" },
@@ -17,6 +14,8 @@ const NAV = [
   { href: "/super/ai", label: "تنظیمات AI", ico: "✦" },
   { href: "/super/system", label: "سیستم", ico: "◉" }
 ];
+
+let platformShellReady = false;
 
 export default function SuperShell({
   title,
@@ -31,27 +30,38 @@ export default function SuperShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const cached = getCachedPlatformMe();
+  const [ready, setReady] = useState(platformShellReady);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [userLabel, setUserLabel] = useState("سوپر ادمین");
+  const [userLabel, setUserLabel] = useState(
+    cached?.user?.display_name || cached?.user?.phone || "سوپر ادمین"
+  );
 
   useEffect(() => {
     if (!getPlatformSession()) {
+      platformShellReady = false;
+      setReady(false);
       router.replace("/super/login");
       return;
     }
+    platformShellReady = true;
     setReady(true);
-    api<{ user: { display_name: string; phone: string } }>("/admin/me", {
-      platform: true
-    })
+    let cancelled = false;
+    loadPlatformMe()
       .then((me) => {
+        if (cancelled) return;
         setUserLabel(me.user?.display_name || me.user?.phone || "سوپر ادمین");
       })
       .catch(() => {
+        if (cancelled) return;
+        platformShellReady = false;
         clearPlatformSession();
         router.replace("/super/login");
       });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
@@ -69,9 +79,8 @@ export default function SuperShell({
 
   if (!ready) {
     return (
-      <div className="page-loading" style={{ minHeight: "100vh" }}>
-        <Spinner dark lg />
-        <span>در حال بارگذاری پنل پلتفرم…</span>
+      <div className="page-loading shell-boot" style={{ minHeight: "100vh" }}>
+        <PageLoading />
       </div>
     );
   }
@@ -142,6 +151,7 @@ export default function SuperShell({
           <button
             className="btn secondary"
             onClick={() => {
+              platformShellReady = false;
               clearPlatformSession();
               router.replace("/super/login");
             }}
