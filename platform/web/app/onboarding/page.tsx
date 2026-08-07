@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, clearSession, getSession } from "@/lib/api";
 import {
   EXTENSION_DOWNLOAD_NAME,
@@ -51,12 +51,29 @@ function stepIndex(step: string) {
 }
 
 export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="page-loading" style={{ minHeight: "100vh" }}>
+          <PageLoading />
+        </div>
+      }
+    >
+      <OnboardingPageInner />
+    </Suspense>
+  );
+}
+
+function OnboardingPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
+  const paidHandled = useRef(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"form" | "creating-seat">("form");
   const [data, setData] = useState<OnboardingState | null>(null);
+  const [payProvider, setPayProvider] = useState<"mock" | "zibal">("mock");
 
   const [orgName, setOrgName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -110,7 +127,37 @@ export default function OnboardingPage() {
         if (r?.version) setExtVersion(r.version);
       })
       .catch(() => undefined);
+    api<{ provider?: string }>("/payments/config", { auth: false })
+      .then((r) => {
+        const p = (r?.provider || "mock").toLowerCase();
+        setPayProvider(p === "zibal" ? "zibal" : "mock");
+      })
+      .catch(() => setPayProvider("mock"));
   }, []);
+
+  useEffect(() => {
+    if (paidHandled.current || loading) return;
+    const paid = searchParams.get("paid");
+    if (paid !== "1" && paid !== "0") return;
+    paidHandled.current = true;
+    const error = searchParams.get("error");
+    const ref = searchParams.get("ref");
+    if (paid === "1") {
+      toast.push(
+        ref ? `پرداخت موفق — رسید ${ref}` : "پرداخت موفق",
+        "ok"
+      );
+      if (ref) {
+        setReceipt((prev) =>
+          prev || { ref, label: "", amount_irr: 0 }
+        );
+      }
+      void load();
+    } else {
+      toast.push(error ? `پرداخت ناموفق: ${error}` : "پرداخت ناموفق", "err");
+    }
+    router.replace("/onboarding");
+  }, [loading, load, router, searchParams, toast]);
 
   async function saveProfile() {
     if (orgName.trim().length < 2) {
@@ -159,13 +206,25 @@ export default function OnboardingPage() {
     try {
       const res = await api<{
         step: string;
+        paid?: boolean;
+        provider?: string;
+        payment_url?: string;
         bootstrap_seat_token?: string | null;
-        receipt: { ref: string; label: string; amount_irr: number };
+        receipt?: { ref: string; label: string; amount_irr: number };
       }>("/orgs/onboarding/pay", {
         method: "POST",
-        body: JSON.stringify({ plan: selectedPlan, mock_card: mockCard })
+        body: JSON.stringify({
+          plan: selectedPlan,
+          mock_card: payProvider === "mock" ? mockCard : undefined
+        })
       });
-      setReceipt(res.receipt);
+
+      if (res.payment_url) {
+        window.location.href = res.payment_url;
+        return;
+      }
+
+      if (res.receipt) setReceipt(res.receipt);
       if (res.bootstrap_seat_token) {
         setSeatToken(res.bootstrap_seat_token);
         try {
@@ -174,7 +233,6 @@ export default function OnboardingPage() {
           /* ignore */
         }
       }
-      // Brief smooth beat so “creating seat” feels intentional
       await new Promise((r) => setTimeout(r, 700));
       toast.push("پرداخت موفق — صندلی افزونه ساخته شد", "ok");
       setData((d) => (d ? { ...d, step: res.step } : d));
@@ -233,6 +291,7 @@ export default function OnboardingPage() {
 
   const idx = stepIndex(data.step);
   const plans = data.plans || [];
+  const selectedMeta = plans.find((p) => p.id === selectedPlan);
   const progressPct = ((idx + (phase === "creating-seat" ? 0.5 : 0)) / (STEPS.length - 1)) * 100;
 
   return (
@@ -355,10 +414,27 @@ export default function OnboardingPage() {
             )}
 
             {data.step === "payment" && (
-              <Card title="۳. پرداخت (نمایشی)">
+              <Card
+                title={
+                  payProvider === "zibal" && selectedMeta?.price_irr
+                    ? "۳. پرداخت با زیبال"
+                    : "۳. پرداخت"
+                }
+              >
                 <p className="hint">
                   بعد از پرداخت موفق، صندلی افزونه ساخته می‌شود و وارد بخش راهنما می‌شوید.
-                  کارت تست: <code>4242</code> — شکست: <code>0000</code>
+                  {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
+                    <>
+                      {" "}
+                      کارت تست: <code>4242</code> — شکست: <code>0000</code>
+                    </>
+                  ) : null}
+                  {payProvider === "zibal" && (selectedMeta?.price_irr || 0) > 0 ? (
+                    <> برای تست می‌توانید merchant <code>zibal</code> را در API تنظیم کنید.</>
+                  ) : null}
+                  {(selectedMeta?.price_irr || 0) <= 0 ? (
+                    <> این پلن رایگان است و نیاز به درگاه ندارد.</>
+                  ) : null}
                 </p>
                 <div className="form-grid">
                   <label>
@@ -374,18 +450,22 @@ export default function OnboardingPage() {
                       ))}
                     </select>
                   </label>
-                  <label>
-                    شماره کارت (mock)
-                    <input
-                      value={mockCard}
-                      onChange={(e) => setMockCard(e.target.value)}
-                      placeholder="4242"
-                    />
-                  </label>
+                  {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
+                    <label>
+                      شماره کارت (mock)
+                      <input
+                        value={mockCard}
+                        onChange={(e) => setMockCard(e.target.value)}
+                        placeholder="4242"
+                      />
+                    </label>
+                  ) : null}
                 </div>
                 <div className="wizard-actions">
                   <Button className="wizard-btn" loading={busy} onClick={pay}>
-                    پرداخت و ساخت صندلی
+                    {payProvider === "zibal" && (selectedMeta?.price_irr || 0) > 0
+                      ? "پرداخت با زیبال"
+                      : "پرداخت و ساخت صندلی"}
                   </Button>
                 </div>
               </Card>

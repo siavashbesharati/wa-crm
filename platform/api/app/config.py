@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # Payments: mock keeps local demos working; zibal for real/test gateway
+    payment_provider: str = "zibal"  # mock | zibal
+    zibal_merchant_id: str = "zibal"
+    public_base_url: str = "http://localhost:8000"
+    web_base_url: str = "http://localhost:3000"
 
     @property
     def cors_origin_list(self) -> list[str]:

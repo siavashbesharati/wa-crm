@@ -27,9 +27,12 @@
 ورودها از هم جدا هستند (توکن `platform` در برابر توکن `org`).
 
 **ورود/ثبت‌نام کسب‌وکار (فقط شماره):** `/login` → OTP.  
-- شماره جدید → ساخت draft → ویزارد `/onboarding` (پروفایل → پلن → پرداخت mock → راهنما/افزونه) → داشبورد  
+- شماره جدید → ساخت draft → ویزارد `/onboarding` (پروفایل → پلن → پرداخت → راهنما/افزونه) → داشبورد  
 - شماره موجود با onboarding تمام‌شده → داشبورد  
 - شماره موجود با ویزارد ناتمام → ادامه `/onboarding`  
+
+**پرداخت:** پیش‌فرض `PAYMENT_PROVIDER=mock` (دمو آفلاین). برای زیبال: `zibal` + merchant تستی `zibal`. مبالغ پلن‌ها همان **ریال** است و بدون تبدیل به درگاه فرستاده می‌شود.  
+Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboarding?paid=1`. برای تست لوکال API باید از اینترنت در دسترس باشد (tunnel). اسکلت تمدید/ارتقا: `POST /api/payments/start`.
 
 **نسخه افزونه (منبع واحد):** `config/extension.json`  
 - همگام‌سازی: `npm run sync:ext-version`  
@@ -132,6 +135,13 @@ SUPER_ADMIN_PASSWORD=admin123
 APP_ENV=development
 
 OPENAI_API_KEY=
+
+# پرداخت (پیش‌فرض mock — دمو بدون درگاه)
+PAYMENT_PROVIDER=zibal
+# PAYMENT_PROVIDER=zibal
+ZIBAL_MERCHANT_ID=zibal
+PUBLIC_BASE_URL=http://localhost:8000
+WEB_BASE_URL=http://localhost:3000
 
 ```
 

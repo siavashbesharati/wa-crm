@@ -86,6 +86,30 @@ class Organization(Base):
 
     memberships = relationship("Membership", back_populates="organization")
     channel_accounts = relationship("ChannelAccount", back_populates="organization")
+    payments = relationship("Payment", back_populates="organization")
+
+
+class Payment(Base):
+    """Gateway payment (mock or Zibal) for onboarding / renew / upgrade."""
+
+    __tablename__ = "payments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(40), default="onboarding")  # onboarding|renew|upgrade
+    plan: Mapped[str] = mapped_column(String(40), default="starter")
+    amount_irr: Mapped[int] = mapped_column(Integer, default=0)
+    provider: Mapped[str] = mapped_column(String(40), default="mock")  # mock|zibal
+    track_id: Mapped[str] = mapped_column(String(80), default="", index=True)
+    ref_number: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(40), default="pending")  # pending|paid|failed
+    raw_request: Mapped[str] = mapped_column(Text, default="")
+    raw_verify: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    organization = relationship("Organization", back_populates="payments")
 
 
 class User(Base):

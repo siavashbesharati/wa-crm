@@ -139,67 +139,82 @@ def onboarding_pay(
     auth: AuthContext = Depends(require_roles(MemberRole.owner)),
     db: Session = Depends(get_db),
 ):
-    """Mock payment → create first extension seat → advance to guides."""
-    from app.models import ExtensionSeat
-    from app.services.seat_tokens import hash_token, new_raw_token
+    """Pay for selected plan — mock instant, or Zibal redirect."""
+    from app.models import Payment
+    from app.services.payment_flow import (
+        apply_paid_plan,
+        mark_payment_paid,
+        receipt_for,
+    )
+    from app.routers.payments import _provider, _start_zibal_payment
 
     plan = (body.plan or auth.org.plan or "starter").strip()
     if plan not in PLANS:
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
-    digits = "".join(ch for ch in (body.mock_card or "") if ch.isdigit())
-    if digits.endswith("0000"):
-        raise HTTPException(status_code=402, detail="پرداخت ناموفق (mock)")
 
-    auth.org.plan = plan
-    auth.org.onboarding_step = "guides"
-    db.add(auth.org)
-
-    bootstrap_token = None
-    existing_seats = (
-        db.query(ExtensionSeat)
-        .filter(ExtensionSeat.org_id == auth.org.id, ExtensionSeat.status != "revoked")
-        .count()
-    )
-    if existing_seats == 0:
-        raw = new_raw_token()
-        db.add(
-            ExtensionSeat(
-                org_id=auth.org.id,
-                label="صندلی مالک",
-                token_prefix=raw[:12],
-                token_hash=hash_token(raw),
-                token_plain=raw,
-                status="available",
-                created_by_user_id=auth.user.id,
-            )
-        )
-        bootstrap_token = raw
-    else:
-        existing = (
-            db.query(ExtensionSeat)
-            .filter(ExtensionSeat.org_id == auth.org.id, ExtensionSeat.status != "revoked")
-            .order_by(ExtensionSeat.created_at.asc())
-            .first()
-        )
-        if existing:
-            bootstrap_token = getattr(existing, "token_plain", None) or None
-
-    db.commit()
-    db.refresh(auth.org)
     meta = plan_limits(plan)
+    amount = int(meta.get("price_irr") or 0)
+    provider = _provider()
+
+    # Free plan or mock provider → instant complete
+    if amount <= 0 or provider == "mock":
+        digits = "".join(ch for ch in (body.mock_card or "") if ch.isdigit())
+        if amount > 0 and digits.endswith("0000"):
+            raise HTTPException(status_code=402, detail="پرداخت ناموفق (mock)")
+
+        token = apply_paid_plan(
+            db,
+            auth.org,
+            plan=plan,
+            purpose="onboarding",
+            user=auth.user,
+            create_seat=True,
+        )
+        ref = "MOCK-" + auth.org.id[:8].upper()
+        if amount > 0:
+            payment = Payment(
+                org_id=auth.org.id,
+                user_id=auth.user.id,
+                purpose="onboarding",
+                plan=plan,
+                amount_irr=amount,
+                provider="mock",
+                status="paid",
+                ref_number=ref,
+            )
+            mark_payment_paid(payment, ref_number=ref)
+            db.add(payment)
+        db.commit()
+        db.refresh(auth.org)
+        return {
+            "ok": True,
+            "paid": True,
+            "provider": "mock",
+            "mock": True,
+            "step": "guides",
+            "org": _org_out(auth.org),
+            "bootstrap_seat_token": token,
+            "receipt": receipt_for(plan, ref=ref, amount_irr=amount),
+        }
+
+    # Zibal: create pending payment + return redirect URL (no seat yet)
+    auth.org.plan = plan
+    db.add(auth.org)
+    db.commit()
+    started = _start_zibal_payment(
+        db, org=auth.org, user=auth.user, plan=plan, purpose="onboarding"
+    )
     return {
         "ok": True,
-        "paid": True,
-        "mock": True,
-        "step": "guides",
+        "paid": False,
+        "provider": "zibal",
+        "mock": False,
+        "step": _step(auth.org),
+        "payment_url": started["payment_url"],
+        "track_id": started["track_id"],
+        "payment_id": started["payment_id"],
+        "amount_irr": amount,
         "org": _org_out(auth.org),
-        "bootstrap_seat_token": bootstrap_token,
-        "receipt": {
-            "plan": plan,
-            "amount_irr": meta.get("price_irr", 0),
-            "label": meta.get("price_label", ""),
-            "ref": "MOCK-" + auth.org.id[:8].upper(),
-        },
     }
 
 

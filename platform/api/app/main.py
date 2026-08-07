@@ -15,6 +15,7 @@ from app.routers import (
     leads,
     messages,
     orgs,
+    payments,
     seats,
     tasks,
     whatsapp,
@@ -50,6 +51,7 @@ ROUTERS = [
     ai.router,
     kpi.router,
     extension.router,
+    payments.router,
 ]
 
 
