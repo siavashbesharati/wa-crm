@@ -75,7 +75,7 @@ export default function HomePage() {
       {loading ? (
         <PageLoading />
       ) : (
-        <>
+        <div className="dashboard-container">
           {me && (
             <Card>
               <strong>{me.org.name}</strong>
@@ -140,7 +140,7 @@ export default function HomePage() {
               گزارش KPI
             </Link>
           </div>
-        </>
+        </div>
       )}
     </Shell>
   );

@@ -12,7 +12,7 @@ DEFAULT_PLANS: dict[str, dict[str, Any]] = {
         "max_channel_accounts": 9999,
         "max_seats": 2,
         "ai_suggest": True,
-        "ai_auto_send": False,
+        "ai_auto_send": True,
         "message_retention_days": 30,
         "price_irr": 0,
         "price_label": "رایگان / آزمایشی",
@@ -118,6 +118,15 @@ def ensure_default_plans(db: Session | None = None) -> None:
     try:
         count = session.query(PricingPlan).count()
         if count > 0:
+            # All subscriptions can use AI (suggest + auto-send).
+            dirty = False
+            for row in session.query(PricingPlan).all():
+                if not row.ai_suggest or not row.ai_auto_send:
+                    row.ai_suggest = True
+                    row.ai_auto_send = True
+                    dirty = True
+            if dirty:
+                session.commit()
             return
         for pid, meta in DEFAULT_PLANS.items():
             session.add(

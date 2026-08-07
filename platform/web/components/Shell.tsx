@@ -130,6 +130,15 @@ export default function Shell({
     setMobileOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
+
   if (!ready) {
     return (
       <div className="page-loading" style={{ minHeight: "100vh" }}>
@@ -150,7 +159,15 @@ export default function Shell({
         : `${planName} · ${daysRemaining.toLocaleString("fa-IR")} روز باقی‌مانده`;
 
   return (
-    <div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
+    <div className={`app-shell ${collapsed ? "collapsed" : ""}${mobileOpen ? " nav-open" : ""}`}>
+      {mobileOpen && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="بستن منو"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-block">
@@ -159,11 +176,19 @@ export default function Shell({
           </div>
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn sidebar-collapse-btn"
             aria-label="جمع کردن منو"
             onClick={() => setCollapsed((v) => !v)}
           >
             ☰
+          </button>
+          <button
+            type="button"
+            className="icon-btn sidebar-close-btn"
+            aria-label="بستن منو"
+            onClick={() => setMobileOpen(false)}
+          >
+            ✕
           </button>
         </div>
 
@@ -234,16 +259,10 @@ export default function Shell({
         <header className="topbar">
           <button
             type="button"
-            className="icon-btn"
-            style={{ display: undefined }}
+            className="icon-btn topbar-menu-btn"
             aria-label="منو"
-            onClick={() => {
-              if (window.matchMedia("(max-width: 960px)").matches) {
-                setMobileOpen((v) => !v);
-              } else {
-                setCollapsed((v) => !v);
-              }
-            }}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((v) => !v)}
           >
             ☰
           </button>

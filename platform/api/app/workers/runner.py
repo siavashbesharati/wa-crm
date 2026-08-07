@@ -17,7 +17,6 @@ from app.models import (
     OutboundStatus,
     SenderType,
 )
-from app.plans import plan_limits
 from app.routers.kpi import rollup
 from app.services.ai_reply import generate_reply
 from app.services.queue import dequeue
@@ -29,9 +28,8 @@ def handle_auto_reply(payload: dict) -> None:
         org = db.get(Organization, payload["org_id"])
         if not org:
             return
-        limits = plan_limits(org.plan)
         policy = db.query(AiPolicy).filter(AiPolicy.org_id == org.id).first()
-        if not limits["ai_auto_send"] or not policy or not policy.auto_send_enabled:
+        if not policy or not policy.auto_send_enabled:
             return
         lead = db.get(Lead, payload["lead_id"])
         msg = db.get(Message, payload["message_id"])

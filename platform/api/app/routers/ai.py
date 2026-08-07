@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import AiPolicy, KnowledgeDoc, Lead, MemberRole, Message
-from app.plans import plan_limits
 from app.schemas import AiPolicyIn, KnowledgeIn, SuggestIn, SuggestOut
 from app.services.ai_reply import generate_reply, retrieve_knowledge
 from app.services.embeddings import chunk_text, embed_text
@@ -32,8 +31,8 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         "hours_end": policy.hours_end,
         "agent_role": getattr(policy, "agent_role", "") or "",
         "system_prompt": getattr(policy, "system_prompt", "") or "",
-        "plan_allows_auto": plan_limits(auth.org.plan)["ai_auto_send"],
-        "plan_allows_suggest": plan_limits(auth.org.plan)["ai_suggest"],
+        "plan_allows_auto": True,
+        "plan_allows_suggest": True,
     }
 
 
@@ -104,9 +103,6 @@ retrieve = retrieve_knowledge
 
 @router.post("/suggest", response_model=SuggestOut)
 def suggest(body: SuggestIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
-    if not plan_limits(auth.org.plan)["ai_suggest"]:
-        raise HTTPException(status_code=402, detail="پلن شما پیشنهاد AI ندارد")
-
     lead = db.query(Lead).filter(Lead.id == body.lead_id, Lead.org_id == auth.org.id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="لید یافت نشد")
@@ -127,10 +123,9 @@ def run_auto_reply_for_lead(
     auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
     db: Session = Depends(get_db),
 ):
-    """Manual trigger used by workers/tests; respects policy + plan."""
-    limits = plan_limits(auth.org.plan)
+    """Manual trigger used by workers/tests; respects policy."""
     policy = db.query(AiPolicy).filter(AiPolicy.org_id == auth.org.id).first()
-    if not limits["ai_auto_send"] or not policy or not policy.auto_send_enabled:
+    if not policy or not policy.auto_send_enabled:
         return {"sent": False, "reason": "auto_send_disabled"}
 
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.org_id == auth.org.id).first()
