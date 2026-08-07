@@ -1,26 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, savePlatformSession } from "@/lib/api";
 import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
+import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+
+type Step = "phone" | "otp";
+const OTP_TTL = 60;
 
 export default function SuperLoginPage() {
   const router = useRouter();
   const toast = useToast();
+  const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
   const [shake, setShake] = useState(false);
+  const autoSubmitRef = useRef("");
 
-  async function login() {
-    if (!phone.trim() || !password.trim()) {
-      toast.push("شماره و رمز را وارد کنید", "err");
-      setShake(true);
-      window.setTimeout(() => setShake(false), 450);
+  useEffect(() => {
+    if (secondsLeft <= 0) return;
+    const t = window.setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [secondsLeft]);
+
+  useEffect(() => {
+    const clean = code.replace(/\D/g, "");
+    if (clean.length !== 6 || busy || step !== "otp") return;
+    if (autoSubmitRef.current === clean) return;
+    autoSubmitRef.current = clean;
+    const t = window.setTimeout(() => {
+      void verifyOtp(clean);
+    }, 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, step, busy]);
+
+  function bumpShake() {
+    setShake(true);
+    window.setTimeout(() => setShake(false), 450);
+  }
+
+  async function requestOtp() {
+    if (phone.trim().length < 8) {
+      toast.push("شماره سوپر ادمین را وارد کنید", "err");
+      bumpShake();
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/admin/otp/request", {
+        method: "POST",
+        auth: false,
+        body: JSON.stringify({ phone: phone.trim() })
+      });
+      setCode("");
+      autoSubmitRef.current = "";
+      setStep("otp");
+      setSecondsLeft(OTP_TTL);
+      toast.push("کد ورود پیامک شد", "ok");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+      bumpShake();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyOtp(overrideCode?: string) {
+    const finalCode = (overrideCode ?? code).replace(/\D/g, "");
+    if (finalCode.length < 6) {
+      toast.push("کد ۶ رقمی را کامل وارد کنید", "err");
+      bumpShake();
       return;
     }
     setBusy(true);
@@ -31,10 +86,10 @@ export default function SuperLoginPage() {
         user_id: string;
         role: string;
         scope: "platform";
-      }>("/admin/login", {
+      }>("/admin/otp/verify", {
         method: "POST",
         auth: false,
-        body: JSON.stringify({ phone: phone.trim(), password })
+        body: JSON.stringify({ phone: phone.trim(), code: finalCode })
       });
       savePlatformSession({
         access_token: tok.access_token,
@@ -47,8 +102,8 @@ export default function SuperLoginPage() {
       router.replace("/super/businesses");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
-      setShake(true);
-      window.setTimeout(() => setShake(false), 450);
+      bumpShake();
+      autoSubmitRef.current = "";
     } finally {
       setBusy(false);
     }
@@ -58,55 +113,64 @@ export default function SuperLoginPage() {
     <AuthLayout
       variant="platform"
       brand="سوپر ادمین"
-      tagline="کنسول مالک پلتفرم برای مدیریت کسب‌وکارها، پلن‌ها و تنظیمات سراسری AI."
+      tagline="ورود با پیامک به کنسول مالک پلتفرم."
     >
-      <div className={`auth-flow ${shake ? "is-shake" : ""}`}>
-        <AuthStepHeader
-          step={1}
-          total={1}
-          title="ورود پلتفرم"
-          sub="دسترسی محدود به مالک سیستم — از رمز قوی در production استفاده کنید."
-        />
-        <label className="auth-field">
-          <span>شماره سوپر ادمین</span>
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="شماره تعریف‌شده در env"
-            autoComplete="username"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter") document.getElementById("super-pass")?.focus();
-            }}
-          />
-        </label>
-        <label className="auth-field">
-          <span>رمز عبور</span>
-          <div className="auth-pass-row">
-            <input
-              id="super-pass"
-              type={showPass ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") login();
-              }}
+      <div key={step} className={`auth-flow ${shake ? "is-shake" : ""}`}>
+        {step === "phone" ? (
+          <>
+            <AuthStepHeader
+              step={1}
+              title="شماره سوپر ادمین"
+              sub="همان شماره‌ای که در SUPER_ADMIN_PHONE تنظیم شده است."
             />
+            <label className="auth-field">
+              <span>موبایل</span>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="0912xxxxxxx"
+                inputMode="tel"
+                autoComplete="tel"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") requestOtp();
+                }}
+              />
+            </label>
+            <Button className="auth-submit" loading={busy} onClick={requestOtp}>
+              دریافت کد تأیید
+            </Button>
+          </>
+        ) : (
+          <>
+            <AuthStepHeader
+              step={2}
+              title="کد تأیید"
+              sub={`کد به ${phone} ارسال شد`}
+            />
+            <OtpBoxes value={code} onChange={setCode} disabled={busy} autoFocus />
+            <ResendCountdown
+              secondsLeft={secondsLeft}
+              busy={busy}
+              onResend={requestOtp}
+            />
+            <Button className="auth-submit" loading={busy} onClick={() => verifyOtp()}>
+              تأیید و ورود
+            </Button>
             <button
               type="button"
-              className="auth-eye"
-              onClick={() => setShowPass((v) => !v)}
-              aria-label={showPass ? "مخفی کردن رمز" : "نمایش رمز"}
+              className="auth-link-btn"
+              onClick={() => {
+                setStep("phone");
+                setCode("");
+                setSecondsLeft(0);
+                autoSubmitRef.current = "";
+              }}
             >
-              {showPass ? "مخفی" : "نمایش"}
+              تغییر شماره
             </button>
-          </div>
-        </label>
-        <Button className="auth-submit" loading={busy} onClick={login}>
-          ورود به کنسول پلتفرم
-        </Button>
+          </>
+        )}
       </div>
     </AuthLayout>
   );

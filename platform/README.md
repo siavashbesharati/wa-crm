@@ -95,13 +95,10 @@ npm install
 
 npm run dev
 
-# http://localhost:3000/super/login  ← سوپر ادمین
-
-# پیش‌فرض توسعه: 09000000000 / admin123
-
+# http://localhost:3000/super/login  ← سوپر ادمین (OTP sms.ir)
+# SUPER_ADMIN_PHONE و SMS را در platform/api/app/config.py تنظیم کنید
 # ساخت کسب‌وکار → شماره مالک
-
-# http://localhost:3000/login        ← پنل همان کسب‌وکار (OTP؛ mock: 123456)
+# http://localhost:3000/login        ← پنل همان کسب‌وکار (OTP واقعی sms.ir)
 
 
 
@@ -123,28 +120,13 @@ python -m app.workers.runner
 
 
 
-### متغیرهای سوپر ادمین (API `.env`)
+### تنظیمات API (`platform/api/app/config.py`)
 
+تنظیمات از فایل `.env` خوانده **نمی‌شوند**؛ فقط از `config.py`:
 
-
-```
-
-SUPER_ADMIN_PHONE=09000000000
-
-SUPER_ADMIN_PASSWORD=admin123
-
-APP_ENV=development
-
-OPENAI_API_KEY=
-
-# پرداخت (پیش‌فرض mock — دمو بدون درگاه)
-PAYMENT_PROVIDER=zibal
-# PAYMENT_PROVIDER=zibal
-ZIBAL_MERCHANT_ID=zibal
-PUBLIC_BASE_URL=http://localhost:8000
-WEB_BASE_URL=http://localhost:3000
-
-```
+- `super_admin_phone`
+- `sms_ir_api_key` / `sms_ir_template_id` / `sms_ir_otp_param`
+- `payment_provider` / `zibal_merchant_id` / …
 
 
 
@@ -166,9 +148,8 @@ docker compose up -d db redis
 
 # SUPER_ADMIN_PHONE=...
 
-# SUPER_ADMIN_PASSWORD=<strong>
-
-# MOCK_OTP فقط برای staging
+# SMS_IR_API_KEY=...
+# SMS_IR_TEMPLATE_ID=...
 
 ```
 

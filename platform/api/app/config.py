@@ -1,10 +1,13 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    """App settings — values come only from this file (no .env / OS env override)."""
+
+    model_config = SettingsConfigDict(extra="ignore")
 
     app_env: str = "development"
     database_url: str = "sqlite+pysqlite:///./wa_crm.db"
@@ -12,20 +15,48 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-change-me"
     jwt_access_minutes: int = 60
     jwt_refresh_days: int = 30
-    mock_otp_code: str = "123456"
-    # Platform owner (super admin) — change in production
-    super_admin_phone: str = "09000000000"
-    super_admin_password: str = "admin123"
+    # Platform owner phone (must match OTP login for /super)
+    super_admin_phone: str = "09120674032"
     embedding_dim: int = 384
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    # Payments: mock keeps local demos working; zibal for real/test gateway
-    payment_provider: str = "zibal"  # mock | zibal
+    # Payments: mock | zibal
+    payment_provider: str = "zibal"
     zibal_merchant_id: str = "zibal"
     public_base_url: str = "http://localhost:8000"
     web_base_url: str = "http://localhost:3000"
+    # sms.ir verify OTP
+    sms_ir_api_key: str = "pkHIVpf02aAHthp4eP3DYGdWtw5bc6tL4C9EcvXbjisVPo8g"
+    sms_ir_template_id: int = 846743
+    sms_ir_otp_param: str = "OTP"
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Ignore OS env and .env — only class defaults / explicit init
+        return (init_settings,)
+
+    @field_validator("sms_ir_template_id", mode="before")
+    @classmethod
+    def _empty_template_id(cls, v):
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            return 846743
+        return v
+
+    @field_validator("sms_ir_otp_param", mode="before")
+    @classmethod
+    def _empty_otp_param(cls, v):
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            return "OTP"
+        return str(v).strip()
 
     @property
     def cors_origin_list(self) -> list[str]:

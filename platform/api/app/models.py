@@ -156,6 +156,23 @@ class PricingPlan(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 
+class SmsTemplate(Base):
+    """sms.ir verify templates managed in super-admin panel."""
+
+    __tablename__ = "sms_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    template_id: Mapped[int] = mapped_column(Integer, default=0)  # sms.ir TemplateId
+    # [{"name":"Code","source":"otp"}, {"name":"Brand","source":"static","value":"..."}]
+    parameters: Mapped[list] = mapped_column(JSON, default=list)
+    purpose: Mapped[str] = mapped_column(String(40), default="otp")  # otp | custom
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)  # default OTP template
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
 class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (UniqueConstraint("org_id", "user_id", name="uq_membership"),)

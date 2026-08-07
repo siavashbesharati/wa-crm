@@ -140,7 +140,7 @@ def main() -> None:
     db.commit()
     print("Demo ready.")
     print("Phone:", phone)
-    print("OTP mock code: 123456")
+    print("Login: /login (business OTP) and /super/login (platform OTP via sms.ir)")
     print("Org id:", org.id, "| plan:", org.plan)
     db.close()
 

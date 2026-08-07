@@ -12,7 +12,9 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import SuperAuthContext, get_super_auth
 from app.plans import ensure_default_plans, list_plans_admin, plan_exists, plan_limits, row_to_meta
-from app.schemas import TokenOut
+from app.schemas import OtpRequestIn, OtpVerifyIn, TokenOut
+from app.services.otp import consume_otp, issue_otp
+from app.services.sms import normalize_mobile_for_sms_ir
 from app.services.security import (
     create_access_token,
     create_platform_access_token,
@@ -27,6 +29,7 @@ from app.models import (
     Organization,
     PlatformSetting,
     PricingPlan,
+    SmsTemplate,
     User,
 )
 
@@ -38,6 +41,13 @@ AI_DEFAULTS_KEY = "ai_defaults"
 
 def _normalize_phone(phone: str) -> str:
     return "".join(ch for ch in phone if ch.isdigit() or ch == "+")
+
+
+def _phones_match(a: str, b: str) -> bool:
+    try:
+        return normalize_mobile_for_sms_ir(a) == normalize_mobile_for_sms_ir(b)
+    except HTTPException:
+        return _normalize_phone(a) == _normalize_phone(b)
 
 
 def _ensure_platform_admin(db: Session) -> User:
@@ -56,6 +66,18 @@ def _ensure_platform_admin(db: Session) -> User:
         user.is_platform_admin = True
         db.commit()
         db.refresh(user)
+
+    # Only this phone may be platform admin
+    others = (
+        db.query(User)
+        .filter(User.is_platform_admin.is_(True), User.id != user.id)
+        .all()
+    )
+    for other in others:
+        other.is_platform_admin = False
+        db.add(other)
+    if others:
+        db.commit()
     return user
 
 
@@ -99,8 +121,9 @@ def _get_ai_defaults(db: Session) -> dict:
 
 
 class SuperLoginIn(BaseModel):
+    """Deprecated — use OTP endpoints. Kept for type compatibility only."""
     phone: str = ""
-    password: str = Field(min_length=1)
+    password: str = ""
 
 
 class SuperTokenOut(BaseModel):
@@ -150,20 +173,44 @@ class AiDefaultsIn(BaseModel):
     notes: str = ""
 
 
-@router.post("/login", response_model=SuperTokenOut)
-def super_login(body: SuperLoginIn, db: Session = Depends(get_db)):
+@router.post("/otp/request")
+def super_otp_request(body: OtpRequestIn, db: Session = Depends(get_db)):
+    """OTP for platform owner only (phone must match SUPER_ADMIN_PHONE)."""
     phone = _normalize_phone(body.phone or settings.super_admin_phone)
-    expected_phone = _normalize_phone(settings.super_admin_phone)
-    if phone != expected_phone or body.password != settings.super_admin_password:
-        raise HTTPException(status_code=401, detail="شماره یا رمز سوپر ادمین نادرست است")
+    expected = _normalize_phone(settings.super_admin_phone)
+    if not _phones_match(phone, expected):
+        raise HTTPException(status_code=403, detail="این شماره مجاز به ورود سوپر ادمین نیست")
+    # Store challenge against the canonical env phone so verify is consistent
+    issue_phone = expected
+    _ensure_platform_admin(db)
+    issue_otp(db, issue_phone)
+    return {"ok": True, "message": "کد تأیید پیامک شد"}
 
+
+@router.post("/otp/verify", response_model=SuperTokenOut)
+def super_otp_verify(body: OtpVerifyIn, db: Session = Depends(get_db)):
+    phone = _normalize_phone(body.phone or settings.super_admin_phone)
+    expected = _normalize_phone(settings.super_admin_phone)
+    if not _phones_match(phone, expected):
+        raise HTTPException(status_code=403, detail="این شماره مجاز به ورود سوپر ادمین نیست")
+    consume_otp(db, expected, body.code)
     user = _ensure_platform_admin(db)
     access = create_platform_access_token(user.id)
     refresh = create_refresh_token(db, user.id)
+    db.commit()
     return SuperTokenOut(
         access_token=access,
         refresh_token=refresh,
         user_id=user.id,
+    )
+
+
+@router.post("/login", response_model=SuperTokenOut, deprecated=True)
+def super_login(body: SuperLoginIn, db: Session = Depends(get_db)):
+    """Removed password login — use /admin/otp/request + /admin/otp/verify."""
+    raise HTTPException(
+        status_code=410,
+        detail="ورود با رمز حذف شده است. از کد پیامکی (/admin/otp) استفاده کنید.",
     )
 
 
@@ -550,3 +597,145 @@ def admin_delete_plan(
     db.delete(row)
     db.commit()
     return {"ok": True, "deleted": True, "deactivated": False, "in_use": 0}
+
+
+# ── SMS templates (sms.ir) ───────────────────────────────────────────
+
+
+class SmsParamIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    source: str = Field(default="otp", pattern="^(otp|static)$")
+    value: str = ""
+
+
+class SmsTemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    template_id: int = Field(gt=0)
+    parameters: list[SmsParamIn] = Field(default_factory=list)
+    purpose: str = Field(default="otp", pattern="^(otp|custom)$")
+    is_active: bool = True
+    is_default: bool = False
+
+
+class SmsTemplatePatchIn(BaseModel):
+    name: str | None = None
+    template_id: int | None = Field(default=None, gt=0)
+    parameters: list[SmsParamIn] | None = None
+    purpose: str | None = Field(default=None, pattern="^(otp|custom)$")
+    is_active: bool | None = None
+    is_default: bool | None = None
+
+
+def _sms_template_out(row: SmsTemplate) -> dict:
+    from app.services.sms import _normalize_parameters
+
+    return {
+        "id": row.id,
+        "name": row.name,
+        "template_id": int(row.template_id or 0),
+        "parameters": _normalize_parameters(list(row.parameters or [])),
+        "purpose": row.purpose or "otp",
+        "is_active": bool(row.is_active),
+        "is_default": bool(row.is_default),
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _clear_other_defaults(db: Session, *, keep_id: str | None = None) -> None:
+    q = db.query(SmsTemplate).filter(SmsTemplate.is_default.is_(True))
+    if keep_id:
+        q = q.filter(SmsTemplate.id != keep_id)
+    for other in q.all():
+        other.is_default = False
+        db.add(other)
+
+
+@router.get("/sms-templates")
+def list_sms_templates(
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    rows = (
+        db.query(SmsTemplate)
+        .order_by(SmsTemplate.is_default.desc(), SmsTemplate.updated_at.desc())
+        .all()
+    )
+    return {"templates": [_sms_template_out(r) for r in rows]}
+
+
+@router.post("/sms-templates")
+def create_sms_template(
+    body: SmsTemplateIn,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from app.services.sms import _normalize_parameters
+
+    params = _normalize_parameters([p.model_dump() for p in body.parameters])
+    if not params:
+        params = [{"name": "Code", "source": "otp", "value": ""}]
+    if body.is_default:
+        _clear_other_defaults(db)
+    row = SmsTemplate(
+        name=body.name.strip(),
+        template_id=int(body.template_id),
+        parameters=params,
+        purpose=body.purpose,
+        is_active=bool(body.is_active),
+        is_default=bool(body.is_default),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _sms_template_out(row)
+
+
+@router.patch("/sms-templates/{template_row_id}")
+def patch_sms_template(
+    template_row_id: str,
+    body: SmsTemplatePatchIn,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from app.services.sms import _normalize_parameters
+
+    row = db.get(SmsTemplate, template_row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="قالب یافت نشد")
+    data = body.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        name = str(data["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="نام قالب خالی است")
+        row.name = name
+    if "template_id" in data and data["template_id"] is not None:
+        row.template_id = int(data["template_id"])
+    if "parameters" in data and data["parameters"] is not None:
+        row.parameters = _normalize_parameters(list(data["parameters"]))
+    if "purpose" in data and data["purpose"] is not None:
+        row.purpose = data["purpose"]
+    if "is_active" in data and data["is_active"] is not None:
+        row.is_active = bool(data["is_active"])
+    if "is_default" in data and data["is_default"] is not None:
+        if data["is_default"]:
+            _clear_other_defaults(db, keep_id=row.id)
+        row.is_default = bool(data["is_default"])
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _sms_template_out(row)
+
+
+@router.delete("/sms-templates/{template_row_id}")
+def delete_sms_template(
+    template_row_id: str,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    row = db.get(SmsTemplate, template_row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="قالب یافت نشد")
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted": True}

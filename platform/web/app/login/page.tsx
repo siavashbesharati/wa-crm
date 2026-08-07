@@ -18,7 +18,6 @@ export default function BusinessLoginPage() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [exists, setExists] = useState<boolean | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [shake, setShake] = useState(false);
@@ -59,19 +58,17 @@ export default function BusinessLoginPage() {
       const res = await api<{
         ok: boolean;
         exists?: boolean;
-        dev_code?: string | null;
       }>("/auth/otp/request", {
         method: "POST",
         auth: false,
         body: JSON.stringify({ phone: normalized })
       });
       setExists(!!res.exists);
-      setDevCode(res.dev_code || null);
       setCode("");
       autoSubmitRef.current = "";
       setStep("otp");
       setSecondsLeft(OTP_TTL);
-      toast.push(res.exists ? "کد ورود ارسال شد" : "کد ثبت‌نام ارسال شد", "ok");
+      toast.push(res.exists ? "کد ورود پیامک شد" : "کد ثبت‌نام پیامک شد", "ok");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
       bumpShake();
@@ -165,11 +162,6 @@ export default function BusinessLoginPage() {
               }`}
             />
             <OtpBoxes value={code} onChange={setCode} disabled={busy} autoFocus />
-            {devCode ? (
-              <p className="auth-dev-code">
-                کد توسعه: <code>{devCode}</code>
-              </p>
-            ) : null}
             <ResendCountdown
               secondsLeft={secondsLeft}
               busy={busy}

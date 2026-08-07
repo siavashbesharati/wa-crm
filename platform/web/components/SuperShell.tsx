@@ -13,6 +13,7 @@ import { Spinner } from "@/components/ui/Spinner";
 const NAV = [
   { href: "/super/businesses", label: "کسب‌وکارها", ico: "▣" },
   { href: "/super/plans", label: "پلن‌ها", ico: "◈" },
+  { href: "/super/sms-templates", label: "قالب پیامک", ico: "✉" },
   { href: "/super/ai", label: "تنظیمات AI", ico: "✦" },
   { href: "/super/system", label: "سیستم", ico: "◉" }
 ];

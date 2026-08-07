@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -13,14 +11,13 @@ from app.models import (
     MemberRole,
     Membership,
     Organization,
-    OtpChallenge,
     PlatformSetting,
     User,
 )
 from app.plans import plan_limits
 from app.schemas import OtpRequestIn, OtpVerifyIn, TokenOut
+from app.services.otp import consume_otp, issue_otp
 from app.services.security import create_access_token, create_refresh_token
-from app.services.sms import send_otp
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -30,35 +27,6 @@ AI_DEFAULTS_KEY = "ai_defaults"
 
 def _normalize_phone(phone: str) -> str:
     return "".join(ch for ch in phone if ch.isdigit() or ch == "+")
-
-
-def _issue_otp(db: Session, phone: str) -> str:
-    code = settings.mock_otp_code
-    challenge = OtpChallenge(
-        phone=phone,
-        code=code,
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
-    )
-    db.add(challenge)
-    db.commit()
-    send_otp(phone, code)
-    return code
-
-
-def _consume_otp(db: Session, phone: str, code: str) -> None:
-    challenge = (
-        db.query(OtpChallenge)
-        .filter(
-            OtpChallenge.phone == phone,
-            OtpChallenge.consumed.is_(False),
-            OtpChallenge.expires_at >= datetime.utcnow(),
-        )
-        .order_by(OtpChallenge.created_at.desc())
-        .first()
-    )
-    if not challenge or challenge.code != code.strip():
-        raise HTTPException(status_code=400, detail="کد تأیید نادرست است")
-    challenge.consumed = True
 
 
 def _ai_defaults(db: Session) -> dict:
@@ -129,12 +97,11 @@ def request_otp(body: OtpRequestIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="شماره موبایل نامعتبر است")
 
     existing = db.query(User).filter(User.phone == phone).first()
-    code = _issue_otp(db, phone)
+    issue_otp(db, phone)
     return {
         "ok": True,
         "exists": bool(existing),
-        "message": "کد تأیید آماده است",
-        "dev_code": code if settings.app_env != "production" else None,
+        "message": "کد تأیید پیامک شد",
     }
 
 
@@ -145,7 +112,7 @@ def verify_otp(body: OtpVerifyIn, db: Session = Depends(get_db)):
     if len(phone) < 8:
         raise HTTPException(status_code=400, detail="شماره موبایل نامعتبر است")
 
-    _consume_otp(db, phone, body.code)
+    consume_otp(db, phone, body.code)
 
     user = db.query(User).filter(User.phone == phone).first()
     is_new = False
