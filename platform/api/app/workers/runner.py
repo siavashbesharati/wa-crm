@@ -18,8 +18,8 @@ from app.models import (
     SenderType,
 )
 from app.plans import plan_limits
-from app.routers.ai import retrieve
 from app.routers.kpi import rollup
+from app.services.ai_reply import generate_reply
 from app.services.queue import dequeue
 
 
@@ -39,9 +39,15 @@ def handle_auto_reply(payload: dict) -> None:
             return
         if lead.stage not in (policy.allowed_stages or []):
             return
-        hits = retrieve(db, org.id, msg.body)
-        if not hits or hits[0][1] < policy.min_confidence:
+
+        result = generate_reply(db, org_id=org.id, lead=lead, message=msg.body)
+        if float(result["confidence"]) < float(policy.min_confidence or 0):
+            print(
+                f"[worker] auto_reply skip low_confidence={result['confidence']} "
+                f"min={policy.min_confidence} lead={lead.id}"
+            )
             return
+
         link = (
             db.query(LeadAccountLink)
             .filter(LeadAccountLink.org_id == org.id, LeadAccountLink.lead_id == lead.id)
@@ -49,7 +55,7 @@ def handle_auto_reply(payload: dict) -> None:
         )
         if not link:
             return
-        reply = f"سلام {lead.name}،\n{hits[0][0].content[:450]}"
+        reply = result["reply"]
         job = OutboundJob(
             org_id=org.id,
             account_id=link.account_id,
@@ -71,7 +77,12 @@ def handle_auto_reply(payload: dict) -> None:
             )
         )
         db.commit()
-        print(f"[worker] auto_reply queued job={job.id} lead={lead.id}")
+        print(
+            f"[worker] auto_reply queued job={job.id} lead={lead.id} "
+            f"provider={result.get('provider')}"
+        )
+    except Exception as e:
+        print(f"[worker] auto_reply error: {e}")
     finally:
         db.close()
 

@@ -107,17 +107,9 @@ def _business_out(db: Session, org: Organization) -> "BusinessOut":
 
 
 def _get_ai_defaults(db: Session) -> dict:
-    row = db.get(PlatformSetting, AI_DEFAULTS_KEY)
-    base = {
-        "openai_model": settings.openai_model,
-        "openai_base_url": settings.openai_base_url,
-        "default_min_confidence": 0.55,
-        "auto_send_default": False,
-        "notes": "",
-    }
-    if row and isinstance(row.value, dict):
-        base.update(row.value)
-    return base
+    from app.services.ai_reply import get_platform_ai_settings
+
+    return get_platform_ai_settings(db)
 
 
 class SuperLoginIn(BaseModel):
@@ -166,11 +158,15 @@ class EnterIn(BaseModel):
 
 
 class AiDefaultsIn(BaseModel):
-    openai_model: str = ""
-    openai_base_url: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = ""
+    system_prompt: str = ""
     default_min_confidence: float = 0.55
     auto_send_default: bool = False
     notes: str = ""
+    # legacy optional
+    openai_model: str = ""
+    openai_base_url: str = ""
 
 
 @router.post("/otp/request")
@@ -374,11 +370,16 @@ def get_ai_defaults(
     _auth: SuperAuthContext = Depends(get_super_auth),
 ):
     data = _get_ai_defaults(db)
+    key = (data.get("gemini_api_key") or "").strip()
+    masked = ""
+    if key:
+        masked = key[:4] + "…" + key[-4:] if len(key) > 10 else "****"
     return {
         **data,
+        "gemini_api_key": "",
+        "gemini_api_key_masked": masked,
+        "gemini_api_key_configured": bool(key),
         "openai_api_key_configured": bool(settings.openai_api_key),
-        "env_openai_model": settings.openai_model,
-        "env_openai_base_url": settings.openai_base_url,
     }
 
 
@@ -388,12 +389,23 @@ def put_ai_defaults(
     db: Session = Depends(get_db),
     _auth: SuperAuthContext = Depends(get_super_auth),
 ):
+    from app.services import gemini as gemini_svc
+    from app.services.ai_reply import DEFAULT_PLATFORM_SYSTEM
+
+    current = _get_ai_defaults(db)
+    new_key = (body.gemini_api_key or "").strip()
+    api_key = new_key if new_key else (current.get("gemini_api_key") or "")
+    model = (body.gemini_model or "").strip() or gemini_svc.DEFAULT_MODEL
+    system_prompt = (body.system_prompt or "").strip() or DEFAULT_PLATFORM_SYSTEM
     value = {
-        "openai_model": (body.openai_model or settings.openai_model).strip(),
-        "openai_base_url": (body.openai_base_url or settings.openai_base_url).strip(),
+        "gemini_api_key": api_key,
+        "gemini_model": model,
+        "system_prompt": system_prompt,
         "default_min_confidence": float(body.default_min_confidence),
         "auto_send_default": bool(body.auto_send_default),
         "notes": (body.notes or "").strip(),
+        "openai_model": (body.openai_model or "").strip(),
+        "openai_base_url": (body.openai_base_url or "").strip(),
     }
     row = db.get(PlatformSetting, AI_DEFAULTS_KEY)
     if not row:
@@ -402,9 +414,16 @@ def put_ai_defaults(
     else:
         row.value = value
         row.updated_at = datetime.utcnow()
+        db.add(row)
     db.commit()
+    out = _get_ai_defaults(db)
+    key = (out.get("gemini_api_key") or "").strip()
+    masked = key[:4] + "…" + key[-4:] if len(key) > 10 else ("****" if key else "")
     return {
-        **value,
+        **out,
+        "gemini_api_key": "",
+        "gemini_api_key_masked": masked,
+        "gemini_api_key_configured": bool(key),
         "openai_api_key_configured": bool(settings.openai_api_key),
         "saved": True,
     }

@@ -68,12 +68,19 @@ def _ensure_sqlite_columns() -> None:
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
-    if "organizations" not in insp.get_table_names():
-        return
-    cols = {c["name"] for c in insp.get_columns("organizations")}
-    if "plan_expires_at" not in cols:
+    tables = insp.get_table_names()
+    if "organizations" in tables:
+        cols = {c["name"] for c in insp.get_columns("organizations")}
+        if "plan_expires_at" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME"))
+    if "ai_policies" in tables:
+        cols = {c["name"] for c in insp.get_columns("ai_policies")}
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME"))
+            if "agent_role" not in cols:
+                conn.execute(text("ALTER TABLE ai_policies ADD COLUMN agent_role VARCHAR(200) DEFAULT ''"))
+            if "system_prompt" not in cols:
+                conn.execute(text("ALTER TABLE ai_policies ADD COLUMN system_prompt TEXT DEFAULT ''"))
 
 
 _mount_routers()

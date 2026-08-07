@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
-from app.models import AiPolicy, KnowledgeChunk, KnowledgeDoc, Lead, MemberRole, Message
+from app.models import AiPolicy, KnowledgeDoc, Lead, MemberRole, Message
 from app.plans import plan_limits
 from app.schemas import AiPolicyIn, KnowledgeIn, SuggestIn, SuggestOut
-from app.services.embeddings import chunk_text, cosine, embed_text
+from app.services.ai_reply import generate_reply, retrieve_knowledge
+from app.services.embeddings import chunk_text, embed_text
 from app.services.queue import enqueue
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -29,6 +30,8 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         "business_hours_only": policy.business_hours_only,
         "hours_start": policy.hours_start,
         "hours_end": policy.hours_end,
+        "agent_role": getattr(policy, "agent_role", "") or "",
+        "system_prompt": getattr(policy, "system_prompt", "") or "",
         "plan_allows_auto": plan_limits(auth.org.plan)["ai_auto_send"],
         "plan_allows_suggest": plan_limits(auth.org.plan)["ai_suggest"],
     }
@@ -49,6 +52,8 @@ def put_policy(
     policy.business_hours_only = body.business_hours_only
     policy.hours_start = body.hours_start
     policy.hours_end = body.hours_end
+    policy.agent_role = (body.agent_role or "").strip()
+    policy.system_prompt = (body.system_prompt or "").strip()
     db.add(policy)
     db.commit()
     return {"ok": True}
@@ -56,8 +61,16 @@ def put_policy(
 
 @router.get("/knowledge")
 def list_docs(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
-    docs = db.query(KnowledgeDoc).filter(KnowledgeDoc.org_id == auth.org.id).order_by(KnowledgeDoc.created_at.desc()).all()
-    return [{"id": d.id, "title": d.title, "source": d.source, "created_at": d.created_at.isoformat()} for d in docs]
+    docs = (
+        db.query(KnowledgeDoc)
+        .filter(KnowledgeDoc.org_id == auth.org.id)
+        .order_by(KnowledgeDoc.created_at.desc())
+        .all()
+    )
+    return [
+        {"id": d.id, "title": d.title, "source": d.source, "created_at": d.created_at.isoformat()}
+        for d in docs
+    ]
 
 
 @router.post("/knowledge")
@@ -66,6 +79,8 @@ def upload_knowledge(
     auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
     db: Session = Depends(get_db),
 ):
+    from app.models import KnowledgeChunk
+
     doc = KnowledgeDoc(org_id=auth.org.id, title=body.title, source="upload")
     db.add(doc)
     db.flush()
@@ -83,12 +98,8 @@ def upload_knowledge(
     return {"ok": True, "doc_id": doc.id}
 
 
-def retrieve(db: Session, org_id: str, query: str, k: int = 4) -> list[tuple[KnowledgeChunk, float]]:
-    qv = embed_text(query)
-    chunks = db.query(KnowledgeChunk).filter(KnowledgeChunk.org_id == org_id).all()
-    scored = [(c, cosine(qv, c.embedding or [])) for c in chunks]
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[:k]
+# Back-compat export for workers that imported retrieve from here
+retrieve = retrieve_knowledge
 
 
 @router.post("/suggest", response_model=SuggestOut)
@@ -100,25 +111,11 @@ def suggest(body: SuggestIn, auth: AuthContext = Depends(get_auth), db: Session 
     if not lead:
         raise HTTPException(status_code=404, detail="لید یافت نشد")
 
-    hits = retrieve(db, auth.org.id, body.message)
-    if not hits or hits[0][1] < 0.05:
-        return SuggestOut(
-            reply="سلام، پیام شما دریافت شد. همکاران ما به‌زودی پاسخ می‌دهند.",
-            confidence=0.2,
-            sources=[],
-        )
-
-    top = hits[0]
-    reply = (
-        f"سلام {lead.name or ''}".strip()
-        + "،\n"
-        + top[0].content[:500]
-        + "\n\nاگر سوال دیگری دارید بفرمایید."
-    )
+    result = generate_reply(db, org_id=auth.org.id, lead=lead, message=body.message)
     return SuggestOut(
-        reply=reply,
-        confidence=round(float(top[1]), 3),
-        sources=[h[0].content[:120] for h in hits if h[1] > 0.05],
+        reply=result["reply"],
+        confidence=float(result["confidence"]),
+        sources=list(result.get("sources") or []),
     )
 
 
@@ -142,9 +139,13 @@ def run_auto_reply_for_lead(
     if lead.stage not in (policy.allowed_stages or []):
         return {"sent": False, "reason": "stage_not_allowed"}
 
-    suggestion = suggest(SuggestIn(lead_id=lead_id, message=message), auth, db)
-    if suggestion.confidence < policy.min_confidence:
-        return {"sent": False, "reason": "low_confidence", "confidence": suggestion.confidence}
+    result = generate_reply(db, org_id=auth.org.id, lead=lead, message=message)
+    if float(result["confidence"]) < policy.min_confidence:
+        return {
+            "sent": False,
+            "reason": "low_confidence",
+            "confidence": result["confidence"],
+        }
 
     from app.models import MessageDirection, OutboundJob, OutboundStatus, SenderType
     from app.services.queue import enqueue as enqueue_job
@@ -154,7 +155,7 @@ def run_auto_reply_for_lead(
         account_id=account_id,
         lead_id=lead_id,
         target_name=lead.name,
-        body=suggestion.reply,
+        body=result["reply"],
         sender_type=SenderType.ai,
         created_by_id=auth.user.id,
         status=OutboundStatus.queued,
@@ -167,10 +168,15 @@ def run_auto_reply_for_lead(
             lead_id=lead_id,
             direction=MessageDirection.outbound,
             sender_type=SenderType.ai,
-            body=suggestion.reply,
+            body=result["reply"],
         )
     )
     db.commit()
     db.refresh(job)
     enqueue_job("outbound_send", {"job_id": job.id, "org_id": auth.org.id})
-    return {"sent": True, "job_id": job.id, "confidence": suggestion.confidence}
+    return {
+        "sent": True,
+        "job_id": job.id,
+        "confidence": result["confidence"],
+        "provider": result.get("provider"),
+    }

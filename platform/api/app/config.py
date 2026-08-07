@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
+    # Gemini defaults (platform key/model preferably set in super-admin UI)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     # Payments: mock | zibal
     payment_provider: str = "zibal"

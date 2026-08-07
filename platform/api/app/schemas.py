@@ -239,6 +239,8 @@ class AiPolicyIn(BaseModel):
     business_hours_only: bool = False
     hours_start: str = "09:00"
     hours_end: str = "18:00"
+    agent_role: str = ""
+    system_prompt: str = ""
 
 
 class OkrIn(BaseModel):

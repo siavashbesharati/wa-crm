@@ -393,6 +393,8 @@ class AiPolicy(Base):
     business_hours_only: Mapped[bool] = mapped_column(Boolean, default=False)
     hours_start: Mapped[str] = mapped_column(String(8), default="09:00")
     hours_end: Mapped[str] = mapped_column(String(8), default="18:00")
+    agent_role: Mapped[str] = mapped_column(String(200), default="")
+    system_prompt: Mapped[str] = mapped_column(Text, default="")
 
 
 class KpiDefinition(Base):
