@@ -18,12 +18,15 @@ type Business = {
   owner_name: string;
 };
 
+type PlanOpt = { id: string; label: string; is_active?: boolean };
+
 export default function SuperBusinessesPage() {
   const router = useRouter();
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<Business[]>([]);
+  const [planOpts, setPlanOpts] = useState<PlanOpt[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [plan, setPlan] = useState("growth");
@@ -31,7 +34,18 @@ export default function SuperBusinessesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await api<Business[]>("/admin/businesses", { platform: true }));
+      const [biz, plansRes] = await Promise.all([
+        api<Business[]>("/admin/businesses", { platform: true }),
+        api<{ plans: PlanOpt[] }>("/admin/plans", { platform: true }).catch(() => ({
+          plans: []
+        }))
+      ]);
+      setRows(biz);
+      const opts = (plansRes.plans || []).filter((p) => p.is_active !== false);
+      setPlanOpts(opts.length ? opts : [{ id: "starter", label: "Starter" }]);
+      setPlan((prev) =>
+        opts.some((p) => p.id === prev) ? prev : opts[0]?.id || "starter"
+      );
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -148,9 +162,11 @@ export default function SuperBusinessesPage() {
             <label>
               پلن
               <select value={plan} onChange={(e) => setPlan(e.target.value)}>
-                <option value="starter">Starter</option>
-                <option value="growth">Growth</option>
-                <option value="scale">Scale</option>
+                {planOpts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </label>
             <Button loading={busy} onClick={createBusiness}>
@@ -190,9 +206,16 @@ export default function SuperBusinessesPage() {
                         onChange={(e) => changePlan(b.org_id, e.target.value)}
                         style={{ minWidth: 110 }}
                       >
-                        <option value="starter">Starter</option>
-                        <option value="growth">Growth</option>
-                        <option value="scale">Scale</option>
+                        {[
+                          ...planOpts,
+                          ...(!planOpts.some((p) => p.id === b.plan)
+                            ? [{ id: b.plan, label: b.plan }]
+                            : [])
+                        ].map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label}
+                          </option>
+                        ))}
                       </select>
                     </td>
                     <td>

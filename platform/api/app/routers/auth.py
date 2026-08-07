@@ -181,6 +181,9 @@ def verify_otp(body: OtpVerifyIn, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def me(auth: AuthContext = Depends(get_auth)):
+    from app.services.payment_flow import subscription_days_left
+
+    exp = getattr(auth.org, "plan_expires_at", None)
     return {
         "user": {
             "id": auth.user.id,
@@ -191,11 +194,14 @@ def me(auth: AuthContext = Depends(get_auth)):
             "id": auth.org.id,
             "name": auth.org.name,
             "plan": auth.org.plan,
+            "plan_label": plan_limits(auth.org.plan).get("label") or auth.org.plan,
             "limits": plan_limits(auth.org.plan),
             "onboarding_step": _org_step(auth.org),
             "industry": getattr(auth.org, "industry", "") or "",
             "city": getattr(auth.org, "city", "") or "",
             "status": getattr(auth.org, "status", "active") or "active",
+            "plan_expires_at": exp.isoformat() if exp else None,
+            "days_remaining": subscription_days_left(auth.org),
         },
         "role": auth.role.value,
         "onboarding_step": _org_step(auth.org),

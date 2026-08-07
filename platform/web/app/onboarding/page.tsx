@@ -20,6 +20,7 @@ type Plan = {
   ai_auto_send: boolean;
   price_irr: number;
   price_label: string;
+  features?: string[];
 };
 
 type OnboardingState = {
@@ -395,9 +396,16 @@ function OnboardingPageInner() {
                       <strong>{p.label}</strong>
                       <span className="hint">{p.price_label}</span>
                       <ul>
-                        <li>{p.max_seats} صندلی افزونه هم‌زمان</li>
-                        <li>همه کانال‌ها (واتساپ، دیوار، …)</li>
-                        <li>AI auto-send: {p.ai_auto_send ? "بله" : "خیر"}</li>
+                        {(p.features && p.features.length > 0
+                          ? p.features
+                          : [
+                              `${p.max_seats} صندلی افزونه هم‌زمان`,
+                              "همه کانال‌ها (واتساپ، دیوار، …)",
+                              `AI auto-send: ${p.ai_auto_send ? "بله" : "خیر"}`
+                            ]
+                        ).map((f) => (
+                          <li key={f}>{f}</li>
+                        ))}
                       </ul>
                       {selectedPlan === p.id ? (
                         <Badge tone="accent">انتخاب‌شده</Badge>

@@ -82,6 +82,7 @@ class Organization(Base):
     onboarding_step: Mapped[str] = mapped_column(String(40), default="done")
     industry: Mapped[str] = mapped_column(String(120), default="")
     city: Mapped[str] = mapped_column(String(120), default="")
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     memberships = relationship("Membership", back_populates="organization")
@@ -131,6 +132,27 @@ class PlatformSetting(Base):
 
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class PricingPlan(Base):
+    """Editable subscription plans (super-admin managed)."""
+
+    __tablename__ = "pricing_plans"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)  # slug: starter, growth, …
+    label: Mapped[str] = mapped_column(String(120), default="")
+    price_irr: Mapped[int] = mapped_column(Integer, default=0)
+    price_label: Mapped[str] = mapped_column(String(200), default="")
+    max_seats: Mapped[int] = mapped_column(Integer, default=1)
+    max_channel_accounts: Mapped[int] = mapped_column(Integer, default=9999)
+    ai_suggest: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_auto_send: Mapped[bool] = mapped_column(Boolean, default=False)
+    message_retention_days: Mapped[int] = mapped_column(Integer, default=30)
+    features: Mapped[list] = mapped_column(JSON, default=list)  # marketing / allowed items
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 

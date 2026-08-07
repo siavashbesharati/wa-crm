@@ -21,7 +21,6 @@ const NAV = [
   { href: "/channels", label: "کانال‌ها", ico: "☎" },
   { href: "/seats", label: "صندلی افزونه", ico: "🔑" },
   { href: "/team", label: "تیم", ico: "☺" },
-  { href: "/billing", label: "اشتراک", ico: "💳" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
   { href: "/kpi", label: "KPI / OKR", ico: "◉" }
@@ -49,6 +48,9 @@ export default function Shell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [userLabel, setUserLabel] = useState("");
+  const [planId, setPlanId] = useState("");
+  const [planName, setPlanName] = useState("");
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
   const [extVersion, setExtVersion] = useState(EXTENSION_VERSION_FALLBACK);
 
   useEffect(() => {
@@ -57,25 +59,45 @@ export default function Shell({
       return;
     }
     setReady(true);
+    let cancelled = false;
     api<{
-      org: { name: string };
+      org: {
+        name: string;
+        plan?: string;
+        plan_label?: string;
+        limits?: { label?: string };
+        days_remaining?: number | null;
+      };
       user: { display_name: string; phone: string };
       needs_onboarding?: boolean;
       onboarding_step?: string;
     }>("/auth/me")
       .then((me) => {
+        if (cancelled) return;
         if (me.needs_onboarding || (me.onboarding_step && me.onboarding_step !== "done")) {
           router.replace("/onboarding");
           return;
         }
         setOrgName(me.org?.name || "");
         setUserLabel(me.user?.display_name || me.user?.phone || "");
+        const id = me.org?.plan || "";
+        setPlanId(id);
+        setPlanName(
+          me.org?.plan_label || me.org?.limits?.label || id || "—"
+        );
+        setDaysRemaining(
+          typeof me.org?.days_remaining === "number" ? me.org.days_remaining : null
+        );
       })
       .catch(() => {
+        if (cancelled) return;
         clearSession();
         router.replace("/login");
       });
-  }, [router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +140,14 @@ export default function Shell({
   }
 
   const initials = (userLabel || "ک").trim().slice(0, 1);
+  const billingSub =
+    daysRemaining === null
+      ? planId === "starter" || !planId
+        ? `${planName} · آزمایشی`
+        : `${planName} · تمدید اشتراک`
+      : daysRemaining === 0
+        ? `${planName} · منقضی شده`
+        : `${planName} · ${daysRemaining.toLocaleString("fa-IR")} روز باقی‌مانده`;
 
   return (
     <div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
@@ -161,6 +191,19 @@ export default function Shell({
         </nav>
 
         <div className="sidebar-foot">
+          <Link
+            className={`billing-cta-btn${daysRemaining === 0 ? " expired" : ""}`}
+            href="/billing"
+            title="اشتراک و پرداخت"
+          >
+            <span className="billing-cta-ico" aria-hidden>
+              ◆
+            </span>
+            <span className="label billing-cta-meta">
+              <strong>اشتراک</strong>
+              <em>{billingSub}</em>
+            </span>
+          </Link>
           <a
             className="ext-download-btn"
             href={EXTENSION_DOWNLOAD_URL}

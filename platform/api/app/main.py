@@ -61,10 +61,33 @@ def _mount_routers() -> None:
         app.include_router(router, prefix=prefix)
 
 
+def _ensure_sqlite_columns() -> None:
+    """Add new columns to existing SQLite DBs (create_all won't alter)."""
+    if not settings.is_sqlite:
+        return
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "organizations" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("organizations")}
+    if "plan_expires_at" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME"))
+
+
 _mount_routers()
 
 # Ensure tables exist for local/sqlite and TestClient (no lifespan)
 Base.metadata.create_all(bind=engine)
+_ensure_sqlite_columns()
+
+try:
+    from app.plans import ensure_default_plans
+
+    ensure_default_plans()
+except Exception:
+    pass
 
 
 @app.get("/api/health")

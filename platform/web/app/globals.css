@@ -272,6 +272,71 @@ button, input, select, textarea {
 }
 .collapsed .ext-download-btn .label { display: none; }
 
+.billing-cta-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(202, 138, 4, 0.45);
+  background: linear-gradient(180deg, #fef9c3 0%, #fde68a 55%, #fbbf24 100%);
+  color: #78350f;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.22);
+}
+.billing-cta-btn:hover {
+  border-color: #ca8a04;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(217, 119, 6, 0.28);
+}
+.billing-cta-btn.expired {
+  border-color: rgba(185, 28, 28, 0.4);
+  background: linear-gradient(180deg, #fee2e2 0%, #fecaca 55%, #fca5a5 100%);
+  color: #7f1d1d;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.18);
+}
+.billing-cta-ico {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #a16207;
+  flex-shrink: 0;
+}
+.billing-cta-btn.expired .billing-cta-ico {
+  color: #b91c1c;
+}
+.billing-cta-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.25;
+}
+.billing-cta-meta strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+.billing-cta-meta em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  color: #92400e;
+  opacity: 0.95;
+}
+.billing-cta-btn.expired .billing-cta-meta em {
+  color: #991b1b;
+}
+.collapsed .billing-cta-btn {
+  justify-content: center;
+  padding: 10px;
+}
+.collapsed .billing-cta-btn .label { display: none; }
+
 .main-wrap {
   display: flex;
   flex-direction: column;

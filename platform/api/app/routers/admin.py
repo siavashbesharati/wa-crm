@@ -11,6 +11,13 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.deps import SuperAuthContext, get_super_auth
+from app.plans import ensure_default_plans, list_plans_admin, plan_exists, plan_limits, row_to_meta
+from app.schemas import TokenOut
+from app.services.security import (
+    create_access_token,
+    create_platform_access_token,
+    create_refresh_token,
+)
 from app.models import (
     AiPolicy,
     ChannelAccount,
@@ -19,14 +26,8 @@ from app.models import (
     Membership,
     Organization,
     PlatformSetting,
+    PricingPlan,
     User,
-)
-from app.plans import PLANS, plan_limits
-from app.schemas import TokenOut
-from app.services.security import (
-    create_access_token,
-    create_platform_access_token,
-    create_refresh_token,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -198,7 +199,7 @@ def create_business(
     phone = _normalize_phone(body.phone)
     if len(phone) < 8:
         raise HTTPException(status_code=400, detail="شماره موبایل نامعتبر است")
-    plan = body.plan if body.plan in PLANS else "growth"
+    plan = body.plan if plan_exists(body.plan) else "growth"
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="نام کسب‌وکار لازم است")
@@ -244,7 +245,7 @@ def patch_business(
             raise HTTPException(status_code=400, detail="نام نامعتبر است")
         org.name = name
     if body.plan is not None:
-        if body.plan not in PLANS:
+        if not plan_exists(body.plan):
             raise HTTPException(status_code=400, detail="پلن نامعتبر است")
         org.plan = body.plan
     if body.status is not None:
@@ -397,3 +398,155 @@ def system_status(
         "openai_api_key_configured": bool(settings.openai_api_key),
         "openai_model": settings.openai_model,
     }
+
+
+# ── Pricing plans CRUD ──────────────────────────────────────────────
+
+
+class PlanIn(BaseModel):
+    id: str = Field(min_length=2, max_length=40)
+    label: str = Field(min_length=1, max_length=120)
+    price_irr: int = 0
+    price_label: str = ""
+    max_seats: int = Field(default=1, ge=1)
+    max_channel_accounts: int = Field(default=9999, ge=1)
+    ai_suggest: bool = True
+    ai_auto_send: bool = False
+    message_retention_days: int = Field(default=30, ge=1)
+    features: list[str] = Field(default_factory=list)
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class PlanPatchIn(BaseModel):
+    label: str | None = None
+    price_irr: int | None = None
+    price_label: str | None = None
+    max_seats: int | None = Field(default=None, ge=1)
+    max_channel_accounts: int | None = Field(default=None, ge=1)
+    ai_suggest: bool | None = None
+    ai_auto_send: bool | None = None
+    message_retention_days: int | None = Field(default=None, ge=1)
+    features: list[str] | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+def _slugify_plan_id(raw: str) -> str:
+    s = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in raw.strip().lower())
+    s = "-".join(p for p in s.replace("_", "-").split("-") if p)
+    return s[:40]
+
+
+@router.get("/plans")
+def admin_list_plans(
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    ensure_default_plans(db)
+    return {"plans": list_plans_admin(db=db)}
+
+
+@router.post("/plans")
+def admin_create_plan(
+    body: PlanIn,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    ensure_default_plans(db)
+    pid = _slugify_plan_id(body.id)
+    if len(pid) < 2:
+        raise HTTPException(status_code=400, detail="شناسه پلن نامعتبر است")
+    if db.get(PricingPlan, pid):
+        raise HTTPException(status_code=400, detail="این شناسه پلن از قبل وجود دارد")
+    features = [str(x).strip() for x in (body.features or []) if str(x).strip()]
+    price_label = body.price_label.strip()
+    if not price_label:
+        price_label = "رایگان" if body.price_irr <= 0 else f"{body.price_irr:,} ریال / ماه"
+    row = PricingPlan(
+        id=pid,
+        label=body.label.strip(),
+        price_irr=int(body.price_irr),
+        price_label=price_label,
+        max_seats=int(body.max_seats),
+        max_channel_accounts=int(body.max_channel_accounts),
+        ai_suggest=bool(body.ai_suggest),
+        ai_auto_send=bool(body.ai_auto_send),
+        message_retention_days=int(body.message_retention_days),
+        features=features,
+        sort_order=int(body.sort_order),
+        is_active=bool(body.is_active),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row_to_meta(row)
+
+
+@router.patch("/plans/{plan_id}")
+def admin_patch_plan(
+    plan_id: str,
+    body: PlanPatchIn,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    row = db.get(PricingPlan, plan_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="پلن یافت نشد")
+    data = body.model_dump(exclude_unset=True)
+    if "label" in data and data["label"] is not None:
+        label = str(data["label"]).strip()
+        if not label:
+            raise HTTPException(status_code=400, detail="نام پلن خالی است")
+        row.label = label
+    if "price_irr" in data and data["price_irr"] is not None:
+        row.price_irr = int(data["price_irr"])
+    if "price_label" in data and data["price_label"] is not None:
+        row.price_label = str(data["price_label"]).strip()
+    if "max_seats" in data and data["max_seats"] is not None:
+        row.max_seats = int(data["max_seats"])
+    if "max_channel_accounts" in data and data["max_channel_accounts"] is not None:
+        row.max_channel_accounts = int(data["max_channel_accounts"])
+    if "ai_suggest" in data and data["ai_suggest"] is not None:
+        row.ai_suggest = bool(data["ai_suggest"])
+    if "ai_auto_send" in data and data["ai_auto_send"] is not None:
+        row.ai_auto_send = bool(data["ai_auto_send"])
+    if "message_retention_days" in data and data["message_retention_days"] is not None:
+        row.message_retention_days = int(data["message_retention_days"])
+    if "features" in data and data["features"] is not None:
+        row.features = [str(x).strip() for x in data["features"] if str(x).strip()]
+    if "sort_order" in data and data["sort_order"] is not None:
+        row.sort_order = int(data["sort_order"])
+    if "is_active" in data and data["is_active"] is not None:
+        row.is_active = bool(data["is_active"])
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row_to_meta(row)
+
+
+@router.delete("/plans/{plan_id}")
+def admin_delete_plan(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    row = db.get(PricingPlan, plan_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="پلن یافت نشد")
+    in_use = db.query(Organization).filter(Organization.plan == plan_id).count()
+    if in_use > 0:
+        # Soft-delete so existing orgs keep resolving limits
+        row.is_active = False
+        db.add(row)
+        db.commit()
+        return {
+            "ok": True,
+            "deleted": False,
+            "deactivated": True,
+            "in_use": in_use,
+            "message": f"پلن توسط {in_use} کسب‌وکار استفاده می‌شود — غیرفعال شد",
+        }
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted": True, "deactivated": False, "in_use": 0}

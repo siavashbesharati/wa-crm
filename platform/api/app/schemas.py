@@ -36,6 +36,9 @@ class OrgOut(BaseModel):
     onboarding_step: str = "done"
     industry: str = ""
     city: str = ""
+    plan_expires_at: str | None = None
+    days_remaining: int | None = None
+    plan_label: str = ""
 
 
 class OnboardingProfileIn(BaseModel):

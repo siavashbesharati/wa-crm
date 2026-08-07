@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import AuthContext, require_roles
 from app.models import MemberRole, Organization, Payment, User
-from app.plans import PLANS, plan_limits
+from app.plans import plan_exists, plan_limits
 from app.services.payment_flow import (
     apply_paid_plan,
     mark_payment_failed,
@@ -60,7 +60,7 @@ def _start_zibal_payment(
     plan: str,
     purpose: str,
 ) -> dict:
-    if plan not in PLANS:
+    if not plan_exists(plan):
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
     meta = plan_limits(plan)
     amount = int(meta.get("price_irr") or 0)
@@ -119,7 +119,7 @@ def start_payment(
     """Skeleton: renew / upgrade via Zibal (or mock instant for local)."""
     purpose = body.purpose
     plan = body.plan.strip()
-    if plan not in PLANS:
+    if not plan_exists(plan):
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
 
     provider = _provider()

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import MemberRole, Membership, User
-from app.plans import PLANS, list_plans_public, plan_limits
+from app.plans import list_plans_public, plan_exists, plan_limits
 from app.schemas import (
     InviteIn,
     MemberOut,
@@ -21,6 +21,9 @@ router = APIRouter(prefix="/orgs", tags=["orgs"])
 
 
 def _org_out(org) -> OrgOut:
+    from app.services.payment_flow import subscription_days_left
+
+    exp = getattr(org, "plan_expires_at", None)
     return OrgOut(
         id=org.id,
         name=org.name,
@@ -29,6 +32,9 @@ def _org_out(org) -> OrgOut:
         onboarding_step=getattr(org, "onboarding_step", None) or "done",
         industry=getattr(org, "industry", "") or "",
         city=getattr(org, "city", "") or "",
+        plan_expires_at=exp.isoformat() if exp else None,
+        days_remaining=subscription_days_left(org),
+        plan_label=str(plan_limits(org.plan).get("label") or org.plan),
     )
 
 
@@ -115,7 +121,7 @@ def onboarding_plan(
     auth: AuthContext = Depends(require_roles(MemberRole.owner)),
     db: Session = Depends(get_db),
 ):
-    if body.plan not in PLANS:
+    if not plan_exists(body.plan):
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
     auth.org.plan = body.plan
     if _step(auth.org) in ("plan", "profile"):
@@ -149,7 +155,7 @@ def onboarding_pay(
     from app.routers.payments import _provider, _start_zibal_payment
 
     plan = (body.plan or auth.org.plan or "starter").strip()
-    if plan not in PLANS:
+    if not plan_exists(plan):
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
 
     meta = plan_limits(plan)
@@ -309,7 +315,7 @@ def update_plan(
     db: Session = Depends(get_db),
 ):
     """Free starter switch only — paid plans go through /payments/start."""
-    if body.plan not in PLANS:
+    if not plan_exists(body.plan):
         raise HTTPException(status_code=400, detail="پلن نامعتبر است")
     price = int(plan_limits(body.plan).get("price_irr") or 0)
     if price > 0:
@@ -317,7 +323,10 @@ def update_plan(
             status_code=400,
             detail="برای ارتقا یا تمدید پلن پولی از صفحه اشتراک (/billing) و پرداخت استفاده کنید",
         )
+    from app.services.payment_flow import extend_subscription
+
     auth.org.plan = body.plan
+    extend_subscription(auth.org, plan=body.plan)
     db.add(auth.org)
     db.commit()
     return _org_out(auth.org)

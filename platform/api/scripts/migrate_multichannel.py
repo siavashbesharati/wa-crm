@@ -109,6 +109,11 @@ def main() -> None:
                 text("ALTER TABLE organizations ADD COLUMN city VARCHAR(120) DEFAULT ''")
             )
             print("ALTER TABLE organizations ADD COLUMN city")
+        if org_cols and "plan_expires_at" not in org_cols:
+            conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME")
+            )
+            print("ALTER TABLE organizations ADD COLUMN plan_expires_at")
 
         # extension_seats created via Base.metadata.create_all
         seat_cols = _cols("extension_seats")

@@ -2,13 +2,39 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.models import ExtensionSeat, Organization, Payment, User
 from app.plans import plan_limits
 from app.services.seat_tokens import hash_token, new_raw_token
+
+SUBSCRIPTION_DAYS = 30
+
+
+def subscription_days_left(org: Organization) -> int | None:
+    """Remaining whole days until plan_expires_at; None if no expiry (e.g. starter)."""
+    exp = getattr(org, "plan_expires_at", None)
+    if not exp:
+        return None
+    seconds = (exp - datetime.utcnow()).total_seconds()
+    if seconds <= 0:
+        return 0
+    return max(1, math.ceil(seconds / 86400))
+
+
+def extend_subscription(org: Organization, *, plan: str, days: int = SUBSCRIPTION_DAYS) -> None:
+    """Set/extend plan_expires_at for paid plans; clear for free starter."""
+    price = int(plan_limits(plan).get("price_irr") or 0)
+    if price <= 0:
+        org.plan_expires_at = None
+        return
+    now = datetime.utcnow()
+    current = getattr(org, "plan_expires_at", None)
+    base = current if current and current > now else now
+    org.plan_expires_at = base + timedelta(days=days)
 
 
 def ensure_bootstrap_seat(db: Session, org: Organization, user: User | None) -> str | None:
@@ -48,6 +74,7 @@ def apply_paid_plan(
 ) -> str | None:
     """Apply plan after successful payment. Returns bootstrap seat token if any."""
     org.plan = plan
+    extend_subscription(org, plan=plan)
     if purpose == "onboarding":
         org.onboarding_step = "guides"
     db.add(org)

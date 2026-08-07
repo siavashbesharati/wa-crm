@@ -17,6 +17,7 @@ type Plan = {
   ai_auto_send: boolean;
   price_irr: number;
   price_label: string;
+  features?: string[];
 };
 
 type Org = {
@@ -24,6 +25,7 @@ type Org = {
   name: string;
   plan: string;
   limits: Record<string, unknown>;
+  days_remaining?: number | null;
 };
 
 export default function BillingPage() {
@@ -171,6 +173,15 @@ function BillingPageInner() {
               {current?.price_label || "—"} · سقف{" "}
               {String(org.limits.max_seats)} صندلی افزونه
             </div>
+            <p className="hint" style={{ marginTop: 8 }}>
+              {typeof org.days_remaining === "number"
+                ? org.days_remaining === 0
+                  ? "اشتراک منقضی شده است — برای ادامه تمدید کنید."
+                  : `${org.days_remaining.toLocaleString("fa-IR")} روز تا پایان اشتراک باقی مانده`
+                : current && (current.price_irr || 0) <= 0
+                  ? "پلن آزمایشی (بدون تاریخ انقضا)"
+                  : "پس از پرداخت، ۳۰ روز به اشتراک اضافه می‌شود."}
+            </p>
             {lastReceipt ? (
               <p className="hint" style={{ marginTop: 10 }}>
                 آخرین رسید: <strong>{lastReceipt.ref}</strong>
@@ -197,9 +208,16 @@ function BillingPageInner() {
                   <strong>{p.label}</strong>
                   <span className="hint">{p.price_label}</span>
                   <ul>
-                    <li>{p.max_seats} صندلی افزونه هم‌زمان</li>
-                    <li>همه کانال‌ها (واتساپ، دیوار، …)</li>
-                    <li>AI auto-send: {p.ai_auto_send ? "بله" : "خیر"}</li>
+                    {(p.features && p.features.length > 0
+                      ? p.features
+                      : [
+                          `${p.max_seats} صندلی افزونه هم‌زمان`,
+                          "همه کانال‌ها (واتساپ، دیوار، …)",
+                          `AI auto-send: ${p.ai_auto_send ? "بله" : "خیر"}`
+                        ]
+                    ).map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
                   </ul>
                   {org.plan === p.id ? <Badge tone="accent">فعلی</Badge> : null}
                   {selected === p.id && org.plan !== p.id ? (
