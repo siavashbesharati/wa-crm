@@ -10,11 +10,17 @@ import { PageLoading } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 
 type AiDefaults = {
-  gemini_model: string;
+  provider?: string;
+  model?: string;
+  gemini_model?: string;
+  base_url?: string;
   system_prompt: string;
+  llm_configured?: boolean;
   gemini_api_key_configured?: boolean;
+  api_key_configured?: boolean;
+  active_key_masked?: string;
   gemini_api_key_masked?: string;
-  default_min_confidence?: number;
+  api_key_masked?: string;
 };
 
 type Business = {
@@ -81,8 +87,8 @@ export default function SuperAiPlaygroundPage() {
       toast.push("پیام مشتری را وارد کنید", "err");
       return;
     }
-    if (!cfg?.gemini_api_key_configured) {
-      toast.push("اول کلید Gemini را در تنظیمات AI ذخیره کنید", "err");
+    if (!cfg?.llm_configured && !cfg?.gemini_api_key_configured && !cfg?.api_key_configured) {
+      toast.push("اول سرویس AI را در تنظیمات پیکربندی کنید", "err");
       return;
     }
     setBusy(true);
@@ -131,23 +137,43 @@ export default function SuperAiPlaygroundPage() {
             }}
           >
             <p style={{ margin: 0 }}>
-              وضعیت کلید:{" "}
-              <Badge tone={cfg.gemini_api_key_configured ? "accent" : "danger"}>
-                {cfg.gemini_api_key_configured ? "آماده" : "تنظیم نشده"}
+              وضعیت:{" "}
+              <Badge
+                tone={
+                  cfg.llm_configured || cfg.api_key_configured || cfg.gemini_api_key_configured
+                    ? "accent"
+                    : "danger"
+                }
+              >
+                {cfg.llm_configured || cfg.api_key_configured || cfg.gemini_api_key_configured
+                  ? "آماده"
+                  : "تنظیم نشده"}
               </Badge>
-              {cfg.gemini_api_key_masked ? (
+              {(cfg.active_key_masked || cfg.api_key_masked || cfg.gemini_api_key_masked) && (
                 <>
                   {" · "}
-                  <code>{cfg.gemini_api_key_masked}</code>
+                  <code>
+                    {cfg.active_key_masked || cfg.api_key_masked || cfg.gemini_api_key_masked}
+                  </code>
+                </>
+              )}
+              {" · "}
+              ارائه‌دهنده: <strong>{cfg.provider || "—"}</strong>
+              {" · "}
+              مدل: <strong>{cfg.model || cfg.gemini_model || "—"}</strong>
+              {cfg.base_url ? (
+                <>
+                  {" · "}
+                  <span className="hint" dir="ltr">
+                    {cfg.base_url}
+                  </span>
                 </>
               ) : null}
-              {" · "}
-              مدل: <strong>{cfg.gemini_model || "—"}</strong>
             </p>
-            {!cfg.gemini_api_key_configured ? (
+            {!(cfg.llm_configured || cfg.api_key_configured || cfg.gemini_api_key_configured) ? (
               <p className="hint" style={{ marginTop: 10 }}>
                 برای تست، از{" "}
-                <Link href="/super/ai">تنظیمات AI</Link> کلید Gemini را ذخیره کنید.
+                <Link href="/super/ai">تنظیمات AI</Link> کلید و Base URL را ذخیره کنید.
               </p>
             ) : null}
           </Card>
@@ -241,7 +267,13 @@ export default function SuperAiPlaygroundPage() {
               )}
             </div>
             <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Button loading={busy} onClick={run} disabled={!cfg.gemini_api_key_configured}>
+              <Button
+                loading={busy}
+                onClick={run}
+                disabled={
+                  !(cfg.llm_configured || cfg.api_key_configured || cfg.gemini_api_key_configured)
+                }
+              >
                 اجرای تست
               </Button>
               <Button

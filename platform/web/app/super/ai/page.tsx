@@ -10,15 +10,28 @@ import { PageLoading } from "@/components/ui/Spinner";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 
+type Preset = { label: string; base_url: string; model: string };
+
 type AiDefaults = {
-  gemini_api_key?: string;
-  gemini_api_key_masked?: string;
-  gemini_api_key_configured?: boolean;
-  gemini_model: string;
+  provider: "openai_compatible" | "gemini";
+  api_key_masked?: string;
+  api_key_configured?: boolean;
+  base_url: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+  reasoning_effort: string;
   system_prompt: string;
   default_min_confidence: number;
   auto_send_default: boolean;
   notes: string;
+  gemini_api_key_masked?: string;
+  gemini_api_key_configured?: boolean;
+  gemini_model: string;
+  llm_configured?: boolean;
+  active_key_masked?: string;
+  presets?: Record<string, Preset>;
 };
 
 export default function SuperAiPage() {
@@ -27,14 +40,23 @@ export default function SuperAiPage() {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<AiDefaults | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const data = await api<AiDefaults>("/admin/ai-defaults", { platform: true });
-        setForm(data);
+        setForm({
+          ...data,
+          provider: data.provider === "gemini" ? "gemini" : "openai_compatible",
+          temperature: Number(data.temperature ?? 0.4),
+          max_tokens: Number(data.max_tokens ?? 2048),
+          top_p: Number(data.top_p ?? 1),
+          reasoning_effort: data.reasoning_effort || ""
+        });
         setApiKeyInput("");
+        setGeminiKeyInput("");
       } catch (e) {
         toast.push(e instanceof Error ? e.message : "خطا", "err");
       } finally {
@@ -42,6 +64,17 @@ export default function SuperAiPage() {
       }
     })();
   }, [toast]);
+
+  function applyPreset(key: string) {
+    if (!form?.presets?.[key]) return;
+    const p = form.presets[key];
+    setForm({
+      ...form,
+      provider: "openai_compatible",
+      base_url: p.base_url,
+      model: p.model
+    });
+  }
 
   async function save() {
     if (!form) return;
@@ -51,17 +84,29 @@ export default function SuperAiPage() {
         method: "PUT",
         platform: true,
         body: JSON.stringify({
-          gemini_api_key: apiKeyInput.trim(),
-          gemini_model: form.gemini_model,
+          provider: form.provider,
+          api_key: apiKeyInput.trim(),
+          base_url: form.base_url,
+          model: form.model,
+          temperature: form.temperature,
+          max_tokens: form.max_tokens,
+          top_p: form.top_p,
+          reasoning_effort: form.reasoning_effort,
           system_prompt: form.system_prompt,
           default_min_confidence: form.default_min_confidence,
           auto_send_default: form.auto_send_default,
-          notes: form.notes
+          notes: form.notes,
+          gemini_api_key: geminiKeyInput.trim(),
+          gemini_model: form.gemini_model
         })
       });
-      setForm(saved);
+      setForm({
+        ...saved,
+        provider: saved.provider === "gemini" ? "gemini" : "openai_compatible"
+      });
       setApiKeyInput("");
-      toast.push("تنظیمات Gemini ذخیره شد", "ok");
+      setGeminiKeyInput("");
+      toast.push("تنظیمات AI ذخیره شد", "ok");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -72,59 +117,209 @@ export default function SuperAiPage() {
   return (
     <SuperShell
       title="تنظیمات AI پلتفرم"
-      sub="کلید و مدل Gemini + سیستم‌پرامپت سراسری"
+      sub="ارائه‌دهنده انعطاف‌پذیر: Groq / OpenAI / xAI یا Gemini"
+      actions={
+        <Link href="/super/ai-playground" className="btn secondary">
+          زمین‌بازی AI
+        </Link>
+      }
     >
       {loading || !form ? (
         <PageLoading />
       ) : (
         <div className="stack" style={{ display: "grid", gap: 16 }}>
           <Card
-            title="کلید Gemini"
+            title="ارائه‌دهنده"
             help={{
-              title: "کلید Gemini",
-              body: "کلید API گوگل برای تولید پاسخ در کل پلتفرم. کلید ماسک می‌شود؛ فقط سوپر ادمین می‌تواند عوض کند."
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              وضعیت:{" "}
-              <Badge tone={form.gemini_api_key_configured ? "accent" : "danger"}>
-                {form.gemini_api_key_configured ? "پیکربندی شده" : "تنظیم نشده"}
-              </Badge>
-              {form.gemini_api_key_masked ? (
-                <>
-                  {" · "}
-                  <code>{form.gemini_api_key_masked}</code>
-                </>
-              ) : null}
-            </p>
-            <label className="full" style={{ display: "block", marginTop: 12 }}>
-              کلید جدید (خالی بگذارید تا کلید فعلی حفظ شود)
-              <input
-                type="password"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="AIza…"
-                autoComplete="off"
-              />
-            </label>
-          </Card>
-
-          <Card
-            title="مدل و سیستم‌پرامپت سراسری"
-            help={{
-              title: "پرامپت سراسری",
-              body: "مدل پیش‌فرض و دستورالعمل پایه برای همه کسب‌وکارها. پرامپت هر سازمان روی این لایه اضافه می‌شود."
+              title: "ارائه‌دهنده",
+              body: "OpenAI-compatible برای Groq، OpenAI، xAI Grok و هر سرویس مشابه. Gemini مسیر جداگانه Google است."
             }}
           >
             <div className="form-grid">
-              <label>
-                مدل Gemini
-                <input
-                  value={form.gemini_model || ""}
-                  onChange={(e) => setForm({ ...form, gemini_model: e.target.value })}
-                  placeholder="gemini-2.0-flash"
-                />
+              <label className="full">
+                نوع اتصال
+                <select
+                  value={form.provider}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      provider: e.target.value === "gemini" ? "gemini" : "openai_compatible"
+                    })
+                  }
+                >
+                  <option value="openai_compatible">
+                    OpenAI-compatible (Groq / OpenAI / xAI / …)
+                  </option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
               </label>
+              {form.provider === "openai_compatible" ? (
+                <div className="full" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {Object.entries(form.presets || {}).map(([k, p]) => (
+                    <Button key={k} variant="secondary" onClick={() => applyPreset(k)}>
+                      پیش‌فرض {p.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+              <p className="full hint" style={{ margin: 0 }}>
+                وضعیت فعال:{" "}
+                <Badge tone={form.llm_configured ? "accent" : "danger"}>
+                  {form.llm_configured ? "آماده" : "کلید لازم است"}
+                </Badge>
+                {form.active_key_masked ? (
+                  <>
+                    {" · "}
+                    <code>{form.active_key_masked}</code>
+                  </>
+                ) : null}
+              </p>
+            </div>
+          </Card>
+
+          {form.provider === "openai_compatible" ? (
+            <Card
+              title="اتصال OpenAI-compatible"
+              help={{
+                title: "Base URL + API Key",
+                body: "مثل SDK رسمی: chat.completions با base_url. برای Groq: https://api.groq.com/openai/v1 — مدل مثلاً llama-3.3-70b-versatile یا openai/gpt-oss-120b."
+              }}
+            >
+              <div className="form-grid">
+                <label className="full">
+                  Base URL
+                  <input
+                    value={form.base_url || ""}
+                    onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+                    placeholder="https://api.groq.com/openai/v1"
+                    dir="ltr"
+                    style={{ textAlign: "left" }}
+                  />
+                </label>
+                <label className="full">
+                  API Key{" "}
+                  {form.api_key_configured ? (
+                    <span className="hint">
+                      (فعلی: <code>{form.api_key_masked}</code> — خالی = بدون تغییر)
+                    </span>
+                  ) : null}
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="gsk_… / sk-…"
+                    autoComplete="off"
+                    dir="ltr"
+                    style={{ textAlign: "left" }}
+                  />
+                </label>
+                <label>
+                  مدل
+                  <input
+                    value={form.model || ""}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder="llama-3.3-70b-versatile"
+                    dir="ltr"
+                    style={{ textAlign: "left" }}
+                  />
+                </label>
+                <label>
+                  Temperature
+                  <input
+                    type="number"
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    value={form.temperature}
+                    onChange={(e) =>
+                      setForm({ ...form, temperature: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Max tokens
+                  <input
+                    type="number"
+                    min={64}
+                    max={8192}
+                    step={64}
+                    value={form.max_tokens}
+                    onChange={(e) =>
+                      setForm({ ...form, max_tokens: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Top P
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={form.top_p}
+                    onChange={(e) => setForm({ ...form, top_p: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  Reasoning effort (اختیاری)
+                  <select
+                    value={form.reasoning_effort || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, reasoning_effort: e.target.value })
+                    }
+                  >
+                    <option value="">خاموش</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+              </div>
+            </Card>
+          ) : (
+            <Card
+              title="اتصال Gemini"
+              help={{
+                title: "Gemini",
+                body: "کلید Google AI Studio. اگر ارائه‌دهنده Gemini باشد از این مسیر استفاده می‌شود."
+              }}
+            >
+              <div className="form-grid">
+                <label className="full">
+                  کلید Gemini{" "}
+                  {form.gemini_api_key_configured ? (
+                    <span className="hint">
+                      (فعلی: <code>{form.gemini_api_key_masked}</code>)
+                    </span>
+                  ) : null}
+                  <input
+                    type="password"
+                    value={geminiKeyInput}
+                    onChange={(e) => setGeminiKeyInput(e.target.value)}
+                    placeholder="AIza…"
+                    autoComplete="off"
+                  />
+                </label>
+                <label>
+                  مدل Gemini
+                  <input
+                    value={form.gemini_model || ""}
+                    onChange={(e) => setForm({ ...form, gemini_model: e.target.value })}
+                    placeholder="gemini-2.0-flash"
+                  />
+                </label>
+              </div>
+            </Card>
+          )}
+
+          <Card
+            title="سیستم‌پرامپت و پیش‌فرض‌ها"
+            help={{
+              title: "پرامپت سراسری",
+              body: "روی همه کسب‌وکارها اعمال می‌شود؛ پرامپت هر سازمان روی آن اضافه می‌شود."
+            }}
+          >
+            <div className="form-grid">
               <label>
                 حداقل اطمینان پیش‌فرض
                 <input
@@ -168,7 +363,7 @@ export default function SuperAiPage() {
                 ذخیره تنظیمات
               </Button>
               <Link href="/super/ai-playground" className="btn secondary">
-                زمین‌بازی AI
+                تست در زمین‌بازی
               </Link>
             </div>
           </Card>
