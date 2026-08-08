@@ -480,6 +480,7 @@ def put_ai_defaults(
 class AiPlaygroundIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     org_id: str = ""
+    lead_id: str = ""
     lead_name: str = "مشتری تست"
     lead_stage: str = "جدید"
     system_prompt_override: str = ""
@@ -510,6 +511,7 @@ def ai_playground(
             db,
             message=body.message.strip(),
             org_id=org_id,
+            lead_id=(body.lead_id or "").strip() or None,
             lead_name=(body.lead_name or "").strip() or "مشتری تست",
             lead_stage=(body.lead_stage or "").strip() or "جدید",
             system_prompt_override=(body.system_prompt_override or "").strip() or None,
@@ -529,6 +531,7 @@ def ai_playground(
         "model": result.get("model"),
         "system_prompt_used": result.get("system_prompt_used") or "",
         "knowledge_hits": int(result.get("knowledge_hits") or 0),
+        "history_messages": int(result.get("history_messages") or 0),
         "org_id": result.get("org_id") or "",
         "org_name": (db.get(Organization, org_id).name if org_id else ""),
         "elapsed_ms": elapsed_ms,

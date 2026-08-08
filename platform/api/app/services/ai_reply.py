@@ -5,17 +5,29 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import AiPolicy, KnowledgeChunk, Lead, PlatformSetting
+from app.models import (
+    AiPolicy,
+    KnowledgeChunk,
+    Lead,
+    Message,
+    MessageDirection,
+    PlatformSetting,
+    SenderType,
+)
 from app.services import gemini, openai_compat
 from app.services.embeddings import cosine, embed_text
 
 AI_DEFAULTS_KEY = "ai_defaults"
+# Recent turns included in LLM context (inbound + outbound)
+CHAT_HISTORY_LIMIT = 12
+CHAT_HISTORY_MSG_CHARS = 500
 
 DEFAULT_PLATFORM_SYSTEM = (
     "تو دستیار فروش و پشتیبانی یک کسب‌وکار ایرانی هستی. "
     "فقط بر اساس دانش سازمانی و نقش تعریف‌شده پاسخ بده. "
     "اگر اطلاعات کافی نداری صادقانه بگو و پیشنهاد تماس با پشتیبانی بده. "
-    "پاسخ را کوتاه، مودب و به فارسی بنویس."
+    "پاسخ را کوتاه، مودب و به فارسی بنویس. "
+    "از تاریخچه گفتگو برای حفظ زمینه استفاده کن و تکرار سوال‌های قبلی را نکن."
 )
 
 PROVIDERS = ("openai_compatible", "gemini")
@@ -204,11 +216,72 @@ def _compose_system_prompt(platform: dict, policy: AiPolicy | None) -> str:
     return "\n\n".join(parts) or DEFAULT_PLATFORM_SYSTEM
 
 
+def _clip_msg(text: str, limit: int = CHAT_HISTORY_MSG_CHARS) -> str:
+    t = (text or "").strip()
+    if len(t) <= limit:
+        return t
+    return t[:limit] + "…"
+
+
+def _speaker_label(m: Message) -> str:
+    if m.direction == MessageDirection.inbound or m.sender_type == SenderType.customer:
+        return "مشتری"
+    if m.sender_type == SenderType.ai:
+        return "دستیار"
+    if m.sender_type == SenderType.system:
+        return "سیستم"
+    return "عامل"
+
+
+def load_chat_history(
+    db: Session,
+    *,
+    org_id: str,
+    lead_id: str,
+    limit: int = CHAT_HISTORY_LIMIT,
+) -> list[Message]:
+    """Oldest → newest, last `limit` messages for this lead."""
+    rows = (
+        db.query(Message)
+        .filter(Message.org_id == org_id, Message.lead_id == lead_id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(max(1, min(int(limit), 40)))
+        .all()
+    )
+    rows.reverse()
+    return rows
+
+
+def format_chat_history(
+    messages: list[Message],
+    *,
+    current_message: str = "",
+) -> str:
+    """Format CRM messages for the prompt; ensure current inbound is present."""
+    lines: list[str] = []
+    for m in messages:
+        body = _clip_msg(m.body or "")
+        if not body:
+            continue
+        lines.append(f"{_speaker_label(m)}: {body}")
+
+    cur = _clip_msg(current_message)
+    if cur:
+        expected = f"مشتری: {cur}"
+        if not lines or lines[-1] != expected:
+            # Avoid near-duplicate if DB already stored the same inbound
+            if not (lines and lines[-1].startswith("مشتری:") and lines[-1][len("مشتری: ") :] == cur):
+                lines.append(expected)
+
+    return "\n".join(lines) if lines else "(بدون تاریخچه قبلی)"
+
+
 def _compose_user_prompt(
     *,
     lead: Lead | None,
     message: str,
     hits: list[tuple[KnowledgeChunk, float]],
+    history_text: str = "",
 ) -> str:
     kb_blocks = []
     for i, (chunk, score) in enumerate(hits, start=1):
@@ -218,11 +291,13 @@ def _compose_user_prompt(
     kb_text = "\n\n".join(kb_blocks) if kb_blocks else "(دانش مرتبطی یافت نشد)"
     lead_name = (lead.name if lead else "") or "مشتری"
     lead_stage = (lead.stage if lead else "") or "-"
+    history = (history_text or "").strip() or "(بدون تاریخچه قبلی)"
     return (
         f"نام لید: {lead_name}\n"
         f"مرحله قیف: {lead_stage}\n\n"
         f"دانش سازمانی مرتبط:\n{kb_text}\n\n"
-        f"پیام مشتری:\n{message.strip()}\n\n"
+        f"تاریخچه گفتگو (قدیمی → جدید):\n{history}\n\n"
+        f"آخرین پیام مشتری (پاسخ همین را بنویس، با توجه به تاریخچه):\n{message.strip()}\n\n"
         "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."
     )
 
@@ -233,6 +308,7 @@ def generate_reply(
     org_id: str,
     lead: Lead | None,
     message: str,
+    history_limit: int = CHAT_HISTORY_LIMIT,
 ) -> dict:
     """Return {reply, confidence, sources, provider, model}."""
     platform = get_platform_ai_settings(db)
@@ -240,6 +316,13 @@ def generate_reply(
     hits = retrieve_knowledge(db, org_id, message, k=4)
     top_score = float(hits[0][1]) if hits else 0.0
     sources = [h[0].content[:120] for h in hits if h[1] > 0.05]
+
+    history_msgs: list[Message] = []
+    if lead and lead.id:
+        history_msgs = load_chat_history(
+            db, org_id=org_id, lead_id=lead.id, limit=history_limit
+        )
+    history_text = format_chat_history(history_msgs, current_message=message)
 
     if not llm_is_configured(platform):
         if not hits or top_score < 0.05:
@@ -261,7 +344,9 @@ def generate_reply(
         }
 
     system_prompt = _compose_system_prompt(platform, policy)
-    user_prompt = _compose_user_prompt(lead=lead, message=message, hits=hits)
+    user_prompt = _compose_user_prompt(
+        lead=lead, message=message, hits=hits, history_text=history_text
+    )
     out = generate_llm_text(platform, system_prompt=system_prompt, user_prompt=user_prompt)
     confidence = round(max(0.45, min(0.98, 0.35 + top_score * 0.65)), 3)
     if not sources:
@@ -272,6 +357,7 @@ def generate_reply(
         "sources": sources,
         "provider": out["provider"],
         "model": out.get("model") or "",
+        "history_messages": len(history_msgs),
     }
 
 
@@ -280,22 +366,37 @@ def playground_reply(
     *,
     message: str,
     org_id: str | None = None,
+    lead_id: str | None = None,
     lead_name: str = "مشتری تست",
     lead_stage: str = "جدید",
     system_prompt_override: str | None = None,
     agent_role_override: str | None = None,
     temperature: float = 0.4,
 ) -> dict:
-    """Super-admin playground: uses platform LLM config (+ optional org knowledge)."""
+    """Super-admin playground: uses platform LLM config (+ optional org knowledge/history)."""
     platform = get_platform_ai_settings(db)
     if not llm_is_configured(platform):
         raise ValueError("سرویس AI پیکربندی نشده — کلید و Base URL را در تنظیمات AI ذخیره کنید")
 
     policy: AiPolicy | None = None
     hits: list[tuple[KnowledgeChunk, float]] = []
+    lead: Lead | None = None
+    history_msgs: list[Message] = []
     if org_id:
         policy = db.query(AiPolicy).filter(AiPolicy.org_id == org_id).first()
         hits = retrieve_knowledge(db, org_id, message, k=4)
+        if lead_id:
+            lead = (
+                db.query(Lead)
+                .filter(Lead.id == lead_id, Lead.org_id == org_id)
+                .first()
+            )
+            if lead:
+                lead_name = lead.name or lead_name
+                lead_stage = lead.stage or lead_stage
+                history_msgs = load_chat_history(
+                    db, org_id=org_id, lead_id=lead.id, limit=CHAT_HISTORY_LIMIT
+                )
 
     if system_prompt_override is not None and system_prompt_override.strip():
         parts = [system_prompt_override.strip()]
@@ -328,11 +429,13 @@ def playground_reply(
     else:
         kb_text = "(بدون سازمان — فقط پرامپت پلتفرم)"
 
+    history_text = format_chat_history(history_msgs, current_message=message)
     user_prompt = (
         f"نام لید: {(lead_name or 'مشتری تست').strip()}\n"
         f"مرحله قیف: {(lead_stage or 'جدید').strip()}\n\n"
         f"دانش سازمانی مرتبط:\n{kb_text}\n\n"
-        f"پیام مشتری:\n{message.strip()}\n\n"
+        f"تاریخچه گفتگو (قدیمی → جدید):\n{history_text}\n\n"
+        f"آخرین پیام مشتری (پاسخ همین را بنویس، با توجه به تاریخچه):\n{message.strip()}\n\n"
         "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."
     )
 
@@ -356,6 +459,7 @@ def playground_reply(
         "model": out.get("model") or resolve_model(platform),
         "system_prompt_used": system_prompt,
         "knowledge_hits": len(sources),
+        "history_messages": len(history_msgs),
         "org_id": org_id or "",
         "base_url": (platform.get("base_url") or "") if platform.get("provider") != "gemini" else "",
     }
