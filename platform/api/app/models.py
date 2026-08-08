@@ -389,7 +389,7 @@ class AiPolicy(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), unique=True)
     auto_send_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    min_confidence: Mapped[float] = mapped_column(Float, default=0.72)
+    min_confidence: Mapped[float] = mapped_column(Float, default=0.45)
     allowed_stages: Mapped[list] = mapped_column(JSON, default=lambda: ["جدید"])
     business_hours_only: Mapped[bool] = mapped_column(Boolean, default=False)
     hours_start: Mapped[str] = mapped_column(String(8), default="09:00")

@@ -28,6 +28,7 @@
   let busy = false;
   let lastReplyTime = 0;
   const handledKeys = {};
+  const ingestedKeys = {};
 
   function log() {
     try {
@@ -480,10 +481,12 @@
   }
 
   async function ingestPeer(chatId, peer) {
-    if (!globalThis.IranexpediaCloudBridge || !peer || !peer.text) return;
+    if (!globalThis.IranexpediaCloudBridge || !peer || !peer.text) return false;
+    const key = chatId + "|" + peer.time + "|" + peer.text;
+    if (ingestedKeys[key]) return true;
     try {
       const name = getContactName() || getAdTitle() || chatId;
-      await IranexpediaCloudBridge.ingestMessage({
+      const ing = await IranexpediaCloudBridge.ingestMessage({
         chat_name: name,
         body: peer.text,
         direction: "inbound",
@@ -494,9 +497,28 @@
         sender_type: "customer",
         external_message_id: chatId + ":" + peer.time + ":" + peer.text.slice(0, 40)
       });
+      if (ing && ing.ok) {
+        ingestedKeys[key] = true;
+        log("ingest ابر OK ←", name, ":", String(peer.text).slice(0, 80));
+        return true;
+      }
+      log("ingest ابر ناموفق:", (ing && ing.error) || "unknown");
+      return false;
     } catch (err) {
       log("ingest failed", err);
+      return false;
     }
+  }
+
+  /** Cloud AI path: ingest peer text even when local keyword auto-reply is OFF. */
+  async function ingestOpenChatToCloud() {
+    const chatId = getOpenChatId();
+    if (!chatId) return;
+    if (!(await refreshLicenseStatus())) return;
+    if (!lastMessageIsPeer()) return;
+    const peer = getLastPeerMessage();
+    if (!peer || !peer.text) return;
+    await ingestPeer(chatId, peer);
   }
 
   async function replyInOpenChat() {
@@ -512,8 +534,21 @@
 
     await ingestPeer(chatId, peer);
 
+    // When cloud connector is on, cloud AI owns replies — skip local keyword spam
+    try {
+      if (globalThis.IranexpediaCloudBridge) {
+        const cfg = await IranexpediaCloudBridge.getConfig();
+        if (cfg && cfg.enabled && cfg.accessToken) {
+          handledKeys[key] = true;
+          log("پاسخ کلمه‌کلیدی رد شد — پاسخ‌گویی با AI ابری");
+          return false;
+        }
+      }
+    } catch (_e) {}
+
     const reply = matchReply(peer.text);
     if (!reply) {
+      // No local keyword match — cloud AI may still reply via outbound job
       handledKeys[key] = true;
       return false;
     }
@@ -542,6 +577,15 @@
   }
 
   async function processLoop() {
+    // Always try cloud ingest when a chat is open (does not need keyword toggle)
+    try {
+      if (getOpenChatId() && document.querySelector("#chat-input")) {
+        await ingestOpenChatToCloud();
+      }
+    } catch (err) {
+      log("cloud ingest error", err);
+    }
+
     if (!isEnabled || busy) return;
     const ok = await refreshLicenseStatus();
     if (!ok) return;
@@ -560,6 +604,7 @@
       const opened = await openChat(next.id);
       if (!opened) return;
       await sleep(500);
+      await ingestOpenChatToCloud();
       await replyInOpenChat();
       await sleep(400);
       await goToInbox();

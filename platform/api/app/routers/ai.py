@@ -22,6 +22,13 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         db.add(policy)
         db.commit()
         db.refresh(policy)
+    # Soft-migrate stock defaults only (0.55 platform / 0.72 legacy)
+    mc = round(float(policy.min_confidence or 0), 2)
+    if mc in (0.55, 0.72):
+        policy.min_confidence = 0.45
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
     return {
         "auto_send_enabled": policy.auto_send_enabled,
         "min_confidence": policy.min_confidence,
@@ -142,14 +149,26 @@ def run_auto_reply_for_lead(
             "confidence": result["confidence"],
         }
 
-    from app.models import MessageDirection, OutboundJob, OutboundStatus, SenderType
+    from app.models import LeadAccountLink, MessageDirection, OutboundJob, OutboundStatus, SenderType
     from app.services.queue import enqueue as enqueue_job
+    from app.workers.runner import _outbound_target
+
+    link = (
+        db.query(LeadAccountLink)
+        .filter(
+            LeadAccountLink.org_id == auth.org.id,
+            LeadAccountLink.lead_id == lead_id,
+            LeadAccountLink.account_id == account_id,
+        )
+        .first()
+    )
+    target = _outbound_target(lead, link)
 
     job = OutboundJob(
         org_id=auth.org.id,
         account_id=account_id,
         lead_id=lead_id,
-        target_name=lead.name,
+        target_name=target,
         body=result["reply"],
         sender_type=SenderType.ai,
         created_by_id=auth.user.id,

@@ -322,23 +322,31 @@
   async function upsertLeadImpl(lead) {
     var cfg = await getConfig();
     if (!cfg.enabled) return { ok: false, error: "cloud_disabled" };
+    var body = {
+      name: lead.name || "",
+      phone: lead.phone || "",
+      group_id: lead.groupId || lead.group_id || "",
+      external_chat_id: lead.externalChatId || lead.external_chat_id || "",
+      post_token: lead.postToken || lead.post_token || "",
+      source_channel: lead.sourceChannel || lead.source_channel || cfg.channel || "",
+      chat_type: lead.chatType || lead.chat_type || "pv",
+      tags: lead.tags || [],
+      notes: lead.notes || "",
+      account_id: cfg.accountId || null,
+      chat_name: lead.name || lead.chatName || ""
+    };
+    // Only send stage / bot_paused when caller explicitly sets them (avoid resetting on every ingest)
+    if (lead.stage != null && String(lead.stage).trim()) {
+      body.stage = lead.stage;
+    }
+    if (typeof lead.botPaused === "boolean") {
+      body.bot_paused = lead.botPaused;
+    } else if (typeof lead.bot_paused === "boolean") {
+      body.bot_paused = lead.bot_paused;
+    }
     return request("/leads", {
       method: "POST",
-      body: {
-        name: lead.name || "",
-        phone: lead.phone || "",
-        group_id: lead.groupId || lead.group_id || "",
-        external_chat_id: lead.externalChatId || lead.external_chat_id || "",
-        post_token: lead.postToken || lead.post_token || "",
-        source_channel: lead.sourceChannel || lead.source_channel || cfg.channel || "",
-        chat_type: lead.chatType || lead.chat_type || "pv",
-        stage: lead.stage || "جدید",
-        tags: lead.tags || [],
-        notes: lead.notes || "",
-        bot_paused: !!lead.botPaused,
-        account_id: cfg.accountId || null,
-        chat_name: lead.name || lead.chatName || ""
-      }
+      body: body
     });
   }
 

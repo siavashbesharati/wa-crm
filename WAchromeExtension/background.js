@@ -627,25 +627,34 @@ async function runJobsForChannel(channel) {
   await IranexpediaCloudBridge.heartbeat();
   var jobs = await IranexpediaCloudBridge.claimJobs(3);
   if (!jobs || !jobs.length) return;
+  console.log("[cloud-bridge] claimed", jobs.length, "job(s) for", channel);
   for (var i = 0; i < jobs.length; i++) {
     var job = jobs[i];
     try {
+      var target = job.target_name || "";
       var msg =
         channel === "divar"
           ? {
               type: "sendDivarMessage",
-              chatId: job.target_name,
-              targetName: job.target_name,
+              chatId: target,
+              targetName: target,
               message: job.body
             }
           : {
               type: "sendTemplateNow",
-              targetName: job.target_name,
+              targetName: target,
               message: job.body
             };
       var res = await chrome.tabs.sendMessage(tab.id, msg);
+      console.log(
+        "[cloud-bridge] send",
+        channel,
+        target,
+        res && res.ok ? "ok" : (res && res.error) || "fail"
+      );
       await IranexpediaCloudBridge.completeJob(job.id, !!(res && res.ok), (res && res.error) || "");
     } catch (err) {
+      console.log("[cloud-bridge] send error", err);
       await IranexpediaCloudBridge.completeJob(job.id, false, String(err && err.message || err));
     }
   }
@@ -671,3 +680,9 @@ async function pollCloudBridge() {
 }
 
 chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });
+// Claim AI outbound jobs every ~12s (chrome.alarms alone is too slow at 1 min)
+if (!globalThis.__iranexpediaCloudPollTimer) {
+  globalThis.__iranexpediaCloudPollTimer = setInterval(function () {
+    pollCloudBridge();
+  }, 12 * 1000);
+}

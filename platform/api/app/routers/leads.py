@@ -117,7 +117,8 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             lead.notes = body.notes
         if body.assignee_id is not None:
             lead.assignee_id = body.assignee_id
-        lead.bot_paused = body.bot_paused
+        if body.bot_paused is not None:
+            lead.bot_paused = body.bot_paused
         lead.last_message_at = datetime.utcnow()
         lead.updated_at = datetime.utcnow()
         db.add(lead)
@@ -135,7 +136,7 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             tags=body.tags,
             notes=body.notes,
             assignee_id=body.assignee_id,
-            bot_paused=body.bot_paused,
+            bot_paused=bool(body.bot_paused) if body.bot_paused is not None else False,
             last_message_at=datetime.utcnow(),
         )
         db.add(lead)

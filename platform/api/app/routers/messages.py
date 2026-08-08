@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,6 +23,16 @@ from app.schemas import MessageIngestIn, MessageOut, OutboundJobOut, SendMessage
 from app.services.queue import enqueue
 
 router = APIRouter(prefix="/messages", tags=["messages"])
+
+
+def _run_auto_reply_job(payload: dict) -> None:
+    """Process auto_reply in-process so it works even if the worker is down briefly."""
+    try:
+        from app.workers.runner import handle_auto_reply
+
+        handle_auto_reply(payload)
+    except Exception as e:  # noqa: BLE001
+        print(f"[ingest] auto_reply background error: {e}")
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -138,7 +148,12 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
 
 
 @router.post("/ingest", response_model=MessageOut)
-def ingest(body: MessageIngestIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+def ingest(
+    body: MessageIngestIn,
+    background_tasks: BackgroundTasks,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
     acc = (
         db.query(ChannelAccount)
         .filter(ChannelAccount.id == body.account_id, ChannelAccount.org_id == auth.org.id)
@@ -149,6 +164,21 @@ def ingest(body: MessageIngestIn, auth: AuthContext = Depends(get_auth), db: Ses
 
     lead = _upsert_lead_from_ingest(db, auth.org.id, body, acc)
     ext_msg_id = (body.external_message_id or body.wa_message_id or "").strip()
+
+    # Deduplicate re-ingests of the same channel message
+    if ext_msg_id:
+        existing = (
+            db.query(Message)
+            .filter(
+                Message.org_id == auth.org.id,
+                Message.account_id == body.account_id,
+                Message.wa_message_id == ext_msg_id,
+            )
+            .first()
+        )
+        if existing:
+            return _to_out(existing)
+
     msg = Message(
         org_id=auth.org.id,
         account_id=body.account_id,
@@ -162,8 +192,10 @@ def ingest(body: MessageIngestIn, auth: AuthContext = Depends(get_auth), db: Ses
     db.commit()
     db.refresh(msg)
 
-    if body.direction == "inbound":
-        enqueue("auto_reply", {"org_id": auth.org.id, "lead_id": lead.id, "message_id": msg.id})
+    if body.direction == "inbound" and (body.body or "").strip() and (body.body or "").strip() != "(sync)":
+        payload = {"org_id": auth.org.id, "lead_id": lead.id, "message_id": msg.id}
+        # Run once in-process only (enqueue+background was causing duplicate AI replies)
+        background_tasks.add_task(_run_auto_reply_job, payload)
 
     return _to_out(msg)
 

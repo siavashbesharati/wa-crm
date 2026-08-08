@@ -121,11 +121,11 @@ class LeadIn(BaseModel):
     post_token: str = ""
     source_channel: str = ""
     chat_type: str = "pv"
-    stage: str = "جدید"
+    stage: str | None = None
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
     assignee_id: str | None = None
-    bot_paused: bool = False
+    bot_paused: bool | None = None
     account_id: str | None = None
     chat_name: str = ""
 
@@ -245,7 +245,7 @@ class SuggestOut(BaseModel):
 
 class AiPolicyIn(BaseModel):
     auto_send_enabled: bool = False
-    min_confidence: float = 0.72
+    min_confidence: float = 0.45
     allowed_stages: list[str] = Field(default_factory=lambda: ["جدید"])
     business_hours_only: bool = False
     hours_start: str = "09:00"

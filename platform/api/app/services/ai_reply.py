@@ -201,19 +201,10 @@ def retrieve_knowledge(
     return scored[:k]
 
 
-def _compose_system_prompt(platform: dict, policy: AiPolicy | None) -> str:
-    parts: list[str] = []
+def _compose_system_prompt(platform: dict, policy: AiPolicy | None = None) -> str:
+    """Businesses use the platform (super-admin) system prompt only — not org-stacked prompts."""
     plat = (platform.get("system_prompt") or "").strip()
-    if plat:
-        parts.append(plat)
-    if policy:
-        role = (getattr(policy, "agent_role", None) or "").strip()
-        org_sys = (getattr(policy, "system_prompt", None) or "").strip()
-        if role:
-            parts.append(f"نقش تو در این کسب‌وکار: {role}")
-        if org_sys:
-            parts.append(org_sys)
-    return "\n\n".join(parts) or DEFAULT_PLATFORM_SYSTEM
+    return plat or DEFAULT_PLATFORM_SYSTEM
 
 
 def _clip_msg(text: str, limit: int = CHAT_HISTORY_MSG_CHARS) -> str:
@@ -348,9 +339,11 @@ def generate_reply(
         lead=lead, message=message, hits=hits, history_text=history_text
     )
     out = generate_llm_text(platform, system_prompt=system_prompt, user_prompt=user_prompt)
-    confidence = round(max(0.45, min(0.98, 0.35 + top_score * 0.65)), 3)
-    if not sources:
-        confidence = min(confidence, 0.55)
+    # LLM actually produced a reply — don't keep confidence stuck at ~0.45 (that blocked auto-send
+    # when org min_confidence was 0.55 and no knowledge hits existed).
+    confidence = round(max(0.65, min(0.98, 0.62 + top_score * 0.35)), 3)
+    if sources:
+        confidence = max(confidence, 0.72)
     return {
         "reply": out["reply"],
         "confidence": confidence,
@@ -399,25 +392,16 @@ def playground_reply(
                 )
 
     if system_prompt_override is not None and system_prompt_override.strip():
-        parts = [system_prompt_override.strip()]
+        system_prompt = system_prompt_override.strip()
     else:
-        parts = []
-        plat = (platform.get("system_prompt") or "").strip()
-        if plat:
-            parts.append(plat)
-
-    role = (agent_role_override or "").strip()
-    if not role and policy:
-        role = (getattr(policy, "agent_role", None) or "").strip()
-    if role:
-        parts.append(f"نقش تو در این کسب‌وکار: {role}")
-
-    if policy and not (system_prompt_override or "").strip():
-        org_sys = (getattr(policy, "system_prompt", None) or "").strip()
-        if org_sys:
-            parts.append(org_sys)
-
-    system_prompt = "\n\n".join(parts) or DEFAULT_PLATFORM_SYSTEM
+        # Same as production: platform (super-admin) prompt only
+        system_prompt = _compose_system_prompt(platform)
+    if agent_role_override and agent_role_override.strip():
+        system_prompt = (
+            system_prompt
+            + "\n\n"
+            + f"نقش تست: {agent_role_override.strip()}"
+        )
 
     kb_blocks = []
     for i, (chunk, score) in enumerate(hits, start=1):

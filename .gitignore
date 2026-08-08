@@ -27,6 +27,7 @@ platform/web/node_modules/
 logs/
 *.log
 npm-debug.log*
+platform/api/data/
 
 # OS / editor
 .DS_Store

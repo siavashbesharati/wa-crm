@@ -32,6 +32,7 @@ let lastBotReply = "";
 let lastReplyTime = 0;
 let lastStableChat = "";
 let lastCapturedMsgKey = "";
+let lastCloudIngestKey = "";
 const sidebarContactSaved = {};
 
 let replyTimeout = null;
@@ -491,22 +492,74 @@ async function syncContactToCloud(contact, source) {
             log("همگام‌سازی ابر ناموفق:", (res && res.error) || "unknown", contact.name);
             return;
         }
-        if (source === "incoming" || source === "message") {
-            const ing = await IranexpediaCloudBridge.ingestMessage({
-                chat_name: contact.name,
-                body: "(sync)",
-                direction: "inbound",
-                phone: contact.phone || "",
-                group_id: contact.groupId || "",
-                chat_type: contact.chatType || "pv",
-                sender_type: "customer"
-            });
-            if (!ing || !ing.ok) {
-                log("ingest پیام ابر ناموفق:", (ing && ing.error) || "unknown");
-            }
-        }
+        // Do NOT fake-ingest "(sync)" — that queued useless auto_reply jobs.
+        // Real inbound text is ingested via ingestCloudInbound().
     } catch (cloudErr) {
         log("خطای همگام‌سازی ابر:", cloudErr && cloudErr.message ? cloudErr.message : cloudErr);
+    }
+}
+
+/**
+ * Push real inbound WhatsApp text to CRM so cloud AI auto-reply can run.
+ * Independent of local keyword auto-reply toggle.
+ */
+async function ingestCloudInbound(chatInfo, text) {
+    if (!globalThis.IranexpediaCloudBridge || !isCloudAuthorized()) return null;
+    const body = String(text || "").trim();
+    if (!body || body === "(sync)") return null;
+    if (body === lastBotReply) return null;
+    if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(body)) return null;
+
+    const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
+    if (!name) return null;
+
+    const chatType = (chatInfo && chatInfo.chatType) || "pv";
+    const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
+    const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
+    const externalChatId = groupId || phone || name;
+    const msgKey = [name, phone, groupId, body].join("||");
+    if (msgKey === lastCloudIngestKey) return null;
+    lastCloudIngestKey = msgKey;
+
+    try {
+        await IranexpediaCloudBridge.upsertLead({
+            name: name,
+            phone: phone,
+            groupId: groupId,
+            chatType: chatType
+        });
+        const ing = await IranexpediaCloudBridge.ingestMessage({
+            chat_name: name,
+            body: body,
+            direction: "inbound",
+            phone: phone,
+            group_id: groupId,
+            chat_type: chatType,
+            external_chat_id: externalChatId,
+            sender_type: "customer",
+            external_message_id: "wa:" + msgKey.slice(0, 180)
+        });
+        if (!ing || !ing.ok) {
+            // cloud-bridge returns { ok, error } — detail may be object
+            var errMsg = (ing && ing.error) || "unknown";
+            if (errMsg && typeof errMsg === "object") {
+                try {
+                    errMsg = JSON.stringify(errMsg);
+                } catch (_e) {
+                    errMsg = String(errMsg);
+                }
+            }
+            log("ingest ابر ناموفق:", errMsg);
+            // allow retry on next scan
+            if (lastCloudIngestKey === msgKey) lastCloudIngestKey = "";
+            return null;
+        }
+        log("ingest ابر OK ←", name, ":", body.slice(0, 80));
+        return ing;
+    } catch (err) {
+        if (lastCloudIngestKey === msgKey) lastCloudIngestKey = "";
+        log("ingest ابر خطا:", err && err.message ? err.message : err);
+        return null;
     }
 }
 
@@ -547,7 +600,7 @@ async function syncAllLocalContactsToCloud() {
 
 /** Capture contacts on new messages even when auto-reply is OFF */
 function captureContactsFromOpenChat() {
-    if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return;
+    if (!isCloudAuthorized()) return;
     if (!document.querySelector("#main")) return;
 
     const text = getLastIncomingText();
@@ -562,7 +615,11 @@ function captureContactsFromOpenChat() {
     if (key === lastCapturedMsgKey) return;
     lastCapturedMsgKey = key;
 
-    saveContactFromIncoming(info, "incoming");
+    if (globalThis.IranexpediaCrm) {
+        saveContactFromIncoming(info, "incoming");
+    }
+    // Cloud AI path: always ingest real message text
+    ingestCloudInbound(info, text);
 }
 
 function getHeaderMemberListText() {
@@ -626,6 +683,8 @@ function resetMessageCache() {
     lastHandledText = "";
     lastBotReply = "";
     lastReplyTime = 0;
+    lastCloudIngestKey = "";
+    lastCapturedMsgKey = "";
 
     if (replyTimeout) {
         clearTimeout(replyTimeout);
@@ -1621,10 +1680,25 @@ function handleOpenChatMessages() {
 
     (async function () {
         await saveContactFromIncoming(chatInfo, "incoming");
+        // Always push real text to CRM for cloud AI (even if local keyword auto-reply is off)
+        await ingestCloudInbound(chatInfo, text);
 
         if (await isChatBotPaused(chatName)) {
             log("ربات برای این چت متوقف است:", chatName);
             return;
+        }
+
+        if (!isEnabled) return;
+
+        // Cloud connector ON → AI owns replies; skip local keyword duplicates
+        if (isCloudAuthorized() && globalThis.IranexpediaCloudBridge) {
+            try {
+                const cfg = await IranexpediaCloudBridge.getConfig();
+                if (cfg && cfg.enabled && cfg.accessToken) {
+                    log("پاسخ کلمه‌کلیدی رد شد — پاسخ‌گویی با AI ابری");
+                    return;
+                }
+            } catch (_e) {}
         }
 
         await refreshCrmSettings();
