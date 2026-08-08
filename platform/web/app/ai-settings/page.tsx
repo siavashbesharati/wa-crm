@@ -45,7 +45,7 @@ export default function AiSettingsPage() {
     if (!policy) return;
     await run(
       () => api("/ai/policy", { method: "PUT", body: JSON.stringify(policy) }),
-      { success: "سیاست و پرامپت ذخیره شد" }
+      { success: "تنظیمات پاسخ خودکار ذخیره شد" }
     );
   }
 
@@ -60,43 +60,26 @@ export default function AiSettingsPage() {
   const confidencePct = Math.round((policy?.min_confidence ?? 0) * 100);
 
   return (
-    <Shell title="تنظیمات AI" sub="نقش، سیستم‌پرامپت و پاسخ خودکار">
+    <Shell title="تنظیمات AI" sub="پاسخ خودکار و مراحل مجاز">
       {loading || !policy ? (
         <PageLoading />
       ) : (
         <>
           <Card
-            title="نقش و سیستم‌پرامپت"
+            title="سیستم‌پرامپت"
             help={{
-              title: "نقش و سیستم‌پرامپت",
-              body: "تعیین می‌کند دستیار چه کسی است و با چه قواعدی جواب بدهد (لحن، ممنوعیت‌ها، نحوه هدایت مشتری).",
+              title: "سیستم‌پرامپت پلتفرم",
+              body: "دستورالعمل اصلی AI از پنل سوپرادمین تنظیم می‌شود و برای همه کسب‌وکارها یکسان است. دانش و محتوای هر کسب‌وکار از بخش دانش سازمانی می‌آید.",
               tips: [
-                "نقش کوتاه و واضح باشد؛ مثلاً مشاور فروش تور.",
-                "سیستم‌پرامپت را مثل دستورالعمل داخلی بنویسید."
+                "برای تغییر لحن و قواعد کلی، از سوپرادمین (/super/ai) استفاده کنید.",
+                "اطلاعات اختصاصی کسب‌وکار (قیمت، کارت، پلن‌ها) را در دانش سازمانی بگذارید."
               ]
             }}
           >
-            <div className="form-grid">
-              <label className="full">
-                نقش دستیار
-                <input
-                  value={policy.agent_role || ""}
-                  onChange={(e) => setPolicy({ ...policy, agent_role: e.target.value })}
-                  placeholder="مثلاً مشاور فروش تورهای گردشگری"
-                />
-              </label>
-              <label className="full">
-                سیستم‌پرامپت کسب‌وکار
-                <textarea
-                  rows={6}
-                  value={policy.system_prompt || ""}
-                  onChange={(e) =>
-                    setPolicy({ ...policy, system_prompt: e.target.value })
-                  }
-                  placeholder="دستورالعمل‌های اختصاصی این کسب‌وکار (لحن، ممنوعیت‌ها، …)"
-                />
-              </label>
-            </div>
+            <p className="hint" style={{ margin: 0 }}>
+              سیستم‌پرامپت کسب‌وکار جداگانه اعمال نمی‌شود؛ همه پاسخ‌ها با پرامپت سوپرادمین
+              ساخته می‌شوند و تفاوت هر کسب‌وکار از دانش سازمانی است.
+            </p>
           </Card>
 
           <Card
