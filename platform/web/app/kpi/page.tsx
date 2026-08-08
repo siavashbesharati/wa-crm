@@ -103,7 +103,13 @@ export default function KpiPage() {
             </div>
           </div>
 
-          <Card title="فانل مراحل">
+          <Card
+            title="فانل مراحل"
+            help={{
+              title: "فانل فروش",
+              body: "تعداد لید در هر مرحله پایپلاین — نشان می‌دهد کجا بیشترین ریزش یا انباشت دارید."
+            }}
+          >
             <div className="stats" style={{ marginBottom: 0 }}>
               {(dash?.funnel || []).map((f) => (
                 <div className="stat" key={f.stage}>
@@ -114,7 +120,13 @@ export default function KpiPage() {
             </div>
           </Card>
 
-          <Card title="عملکرد اپراتورها">
+          <Card
+            title="عملکرد اپراتورها"
+            help={{
+              title: "عملکرد تیم",
+              body: "لیدهای ارجاع‌شده و وضعیت وظایف هر عضو — برای سنجش بار کاری و پیگیری."
+            }}
+          >
             {(dash?.agents || []).length === 0 ? (
               <EmptyState title="داده‌ای نیست" />
             ) : (
@@ -141,7 +153,13 @@ export default function KpiPage() {
             )}
           </Card>
 
-          <Card title="افزودن OKR">
+          <Card
+            title="افزودن OKR"
+            help={{
+              title: "OKR",
+              body: "هدف قابل اندازه‌گیری برای سازمان تعریف کنید (مثلاً نرخ تبدیل یا تعداد فروش ماهانه)."
+            }}
+          >
             <div className="form-grid">
               <label>
                 هدف OKR
@@ -161,7 +179,13 @@ export default function KpiPage() {
             </div>
           </Card>
 
-          <Card title="اهداف">
+          <Card
+            title="اهداف"
+            help={{
+              title: "لیست اهداف",
+              body: "پیشرفت فعلی نسبت به هدف هر OKR. مقدار فعلی از رول‌آپ KPI به‌روز می‌شود."
+            }}
+          >
             {okrs.length === 0 ? (
               <EmptyState title="OKR تعریف نشده" />
             ) : (

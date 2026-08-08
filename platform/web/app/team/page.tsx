@@ -61,7 +61,13 @@ export default function TeamPage() {
       ) : (
         <>
           {org && (
-            <Card title={org.name}>
+            <Card
+              title={org.name}
+              help={{
+                title: "سازمان",
+                body: "نام کسب‌وکار و پلن فعلی. سقف صندلی افزونه از پلن می‌آید."
+              }}
+            >
               <div className="hint">
                 پلن {org.plan} — حداکثر {String(org.limits.max_seats)} صندلی افزونه هم‌زمان
                 (کانال‌ها نامحدود)
@@ -74,7 +80,13 @@ export default function TeamPage() {
             </Card>
           )}
 
-          <Card title="دعوت عضو">
+          <Card
+            title="دعوت عضو"
+            help={{
+              title: "دعوت عضو",
+              body: "با شماره موبایل، اپراتور یا ادمین جدید به تیم اضافه کنید تا به لیدها و اینباکس دسترسی داشته باشد."
+            }}
+          >
             <div className="form-grid">
               <label>
                 موبایل عضو جدید
@@ -94,7 +106,13 @@ export default function TeamPage() {
             </div>
           </Card>
 
-          <Card title="اعضا">
+          <Card
+            title="اعضا"
+            help={{
+              title: "اعضای تیم",
+              body: "فهرست کسانی که به این سازمان دسترسی دارند و نقش هرکدام."
+            }}
+          >
             {members.length === 0 ? (
               <EmptyState title="عضوی نیست" />
             ) : (

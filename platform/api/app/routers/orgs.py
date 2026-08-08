@@ -10,6 +10,8 @@ from app.plans import list_plans_public, plan_exists, plan_limits
 from app.schemas import (
     InviteIn,
     MemberOut,
+    OnboardingAiSettingsIn,
+    OnboardingKnowledgeIn,
     OnboardingPayIn,
     OnboardingPlanIn,
     OnboardingProfileIn,
@@ -61,7 +63,7 @@ def get_onboarding(
 
     step = _step(auth.org)
     bootstrap_seat_token = None
-    if step == "guides":
+    if step in ("guides", "ai_settings", "knowledge"):
         seat = (
             db.query(ExtensionSeat)
             .filter(
@@ -105,7 +107,7 @@ def onboarding_profile(
     elif not auth.user.display_name:
         auth.user.display_name = name
     # Advance only from profile (or allow re-edit before done)
-    if _step(auth.org) in ("profile", "plan", "payment", "guides"):
+    if _step(auth.org) in ("profile", "plan", "payment", "ai_settings", "knowledge", "guides"):
         if _step(auth.org) == "profile":
             auth.org.onboarding_step = "plan"
     db.add(auth.org)
@@ -197,7 +199,7 @@ def onboarding_pay(
             "paid": True,
             "provider": "mock",
             "mock": True,
-            "step": "guides",
+            "step": "ai_settings",
             "org": _org_out(auth.org),
             "bootstrap_seat_token": token,
             "receipt": receipt_for(plan, ref=ref, amount_irr=amount),
@@ -224,6 +226,84 @@ def onboarding_pay(
     }
 
 
+@router.put("/onboarding/ai-settings")
+def onboarding_ai_settings(
+    body: OnboardingAiSettingsIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    from app.models import AiPolicy
+
+    role = (body.agent_role or "").strip()
+    prompt = (body.system_prompt or "").strip()
+    if len(role) < 3:
+        raise HTTPException(status_code=400, detail="نقش دستیار را وارد کنید")
+    if len(prompt) < 20:
+        raise HTTPException(
+            status_code=400,
+            detail="سیستم‌پرامپت باید حداقل چند جمله راهنما داشته باشد",
+        )
+
+    policy = db.query(AiPolicy).filter(AiPolicy.org_id == auth.org.id).first()
+    if not policy:
+        policy = AiPolicy(org_id=auth.org.id)
+    policy.agent_role = role
+    policy.system_prompt = prompt
+    policy.auto_send_enabled = bool(body.auto_send_enabled)
+    if not policy.allowed_stages:
+        policy.allowed_stages = ["جدید"]
+    db.add(policy)
+
+    if _step(auth.org) in ("ai_settings", "payment", "guides", "knowledge"):
+        if _step(auth.org) in ("ai_settings", "payment"):
+            auth.org.onboarding_step = "knowledge"
+    db.add(auth.org)
+    db.commit()
+    db.refresh(auth.org)
+    return {"ok": True, "step": _step(auth.org)}
+
+
+@router.post("/onboarding/knowledge")
+def onboarding_knowledge(
+    body: OnboardingKnowledgeIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    from app.models import KnowledgeChunk, KnowledgeDoc
+    from app.services.embeddings import chunk_text, embed_text
+    from app.services.queue import enqueue
+
+    title = (body.title or "").strip()
+    content = (body.content or "").strip()
+    if len(title) < 2:
+        raise HTTPException(status_code=400, detail="عنوان دانش لازم است")
+    if len(content) < 30:
+        raise HTTPException(
+            status_code=400,
+            detail="متن دانش خیلی کوتاه است — حداقل یک پاراگراف FAQ یا قیمت وارد کنید",
+        )
+
+    doc = KnowledgeDoc(org_id=auth.org.id, title=title, source="onboarding")
+    db.add(doc)
+    db.flush()
+    for part in chunk_text(content):
+        db.add(
+            KnowledgeChunk(
+                org_id=auth.org.id,
+                doc_id=doc.id,
+                content=part,
+                embedding=embed_text(part),
+            )
+        )
+
+    if _step(auth.org) in ("knowledge", "ai_settings"):
+        auth.org.onboarding_step = "guides"
+    db.add(auth.org)
+    db.commit()
+    enqueue("embed", {"doc_id": doc.id, "org_id": auth.org.id})
+    return {"ok": True, "step": _step(auth.org), "doc_id": doc.id}
+
+
 @router.post("/onboarding/complete")
 def onboarding_complete(
     auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
@@ -232,7 +312,7 @@ def onboarding_complete(
     if _step(auth.org) not in ("guides", "done"):
         raise HTTPException(
             status_code=400,
-            detail="ابتدا پروفایل، پلن و پرداخت را تکمیل کنید",
+            detail="ابتدا پروفایل، پلن، پرداخت، تنظیمات AI و دانش را تکمیل کنید",
         )
     auth.org.onboarding_step = "done"
     db.add(auth.org)

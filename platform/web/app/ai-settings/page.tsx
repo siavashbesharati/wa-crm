@@ -64,7 +64,17 @@ export default function AiSettingsPage() {
         <PageLoading />
       ) : (
         <div className="panel-narrow">
-          <Card title="نقش و سیستم‌پرامپت">
+          <Card
+            title="نقش و سیستم‌پرامپت"
+            help={{
+              title: "نقش و سیستم‌پرامپت",
+              body: "تعیین می‌کند دستیار چه کسی است و با چه قواعدی جواب بدهد (لحن، ممنوعیت‌ها، نحوه هدایت مشتری).",
+              tips: [
+                "نقش کوتاه و واضح باشد؛ مثلاً مشاور فروش تور.",
+                "سیستم‌پرامپت را مثل دستورالعمل داخلی بنویسید."
+              ]
+            }}
+          >
             <div className="form-grid">
               <label className="full">
                 نقش دستیار
@@ -88,7 +98,17 @@ export default function AiSettingsPage() {
             </div>
           </Card>
 
-          <Card title="پاسخ خودکار">
+          <Card
+            title="پاسخ خودکار"
+            help={{
+              title: "پاسخ خودکار",
+              body: "وقتی روشن باشد، به پیام‌های ورودی در مراحل مجاز و با حداقل اطمینان مشخص، خودکار پاسخ می‌فرستد.",
+              tips: [
+                "حداقل اطمینان را بالاتر بگذارید اگر پاسخ‌های ضعیف می‌بینید.",
+                "معمولاً فقط مرحله «جدید» را مجاز کنید."
+              ]
+            }}
+          >
             <div className="ai-settings-stack">
               <div className="ai-switch-row">
                 <div>

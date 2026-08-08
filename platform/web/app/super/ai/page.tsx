@@ -76,7 +76,13 @@ export default function SuperAiPage() {
         <PageLoading />
       ) : (
         <div className="stack" style={{ display: "grid", gap: 16 }}>
-          <Card title="کلید Gemini">
+          <Card
+            title="کلید Gemini"
+            help={{
+              title: "کلید Gemini",
+              body: "کلید API گوگل برای تولید پاسخ در کل پلتفرم. کلید ماسک می‌شود؛ فقط سوپر ادمین می‌تواند عوض کند."
+            }}
+          >
             <p style={{ margin: 0 }}>
               وضعیت:{" "}
               <Badge tone={form.gemini_api_key_configured ? "accent" : "danger"}>
@@ -101,7 +107,13 @@ export default function SuperAiPage() {
             </label>
           </Card>
 
-          <Card title="مدل و سیستم‌پرامپت سراسری">
+          <Card
+            title="مدل و سیستم‌پرامپت سراسری"
+            help={{
+              title: "پرامپت سراسری",
+              body: "مدل پیش‌فرض و دستورالعمل پایه برای همه کسب‌وکارها. پرامپت هر سازمان روی این لایه اضافه می‌شود."
+            }}
+          >
             <div className="form-grid">
               <label>
                 مدل Gemini

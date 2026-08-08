@@ -97,7 +97,13 @@ export default function TasksPage() {
         <PageLoading />
       ) : (
         <>
-      <Card title="وظیفه جدید">
+      <Card
+        title="وظیفه جدید"
+        help={{
+          title: "وظیفه جدید",
+          body: "کار پیگیری را به خودتان یا عضو تیم بسپارید و در صورت نیاز به یک لید وصل کنید."
+        }}
+      >
         <div className="form-grid">
           <label>
             عنوان
@@ -135,7 +141,13 @@ export default function TasksPage() {
         </div>
       </Card>
 
-      <Card title="فهرست وظایف">
+      <Card
+        title="فهرست وظایف"
+        help={{
+          title: "فهرست وظایف",
+          body: "وظایف باز و انجام‌شده تیم. با «انجام شد» وضعیت را ببندید."
+        }}
+      >
         {tasks.length === 0 ? (
           <EmptyState title="وظیفه‌ای نیست" text="از فرم بالا یک وظیفه بسازید." />
         ) : (

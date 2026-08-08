@@ -95,6 +95,16 @@ def rollup(auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRol
 
 @router.get("/dashboard")
 def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    from app.models import (
+        ChannelAccount,
+        ExtensionSeat,
+        KnowledgeDoc,
+        Membership,
+        User,
+    )
+
+    org_id = auth.org.id
+
     # latest snapshot per key
     keys = [
         "leads_total",
@@ -109,11 +119,35 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
     for key in keys:
         snap = (
             db.query(KpiSnapshot)
-            .filter(KpiSnapshot.org_id == auth.org.id, KpiSnapshot.key == key)
+            .filter(KpiSnapshot.org_id == org_id, KpiSnapshot.key == key)
             .order_by(KpiSnapshot.captured_at.desc())
             .first()
         )
         metrics[key] = snap.value if snap else 0
+
+    # Live extras (not only snapshots)
+    metrics["channels_online"] = float(
+        db.query(func.count(ChannelAccount.id))
+        .filter(ChannelAccount.org_id == org_id)
+        .scalar()
+        or 0
+    )
+    metrics["knowledge_docs"] = float(
+        db.query(func.count(KnowledgeDoc.id))
+        .filter(KnowledgeDoc.org_id == org_id)
+        .scalar()
+        or 0
+    )
+    seats_used = (
+        db.query(func.count(ExtensionSeat.id))
+        .filter(ExtensionSeat.org_id == org_id, ExtensionSeat.status != "revoked")
+        .scalar()
+        or 0
+    )
+    metrics["seats_used"] = float(seats_used)
+    from app.plans import plan_limits
+
+    metrics["seats_max"] = float(int(plan_limits(auth.org.plan).get("max_seats") or 0))
 
     # funnel by stage
     stages = ["جدید", "پیگیری", "پیشنهاد", "خرید", "بسته"]
@@ -121,32 +155,97 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
     for stage in stages:
         count = (
             db.query(func.count(Lead.id))
-            .filter(Lead.org_id == auth.org.id, Lead.stage == stage)
+            .filter(Lead.org_id == org_id, Lead.stage == stage)
             .scalar()
             or 0
         )
         funnel.append({"stage": stage, "count": count})
 
-    agent_stats = []
-    from app.models import Membership, User
+    # leads by channel
+    channel_rows = (
+        db.query(Lead.source_channel, func.count(Lead.id))
+        .filter(Lead.org_id == org_id)
+        .group_by(Lead.source_channel)
+        .all()
+    )
+    channels = []
+    for ch, count in channel_rows:
+        label = ch or "نامشخص"
+        if label == "whatsapp":
+            label = "واتساپ"
+        elif label == "divar":
+            label = "دیوار"
+        elif label == "":
+            label = "نامشخص"
+        channels.append({"channel": label, "count": int(count)})
+    channels.sort(key=lambda x: x["count"], reverse=True)
 
+    # daily inbound/outbound last 7 days
+    series = []
+    for i in range(6, -1, -1):
+        day = (datetime.utcnow() - timedelta(days=i)).date()
+        day_start = datetime(day.year, day.month, day.day)
+        day_end = day_start + timedelta(days=1)
+        inbound = (
+            db.query(func.count(Message.id))
+            .filter(
+                Message.org_id == org_id,
+                Message.direction == MessageDirection.inbound,
+                Message.created_at >= day_start,
+                Message.created_at < day_end,
+            )
+            .scalar()
+            or 0
+        )
+        outbound = (
+            db.query(func.count(Message.id))
+            .filter(
+                Message.org_id == org_id,
+                Message.direction == MessageDirection.outbound,
+                Message.created_at >= day_start,
+                Message.created_at < day_end,
+            )
+            .scalar()
+            or 0
+        )
+        new_leads = (
+            db.query(func.count(Lead.id))
+            .filter(
+                Lead.org_id == org_id,
+                Lead.created_at >= day_start,
+                Lead.created_at < day_end,
+            )
+            .scalar()
+            or 0
+        )
+        series.append(
+            {
+                "date": day.isoformat(),
+                "label": day.strftime("%m/%d"),
+                "inbound": int(inbound),
+                "outbound": int(outbound),
+                "leads": int(new_leads),
+            }
+        )
+
+    agent_stats = []
     members = (
         db.query(Membership, User)
         .join(User, User.id == Membership.user_id)
-        .filter(Membership.org_id == auth.org.id)
+        .filter(Membership.org_id == org_id)
         .all()
     )
     for membership, user in members:
         assigned = (
             db.query(func.count(Lead.id))
-            .filter(Lead.org_id == auth.org.id, Lead.assignee_id == user.id)
+            .filter(Lead.org_id == org_id, Lead.assignee_id == user.id)
             .scalar()
             or 0
         )
         done = (
             db.query(func.count(Task.id))
             .filter(
-                Task.org_id == auth.org.id,
+                Task.org_id == org_id,
                 Task.assignee_id == user.id,
                 Task.status == TaskStatus.done,
             )
@@ -156,7 +255,7 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
         open_tasks = (
             db.query(func.count(Task.id))
             .filter(
-                Task.org_id == auth.org.id,
+                Task.org_id == org_id,
                 Task.assignee_id == user.id,
                 Task.status == TaskStatus.open,
             )
@@ -173,7 +272,13 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
             }
         )
 
-    return {"metrics": metrics, "funnel": funnel, "agents": agent_stats}
+    return {
+        "metrics": metrics,
+        "funnel": funnel,
+        "channels": channels,
+        "series": series,
+        "agents": agent_stats,
+    }
 
 
 @router.get("/okrs", response_model=list[OkrOut])

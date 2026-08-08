@@ -118,7 +118,14 @@ export default function LeadsPage() {
         <PageLoading variant="list" />
       ) : (
         <>
-      <Card title="افزودن لید">
+      <Card
+        title="افزودن لید"
+        help={{
+          title: "افزودن لید",
+          body: "لید دستی بسازید یا صبر کنید افزونه از واتساپ/دیوار همگام کند.",
+          tips: ["نام لازم است؛ تلفن اختیاری ولی برای پیگیری مفید است."]
+        }}
+      >
         <div className="form-grid">
           <label>
             نام
@@ -141,6 +148,11 @@ export default function LeadsPage() {
 
       <Card
         title={`فهرست (${filtered.length})`}
+        help={{
+          title: "فهرست لیدها",
+          body: "همه سرنخ‌های مشترک تیم. می‌توانید مرحله فروش و ارجاع به اپراتور را همین‌جا عوض کنید.",
+          tips: ["فیلتر مرحله و جستجو در بالای صفحه در دسترس است."]
+        }}
         actions={
           <select
             value={stageFilter}

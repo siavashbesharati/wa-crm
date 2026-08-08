@@ -87,7 +87,12 @@ export default function PipelinePage() {
       {loading ? (
         <PageLoading />
       ) : filtered.length === 0 ? (
-        <Card>
+        <Card
+          help={{
+            title: "پایپلاین",
+            body: "برد کانبان مراحل فروش. کارت‌ها را بکشید تا مرحله لید عوض شود — ذخیره فوری است."
+          }}
+        >
           <EmptyState
             title="لیدی برای نمایش نیست"
             text="از صفحه لیدها بسازید یا افزونه را همگام کنید."

@@ -165,7 +165,13 @@ function BillingPageInner() {
         <PageLoading />
       ) : (
         <>
-          <Card title="پلن فعلی">
+          <Card
+            title="پلن فعلی"
+            help={{
+              title: "پلن فعلی",
+              body: "اشتراک فعال سازمان، محدودیت‌ها و روزهای باقی‌مانده تا تمدید."
+            }}
+          >
             <div className="hint">
               <strong>{org.name}</strong> · پلن{" "}
               <Badge tone="accent">{current?.label || org.plan}</Badge>
@@ -195,7 +201,13 @@ function BillingPageInner() {
             ) : null}
           </Card>
 
-          <Card title="انتخاب پلن">
+          <Card
+            title="انتخاب پلن"
+            help={{
+              title: "انتخاب پلن",
+              body: "پلن را عوض کنید یا تمدید کنید. پرداخت از طریق درگاه انجام می‌شود و سقف صندلی/امکانات به‌روز می‌گردد."
+            }}
+          >
             <div className="plan-grid">
               {plans.map((p) => (
                 <button

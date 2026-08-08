@@ -128,7 +128,14 @@ export default function SeatsPage() {
         <PageLoading />
       ) : (
         <div className="seats-page">
-          <Card title="چطور کار می‌کند؟">
+          <Card
+            title="چطور کار می‌کند؟"
+            help={{
+              title: "صندلی افزونه",
+              body: "هر نصب Chrome برای اتصال به واتساپ/دیوار به یک توکن یکتا نیاز دارد. این توکن همان «صندلی» است.",
+              tips: ["هر دستگاه/مرورگر یک صندلی جداگانه."]
+            }}
+          >
             <ol className="seats-howto">
               <li>یک صندلی بسازید و توکن را کپی کنید.</li>
               <li>در Chrome افزونه را باز کنید → تب واتساپ یا دیوار.</li>
@@ -143,7 +150,13 @@ export default function SeatsPage() {
             </p>
           </Card>
 
-          <Card title="صندلی جدید">
+          <Card
+            title="صندلی جدید"
+            help={{
+              title: "ساخت صندلی",
+              body: "توکن جدید می‌سازد و در حافظه کپی می‌کند تا در افزونه Paste کنید. سقف تعداد از پلن می‌آید."
+            }}
+          >
             <div className="seats-create">
               <label>
                 نام (مثلاً لپ‌تاپ فروش یا املاک)
@@ -171,7 +184,13 @@ export default function SeatsPage() {
             ) : null}
           </Card>
 
-          <Card title="صندلی‌های شما">
+          <Card
+            title="صندلی‌های شما"
+            help={{
+              title: "مدیریت صندلی‌ها",
+              body: "وضعیت هر صندلی (آزاد / در حال استفاده) و امکان کپی دوباره یا باطل کردن توکن."
+            }}
+          >
             {!data.seats.length ? (
               <EmptyState
                 title="هنوز صندلی ندارید"

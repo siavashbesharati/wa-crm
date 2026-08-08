@@ -58,7 +58,14 @@ export default function KnowledgePage() {
         <PageLoading />
       ) : (
         <>
-      <Card title="آپلود دانش">
+      <Card
+        title="آپلود دانش"
+        help={{
+          title: "آپلود دانش",
+          body: "متن FAQ، قیمت و قوانین کسب‌وکارتان را اینجا بگذارید تا دستیار فقط بر اساس همین منبع جواب بدهد.",
+          tips: ["هر سند ایندکس می‌شود و در پیشنهاد/پاسخ خودکار استفاده می‌گردد."]
+        }}
+      >
         <div className="form-grid">
           <label className="full">
             عنوان
@@ -74,7 +81,13 @@ export default function KnowledgePage() {
         </div>
       </Card>
 
-      <Card title="اسناد">
+      <Card
+        title="اسناد"
+        help={{
+          title: "اسناد دانش",
+          body: "لیست سندهایی که قبلاً آپلود کرده‌اید. هر سند منبع پاسخ‌های دقیق‌تر AI است."
+        }}
+      >
         {docs.length === 0 ? (
           <EmptyState title="سندی نیست" text="FAQ یا قیمت‌ها را آپلود کنید." />
         ) : (

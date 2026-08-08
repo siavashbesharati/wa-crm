@@ -198,7 +198,14 @@ export default function SuperSmsTemplatesPage() {
         <PageLoading />
       ) : (
         <>
-          <Card title={editingId ? "ویرایش قالب" : "قالب جدید"}>
+          <Card
+            title={editingId ? "ویرایش قالب" : "قالب جدید"}
+            help={{
+              title: "قالب sms.ir",
+              body: "قالب VERIFY برای OTP. Template ID و نام پارامترها باید دقیقاً با پنل sms.ir یکی باشد.",
+              tips: ["یکی از قالب‌ها را به‌عنوان پیش‌فرض OTP علامت بزنید."]
+            }}
+          >
             <p className="hint" style={{ marginTop: 0 }}>
               Template ID را از پنل sms.ir (ارسال سریع / VERIFY) کپی کنید. نام پارامترها باید
               دقیقاً مثل کلید داخل قالب باشد (بدون #).
@@ -330,7 +337,13 @@ export default function SuperSmsTemplatesPage() {
             </div>
           </Card>
 
-          <Card title="قالب‌های ثبت‌شده">
+          <Card
+            title="قالب‌های ثبت‌شده"
+            help={{
+              title: "لیست قالب‌ها",
+              body: "قالب‌های OTP و سفارشی ذخیره‌شده. ارسال کد ورود از قالب پیش‌فرض فعال استفاده می‌کند."
+            }}
+          >
             {rows.length === 0 ? (
               <EmptyState
                 title="قالبی نیست"

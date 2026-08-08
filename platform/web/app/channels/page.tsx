@@ -59,7 +59,17 @@ export default function ChannelsPage() {
       {loading ? (
         <PageLoading />
       ) : (
-        <Card title="اکانت‌های من">
+        <Card
+          title="اکانت‌های من"
+          help={{
+            title: "کانال‌ها",
+            body: "اکانت‌های واتساپ و دیوار که از طریق افزونه به پنل وصل شده‌اند.",
+            tips: [
+              "روشن یعنی تب مربوطه باز و افزونه آنلاین است.",
+              "توکن صندلی را در افزونه وارد کنید تا کانال خودش ثبت شود."
+            ]
+          }}
+        >
           {accounts.length === 0 ? (
             <EmptyState
               title="هنوز کانالی نیست"

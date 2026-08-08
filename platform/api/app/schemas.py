@@ -57,6 +57,17 @@ class OnboardingPayIn(BaseModel):
     mock_card: str = "4242"
 
 
+class OnboardingAiSettingsIn(BaseModel):
+    agent_role: str
+    system_prompt: str
+    auto_send_enabled: bool = True
+
+
+class OnboardingKnowledgeIn(BaseModel):
+    title: str
+    content: str
+
+
 class MemberOut(BaseModel):
     id: str
     user_id: str

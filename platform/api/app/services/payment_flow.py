@@ -76,7 +76,7 @@ def apply_paid_plan(
     org.plan = plan
     extend_subscription(org, plan=plan)
     if purpose == "onboarding":
-        org.onboarding_step = "guides"
+        org.onboarding_step = "ai_settings"
     db.add(org)
     token = None
     if create_seat:

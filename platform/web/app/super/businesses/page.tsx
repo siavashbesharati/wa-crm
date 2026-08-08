@@ -141,7 +141,13 @@ export default function SuperBusinessesPage() {
   return (
     <SuperShell title="کسب‌وکارها" sub="ثبت، پلن، تعلیق و ورود پشتیبانی به پنل هر سازمان">
       <div className="stack" style={{ display: "grid", gap: 16 }}>
-        <Card title="ساخت کسب‌وکار جدید">
+        <Card
+          title="ساخت کسب‌وکار جدید"
+          help={{
+            title: "ثبت کسب‌وکار",
+            body: "سازمان جدید با مالک و پلن اولیه می‌سازد. مالک می‌تواند با OTP وارد پنل خودش شود."
+          }}
+        >
           <div className="form-grid">
             <label>
               نام کسب‌وکار
@@ -175,7 +181,13 @@ export default function SuperBusinessesPage() {
           </div>
         </Card>
 
-        <Card title="همه کسب‌وکارهای ثبت‌شده">
+        <Card
+          title="همه کسب‌وکارهای ثبت‌شده"
+          help={{
+            title: "لیست سازمان‌ها",
+            body: "مدیریت پلن، تعلیق، و ورود پشتیبانی به پنل هر کسب‌وکار."
+          }}
+        >
           {loading ? (
             <PageLoading />
           ) : rows.length === 0 ? (

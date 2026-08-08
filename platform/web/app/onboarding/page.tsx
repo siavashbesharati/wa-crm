@@ -43,8 +43,34 @@ const STEPS = [
   { id: "profile", label: "پروفایل" },
   { id: "plan", label: "پلن" },
   { id: "payment", label: "پرداخت" },
+  { id: "ai_settings", label: "تنظیمات AI" },
+  { id: "knowledge", label: "دانش AI" },
   { id: "guides", label: "راهنما" }
 ];
+
+const AI_ROLE_EXAMPLES = [
+  "مشاور فروش تورهای گردشگری",
+  "پشتیبان فروش فروشگاه آنلاین",
+  "هماهنگ‌کننده نوبت کلینیک زیبایی"
+];
+
+const AI_PROMPT_EXAMPLE = `تو دستیار فروش این کسب‌وکار هستی.
+- مودب، مختصر و به فارسی پاسخ بده.
+- فقط بر اساس دانش بارگذاری‌شده قیمت و شرایط بگو؛ اگر مطمئن نیستی بگو «همکارم پیگیری می‌کند».
+- شماره کارت یا لینک پرداخت نفرست مگر در دانش آمده باشد.
+- مشتری را به مرحله بعد (مثلاً ارسال مشخصات مسافر) هدایت کن.`;
+
+const KB_TITLE_EXAMPLE = "سوالات متداول و قیمت‌ها";
+const KB_CONTENT_EXAMPLE = `سوال: ساعت پاسخگویی؟
+جواب: همه روزه از ۹ صبح تا ۹ شب.
+
+سوال: هزینه تور استانبول چند است؟
+جواب: تور ۳ شب از ۲۸ میلیون تومان (بدون بلیط هواپیما). پیش‌پرداخت ۳۰٪.
+
+سوال: کنسلی؟
+جواب: تا ۷۲ ساعت قبل از سفر با کسر ۱۰٪، بعد از آن غیرقابل استرداد.
+
+نکته: برای رزرو نام کامل، کد ملی و تاریخ سفر را بگیرید.`;
 
 function stepIndex(step: string) {
   const i = STEPS.findIndex((s) => s.id === step);
@@ -82,6 +108,11 @@ function OnboardingPageInner() {
   const [city, setCity] = useState("");
   const [selectedPlan, setSelectedPlan] = useState("starter");
   const [mockCard, setMockCard] = useState("4242");
+  const [agentRole, setAgentRole] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [autoSend, setAutoSend] = useState(true);
+  const [kbTitle, setKbTitle] = useState("");
+  const [kbContent, setKbContent] = useState("");
   const [receipt, setReceipt] = useState<{
     ref: string;
     label: string;
@@ -245,6 +276,57 @@ function OnboardingPageInner() {
     }
   }
 
+  async function saveAiSettings() {
+    if (agentRole.trim().length < 3) {
+      toast.push("نقش دستیار را وارد کنید یا یک نمونه را انتخاب کنید", "err");
+      return;
+    }
+    if (systemPrompt.trim().length < 20) {
+      toast.push("سیستم‌پرامپت را کامل‌تر بنویسید یا نمونه را اعمال کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await api<{ step: string }>("/orgs/onboarding/ai-settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          agent_role: agentRole.trim(),
+          system_prompt: systemPrompt.trim(),
+          auto_send_enabled: autoSend
+        })
+      });
+      toast.push("تنظیمات AI ذخیره شد", "ok");
+      setData((d) => (d ? { ...d, step: res.step } : d));
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveKnowledge() {
+    if (kbTitle.trim().length < 2 || kbContent.trim().length < 30) {
+      toast.push("عنوان و متن دانش را پر کنید یا نمونه را اعمال کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await api<{ step: string }>("/orgs/onboarding/knowledge", {
+        method: "POST",
+        body: JSON.stringify({
+          title: kbTitle.trim(),
+          content: kbContent.trim()
+        })
+      });
+      toast.push("دانش AI ذخیره شد", "ok");
+      setData((d) => (d ? { ...d, step: res.step } : d));
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function finish() {
     setBusy(true);
     try {
@@ -270,7 +352,10 @@ function OnboardingPageInner() {
     return (
       <div className="wizard-wrap">
         <div className="wizard-card">
-          <Card title="در انتظار راه‌اندازی">
+          <Card
+            title="در انتظار راه‌اندازی"
+            help="مالک کسب‌وکار باید ویزارد را تمام کند تا بقیه اعضا وارد داشبورد شوند."
+          >
             <p className="hint">
               مالک کسب‌وکار هنوز راه‌اندازی را تمام نکرده است.
             </p>
@@ -340,7 +425,13 @@ function OnboardingPageInner() {
         ) : (
           <div key={data.step} className="wizard-pane">
             {data.step === "profile" && (
-              <Card title="۱. تکمیل پروفایل">
+              <Card
+                title="۱. تکمیل پروفایل"
+                help={{
+                  title: "پروفایل",
+                  body: "نام کسب‌وکار و مشخصات پایه — روی فاکتور، داشبورد و پیام‌های سیستم دیده می‌شود."
+                }}
+              >
                 <div className="form-grid">
                   <label className="full">
                     نام کسب‌وکار
@@ -384,7 +475,13 @@ function OnboardingPageInner() {
             )}
 
             {data.step === "plan" && (
-              <Card title="۲. انتخاب پلن">
+              <Card
+                title="۲. انتخاب پلن"
+                help={{
+                  title: "انتخاب پلن",
+                  body: "سقف صندلی افزونه و امکانات اشتراک را مشخص می‌کند. بعداً از صفحه صورتحساب قابل ارتقا است."
+                }}
+              >
                 <div className="plan-grid">
                   {plans.map((p) => (
                     <button
@@ -428,9 +525,13 @@ function OnboardingPageInner() {
                     ? "۳. پرداخت با زیبال"
                     : "۳. پرداخت"
                 }
+                help={{
+                  title: "پرداخت",
+                  body: "فعال‌سازی اشتراک انتخاب‌شده. بعد از موفقیت، صندلی افزونه ساخته می‌شود و مراحل AI شروع می‌شود."
+                }}
               >
                 <p className="hint">
-                  بعد از پرداخت موفق، صندلی افزونه ساخته می‌شود و وارد بخش راهنما می‌شوید.
+                  بعد از پرداخت موفق، صندلی افزونه ساخته می‌شود و وارد تنظیمات AI می‌شوید.
                   {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
                     <>
                       {" "}
@@ -479,8 +580,171 @@ function OnboardingPageInner() {
               </Card>
             )}
 
+            {data.step === "ai_settings" && (
+              <Card
+                title="۴. تنظیمات دستیار AI"
+                help={{
+                  title: "تنظیمات AI",
+                  body: "نقش و قوانین پاسخ دستیار را مشخص کنید تا لحن و دقت فروش با برند شما یکی باشد.",
+                  tips: ["از نمونه‌های آماده استفاده کنید و بعد سفارشی کنید."]
+                }}
+              >
+                <div className="wizard-ai-intro">
+                  <p>
+                    نقش و دستورالعمل دستیار مشخص می‌کند <strong>چطور</strong> با مشتری حرف بزند.
+                    بعداً می‌توانید از منوی «تنظیمات AI» هم ویرایش کنید.
+                  </p>
+                </div>
+
+                <div className="form-grid">
+                  <label className="full">
+                    نقش دستیار
+                    <input
+                      value={agentRole}
+                      onChange={(e) => setAgentRole(e.target.value)}
+                      placeholder="مثلاً مشاور فروش تورهای گردشگری"
+                    />
+                  </label>
+                  <div className="full wizard-example-block">
+                    <div className="hint">نمونه‌های آماده — کلیک کنید تا پر شود:</div>
+                    <div className="wizard-example-chips">
+                      {AI_ROLE_EXAMPLES.map((ex) => (
+                        <button
+                          key={ex}
+                          type="button"
+                          className="wizard-example-chip"
+                          onClick={() => setAgentRole(ex)}
+                        >
+                          {ex}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="full">
+                    سیستم‌پرامپت (قوانین پاسخ)
+                    <textarea
+                      rows={7}
+                      value={systemPrompt}
+                      onChange={(e) => setSystemPrompt(e.target.value)}
+                      placeholder="لحن، ممنوعیت‌ها، و نحوه هدایت مشتری…"
+                    />
+                  </label>
+                  <div className="full wizard-example-block">
+                    <div className="wizard-example-head">
+                      <span className="hint">نمونه سیستم‌پرامپت فروش</span>
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        style={{ width: "auto", padding: "6px 12px" }}
+                        onClick={() => setSystemPrompt(AI_PROMPT_EXAMPLE)}
+                      >
+                        اعمال نمونه
+                      </button>
+                    </div>
+                    <pre className="wizard-example-pre">{AI_PROMPT_EXAMPLE}</pre>
+                  </div>
+
+                  <div className="full ai-switch-row" style={{ marginTop: 4 }}>
+                    <div>
+                      <strong>فعال‌سازی پاسخ خودکار</strong>
+                      <div className="hint">
+                        اگر روشن باشد، به پیام‌های جدید (مرحله «جدید») خودکار جواب می‌دهد.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`ui-switch${autoSend ? " on" : ""}`}
+                      role="switch"
+                      aria-checked={autoSend}
+                      onClick={() => setAutoSend((v) => !v)}
+                    >
+                      <span className="ui-switch-knob" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="wizard-actions">
+                  <Button className="wizard-btn" loading={busy} onClick={saveAiSettings}>
+                    ذخیره و ادامه به دانش AI
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {data.step === "knowledge" && (
+              <Card
+                title="۵. پایگاه دانش AI"
+                help={{
+                  title: "دانش AI",
+                  body: "FAQ و قیمت‌ها را بارگذاری کنید تا دستیار فقط بر اساس اطلاعات واقعی کسب‌وکار جواب بدهد."
+                }}
+              >
+                <div className="wizard-ai-intro">
+                  <p>
+                    دانش AI منبع حقیقت دستیار است: <strong>قیمت‌ها، FAQ، شرایط کنسلی</strong> و هر
+                    چیزی که باید دقیق بگوید. بدون دانش، پاسخ‌ها عمومی و کم‌دقت می‌شوند.
+                  </p>
+                  <ul className="wizard-ai-bullets">
+                    <li>هر سند به تکه‌های کوچک تبدیل و برای جستجو ایندکس می‌شود.</li>
+                    <li>می‌توانید بعداً از منوی «دانش AI» اسناد بیشتری اضافه کنید.</li>
+                    <li>حداقل یک سند در این مرحله لازم است.</li>
+                  </ul>
+                </div>
+
+                <div className="form-grid">
+                  <label className="full">
+                    عنوان سند
+                    <input
+                      value={kbTitle}
+                      onChange={(e) => setKbTitle(e.target.value)}
+                      placeholder={KB_TITLE_EXAMPLE}
+                    />
+                  </label>
+                  <label className="full">
+                    متن دانش (FAQ / قیمت / قوانین)
+                    <textarea
+                      rows={9}
+                      value={kbContent}
+                      onChange={(e) => setKbContent(e.target.value)}
+                      placeholder="سوال و جواب‌ها را اینجا بنویسید…"
+                    />
+                  </label>
+                  <div className="full wizard-example-block">
+                    <div className="wizard-example-head">
+                      <span className="hint">نمونه دانش آژانس مسافرتی</span>
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        style={{ width: "auto", padding: "6px 12px" }}
+                        onClick={() => {
+                          setKbTitle(KB_TITLE_EXAMPLE);
+                          setKbContent(KB_CONTENT_EXAMPLE);
+                        }}
+                      >
+                        اعمال نمونه
+                      </button>
+                    </div>
+                    <pre className="wizard-example-pre">{KB_CONTENT_EXAMPLE}</pre>
+                  </div>
+                </div>
+
+                <div className="wizard-actions">
+                  <Button className="wizard-btn" loading={busy} onClick={saveKnowledge}>
+                    ذخیره دانش و ادامه
+                  </Button>
+                </div>
+              </Card>
+            )}
+
             {data.step === "guides" && (
-              <Card title="۴. راهنما و افزونه">
+              <Card
+                title="۶. راهنما و افزونه"
+                help={{
+                  title: "نصب افزونه",
+                  body: "توکن صندلی را در Chrome وارد کنید و تب واتساپ/دیوار را باز بگذارید تا همگام‌سازی شروع شود."
+                }}
+              >
                 {receipt ? (
                   <p className="hint">
                     رسید: <strong>{receipt.ref}</strong> · {receipt.label}

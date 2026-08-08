@@ -176,7 +176,13 @@ export default function SuperPlansPage() {
         <PageLoading />
       ) : (
         <>
-          <Card title={editingId ? `ویرایش: ${editingId}` : "پلن جدید"}>
+          <Card
+            title={editingId ? `ویرایش: ${editingId}` : "پلن جدید"}
+            help={{
+              title: "تعریف پلن",
+              body: "قیمت، سقف صندلی، امکانات و برچسب نمایشی پلن‌هایی که کسب‌وکارها در آنبوردینگ/صورتحساب می‌بینند."
+            }}
+          >
             <div className="form-grid">
               {!editingId ? (
                 <label>
@@ -293,7 +299,13 @@ export default function SuperPlansPage() {
             </div>
           </Card>
 
-          <Card title="همه پلن‌ها">
+          <Card
+            title="همه پلن‌ها"
+            help={{
+              title: "فهرست پلن‌ها",
+              body: "پلن‌های فعال/غیرفعال. ترتیب نمایش و امکان ویرایش سریع از اینجا است."
+            }}
+          >
             {plans.length === 0 ? (
               <EmptyState title="پلنی نیست" text="از فرم بالا یکی بسازید." />
             ) : (

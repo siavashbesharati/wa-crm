@@ -46,7 +46,13 @@ export default function SuperSystemPage() {
         <PageLoading />
       ) : (
         <div className="stack" style={{ display: "grid", gap: 16 }}>
-          <Card title="محیط">
+          <Card
+            title="محیط"
+            help={{
+              title: "محیط اجرا",
+              body: "نوع محیط API (development/production) و وضعیت سرویس‌های وابسته."
+            }}
+          >
             <p style={{ margin: 0 }}>
               وضعیت: <Badge tone={data.ok ? "accent" : "danger"}>{data.ok ? "OK" : "خطا"}</Badge>
               {" · "}
@@ -60,7 +66,13 @@ export default function SuperSystemPage() {
               </Badge>
             </p>
           </Card>
-          <Card title="شمارنده‌ها">
+          <Card
+            title="شمارنده‌ها"
+            help={{
+              title: "شمارنده‌ها",
+              body: "آمار سراسری پلتفرم: تعداد سازمان‌ها، کاربران، پیام‌ها و سایر متریک‌های سلامت."
+            }}
+          >
             <table>
               <tbody>
                 <tr>
