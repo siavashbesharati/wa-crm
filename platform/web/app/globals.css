@@ -374,7 +374,7 @@ button, input, select, textarea {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.main { padding: 18px 22px 40px; }
+.main { padding: 18px 150px 40px; }
 
 /* ——— Primitives ——— */
 .card {
@@ -1754,19 +1754,10 @@ a.btn.wizard-btn:hover {
 .checklist-item:hover { border-color: #93c5fd; }
 .checklist-item.done { border-color: #bbf7d0; background: var(--success-soft); }
 
-/* Dashboard content container */
-.dashboard-container {
-  width: 80%;
-  margin-inline: auto;
-}
+/* Home dashboard layout (width comes from .main padding) */
 .dash-home {
   display: grid;
   gap: 16px;
-  width: min(100%, 1100px);
-  margin-inline: auto;
-}
-.dashboard-container.dash-home {
-  width: min(92%, 1100px);
 }
 .dash-hero {
   display: flex;
@@ -2046,12 +2037,6 @@ a.btn.wizard-btn:hover {
   .dash-setup-row { grid-template-columns: 1fr; }
 }
 
-/* Narrow centered panel content (AI settings, …) */
-.panel-narrow {
-  width: 70%;
-  max-width: 720px;
-  margin-inline: auto;
-}
 .ai-settings-stack {
   display: grid;
   gap: 22px;
@@ -2273,12 +2258,6 @@ a.btn.wizard-btn:hover {
   }
   .main {
     padding: 12px 14px 28px;
-  }
-
-  .dashboard-container,
-  .panel-narrow {
-    width: 100%;
-    max-width: none;
   }
 
   .form-grid,

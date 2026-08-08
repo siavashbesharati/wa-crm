@@ -63,7 +63,7 @@ export default function AiSettingsPage() {
       {loading || !policy ? (
         <PageLoading />
       ) : (
-        <div className="panel-narrow">
+        <>
           <Card
             title="نقش و سیستم‌پرامپت"
             help={{
@@ -185,7 +185,7 @@ export default function AiSettingsPage() {
               </Button>
             </div>
           </Card>
-        </div>
+        </>
       )}
     </Shell>
   );

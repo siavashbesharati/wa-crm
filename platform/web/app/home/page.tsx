@@ -240,7 +240,7 @@ export default function HomePage() {
       {loading ? (
         <PageLoading />
       ) : (
-        <div className="dashboard-container dash-home">
+        <div className="dash-home">
           <div className="dash-hero">
             <div>
               <h2>{me?.org.name || "سازمان"}</h2>
