@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import SuperShell from "@/components/SuperShell";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -166,6 +167,9 @@ export default function SuperAiPage() {
               <Button loading={busy} onClick={save}>
                 ذخیره تنظیمات
               </Button>
+              <Link href="/super/ai-playground" className="btn secondary">
+                زمین‌بازی AI
+              </Link>
             </div>
           </Card>
         </div>

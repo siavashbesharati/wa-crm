@@ -430,6 +430,64 @@ def put_ai_defaults(
     }
 
 
+class AiPlaygroundIn(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    org_id: str = ""
+    lead_name: str = "مشتری تست"
+    lead_stage: str = "جدید"
+    system_prompt_override: str = ""
+    agent_role_override: str = ""
+    temperature: float = Field(default=0.4, ge=0.0, le=1.5)
+
+
+@router.post("/ai-playground")
+def ai_playground(
+    body: AiPlaygroundIn,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    """Test platform Gemini config (optional: attach a business knowledge base)."""
+    import time
+
+    from app.services.ai_reply import playground_reply
+
+    org_id = (body.org_id or "").strip() or None
+    if org_id:
+        org = db.get(Organization, org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="کسب‌وکار یافت نشد")
+
+    started = time.perf_counter()
+    try:
+        result = playground_reply(
+            db,
+            message=body.message.strip(),
+            org_id=org_id,
+            lead_name=(body.lead_name or "").strip() or "مشتری تست",
+            lead_stage=(body.lead_stage or "").strip() or "جدید",
+            system_prompt_override=(body.system_prompt_override or "").strip() or None,
+            agent_role_override=(body.agent_role_override or "").strip() or None,
+            temperature=float(body.temperature),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    return {
+        "ok": True,
+        "reply": result["reply"],
+        "confidence": result["confidence"],
+        "sources": result.get("sources") or [],
+        "provider": result.get("provider"),
+        "model": result.get("model"),
+        "system_prompt_used": result.get("system_prompt_used") or "",
+        "knowledge_hits": int(result.get("knowledge_hits") or 0),
+        "org_id": result.get("org_id") or "",
+        "org_name": (db.get(Organization, org_id).name if org_id else ""),
+        "elapsed_ms": elapsed_ms,
+    }
+
+
 @router.get("/system")
 def system_status(
     db: Session = Depends(get_db),

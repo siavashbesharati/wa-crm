@@ -146,3 +146,91 @@ def generate_reply(
         "sources": sources,
         "provider": "gemini",
     }
+
+
+def playground_reply(
+    db: Session,
+    *,
+    message: str,
+    org_id: str | None = None,
+    lead_name: str = "مشتری تست",
+    lead_stage: str = "جدید",
+    system_prompt_override: str | None = None,
+    agent_role_override: str | None = None,
+    temperature: float = 0.4,
+) -> dict:
+    """Super-admin playground: uses platform Gemini config (+ optional org knowledge)."""
+    platform = get_platform_ai_settings(db)
+    api_key = (platform.get("gemini_api_key") or "").strip()
+    model = str(platform.get("gemini_model") or gemini.DEFAULT_MODEL)
+    if not api_key:
+        raise ValueError("کلید Gemini پیکربندی نشده — اول از تنظیمات AI ذخیره کنید")
+
+    policy: AiPolicy | None = None
+    hits: list[tuple[KnowledgeChunk, float]] = []
+    if org_id:
+        policy = db.query(AiPolicy).filter(AiPolicy.org_id == org_id).first()
+        hits = retrieve_knowledge(db, org_id, message, k=4)
+
+    if system_prompt_override is not None and system_prompt_override.strip():
+        parts = [system_prompt_override.strip()]
+    else:
+        parts = []
+        plat = (platform.get("system_prompt") or "").strip()
+        if plat:
+            parts.append(plat)
+
+    role = (agent_role_override or "").strip()
+    if not role and policy:
+        role = (getattr(policy, "agent_role", None) or "").strip()
+    if role:
+        parts.append(f"نقش تو در این کسب‌وکار: {role}")
+
+    if policy and not (system_prompt_override or "").strip():
+        org_sys = (getattr(policy, "system_prompt", None) or "").strip()
+        if org_sys:
+            parts.append(org_sys)
+
+    system_prompt = "\n\n".join(parts) or DEFAULT_PLATFORM_SYSTEM
+
+    kb_blocks = []
+    for i, (chunk, score) in enumerate(hits, start=1):
+        if score < 0.02:
+            continue
+        kb_blocks.append(f"[{i}] (امتیاز {score:.2f})\n{chunk.content[:800]}")
+    if org_id:
+        kb_text = "\n\n".join(kb_blocks) if kb_blocks else "(دانش مرتبطی یافت نشد)"
+    else:
+        kb_text = "(بدون سازمان — فقط پرامپت پلتفرم)"
+
+    user_prompt = (
+        f"نام لید: {(lead_name or 'مشتری تست').strip()}\n"
+        f"مرحله قیف: {(lead_stage or 'جدید').strip()}\n\n"
+        f"دانش سازمانی مرتبط:\n{kb_text}\n\n"
+        f"پیام مشتری:\n{message.strip()}\n\n"
+        "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."
+    )
+
+    reply = gemini.generate_text(
+        api_key=api_key,
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=float(temperature),
+    )
+    top_score = float(hits[0][1]) if hits else 0.0
+    sources = [h[0].content[:160] for h in hits if h[1] > 0.05]
+    confidence = round(max(0.45, min(0.98, 0.35 + top_score * 0.65)), 3) if hits else 0.5
+    if hits and not sources:
+        confidence = min(confidence, 0.55)
+
+    return {
+        "reply": reply,
+        "confidence": confidence,
+        "sources": sources,
+        "provider": "gemini",
+        "model": model,
+        "system_prompt_used": system_prompt,
+        "knowledge_hits": len(sources),
+        "org_id": org_id or "",
+    }

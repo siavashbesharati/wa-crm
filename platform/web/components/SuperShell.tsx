@@ -15,6 +15,7 @@ const NAV = [
   { href: "/super/plans", label: "پلن‌ها", ico: "◈" },
   { href: "/super/sms-templates", label: "قالب پیامک", ico: "✎" },
   { href: "/super/ai", label: "تنظیمات AI", ico: "✦" },
+  { href: "/super/ai-playground", label: "زمین‌بازی AI", ico: "▷" },
   { href: "/super/system", label: "سیستم", ico: "◉" }
 ];
 
