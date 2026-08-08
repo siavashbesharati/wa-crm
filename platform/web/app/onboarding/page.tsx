@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 
 type Plan = {
@@ -645,23 +646,13 @@ function OnboardingPageInner() {
                     <pre className="wizard-example-pre">{AI_PROMPT_EXAMPLE}</pre>
                   </div>
 
-                  <div className="full ai-switch-row" style={{ marginTop: 4 }}>
-                    <div>
-                      <strong>فعال‌سازی پاسخ خودکار</strong>
-                      <div className="hint">
-                        اگر روشن باشد، به پیام‌های جدید (مرحله «جدید») خودکار جواب می‌دهد.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className={`ui-switch${autoSend ? " on" : ""}`}
-                      role="switch"
-                      aria-checked={autoSend}
-                      onClick={() => setAutoSend((v) => !v)}
-                    >
-                      <span className="ui-switch-knob" />
-                    </button>
-                  </div>
+                  <Switch
+                    full
+                    label="فعال‌سازی پاسخ خودکار"
+                    hint="اگر روشن باشد، به پیام‌های جدید (مرحله «جدید») خودکار جواب می‌دهد."
+                    checked={autoSend}
+                    onChange={setAutoSend}
+                  />
                 </div>
 
                 <div className="wizard-actions">

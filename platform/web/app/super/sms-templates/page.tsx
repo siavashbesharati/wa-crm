@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 
 type SmsParam = {
@@ -240,22 +241,18 @@ export default function SuperSmsTemplatesPage() {
                   <option value="custom">سایر</option>
                 </select>
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-                />
-                فعال
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_default}
-                  onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked }))}
-                />
-                پیش‌فرض برای OTP
-              </label>
+              <Switch
+                full
+                label="فعال"
+                checked={form.is_active}
+                onChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+              />
+              <Switch
+                full
+                label="پیش‌فرض برای OTP"
+                checked={form.is_default}
+                onChange={(v) => setForm((f) => ({ ...f, is_default: v }))}
+              />
             </div>
 
             <div style={{ marginTop: 16 }}>

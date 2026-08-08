@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 
 type AiDefaults = {
@@ -139,16 +140,12 @@ export default function SuperAiPage() {
                   }
                 />
               </label>
-              <label className="full check">
-                <input
-                  type="checkbox"
-                  checked={form.auto_send_default}
-                  onChange={(e) =>
-                    setForm({ ...form, auto_send_default: e.target.checked })
-                  }
-                />
-                فعال بودن auto-send برای کسب‌وکارهای تازه
-              </label>
+              <Switch
+                full
+                label="فعال بودن auto-send برای کسب‌وکارهای تازه"
+                checked={form.auto_send_default}
+                onChange={(v) => setForm({ ...form, auto_send_default: v })}
+              />
               <label className="full">
                 سیستم‌پرامپت سراسری
                 <textarea

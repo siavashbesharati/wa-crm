@@ -543,6 +543,10 @@ button, input, select, textarea {
   gap: 8px;
   color: var(--text);
 }
+.form-grid .switch-row.full,
+.form-grid .switch-row {
+  grid-column: 1 / -1;
+}
 
 input, select, textarea {
   width: 100%;
@@ -2050,11 +2054,24 @@ a.btn.wizard-btn:hover {
 .sidebar-backdrop {
   display: none;
 }
-.ai-switch-row {
+.ai-switch-row,
+.switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.switch-row-copy {
+  min-width: 0;
+}
+.switch-row-copy strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
 }
 .ui-switch {
   position: relative;
@@ -2291,10 +2308,17 @@ a.btn.wizard-btn:hover {
   .stats {
     grid-template-columns: 1fr;
   }
-  .ai-switch-row {
+  .ai-switch-row,
+  .switch-row {
     align-items: flex-start;
   }
   .page-sub {
     display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .dash-grid-2 {
+    grid-template-columns: 1fr !important;
   }
 }

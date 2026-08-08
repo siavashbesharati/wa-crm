@@ -28,6 +28,17 @@ type Org = {
   days_remaining?: number | null;
 };
 
+type PayHistory = {
+  id: string;
+  purpose: string;
+  plan: string;
+  amount_irr: number;
+  provider: string;
+  status: string;
+  ref_number: string;
+  created_at: string | null;
+};
+
 export default function BillingPage() {
   return (
     <Suspense
@@ -60,6 +71,7 @@ function BillingPageInner() {
     label: string;
     amount_irr: number;
   } | null>(null);
+  const [history, setHistory] = useState<PayHistory[]>([]);
 
   const load = useCallback(async () => {
     if (!getSession()) {
@@ -68,16 +80,18 @@ function BillingPageInner() {
     }
     setLoading(true);
     try {
-      const [o, p, me, cfg] = await Promise.all([
+      const [o, p, me, cfg, hist] = await Promise.all([
         api<Org>("/orgs/current"),
         api<{ plans: Plan[] }>("/orgs/plans"),
         api<{ role: string }>("/auth/me"),
         api<{ provider?: string }>("/payments/config", { auth: false }).catch(() => ({
           provider: "mock"
-        }))
+        })),
+        api<{ payments: PayHistory[] }>("/payments/history").catch(() => ({ payments: [] }))
       ]);
       setOrg(o);
       setPlans(p.plans || []);
+      setHistory(hist.payments || []);
       setRole(me.role || "agent");
       setSelected(o.plan === "starter" ? "growth" : o.plan);
       const pr = (cfg.provider || "mock").toLowerCase();
@@ -258,9 +272,68 @@ function BillingPageInner() {
             ) : null}
           </Card>
 
+          {history.length > 0 ? (
+            <Card
+              title="تاریخچه پرداخت"
+              help={{
+                title: "تاریخچه",
+                body: "تراکنش‌های موفق، ناموفق و در انتظار سازمان."
+              }}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th>هدف</th>
+                    <th>پلن</th>
+                    <th>مبلغ</th>
+                    <th>وضعیت</th>
+                    <th>زمان</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.slice(0, 20).map((h) => (
+                    <tr key={h.id}>
+                      <td>{h.purpose}</td>
+                      <td>{h.plan}</td>
+                      <td>{Math.round(h.amount_irr || 0).toLocaleString("fa-IR")} ریال</td>
+                      <td>
+                        <Badge
+                          tone={
+                            h.status === "paid"
+                              ? "success"
+                              : h.status === "failed"
+                                ? "danger"
+                                : "accent"
+                          }
+                        >
+                          {h.status === "paid"
+                            ? "موفق"
+                            : h.status === "failed"
+                              ? "ناموفق"
+                              : h.status === "pending"
+                                ? "در انتظار"
+                                : h.status}
+                        </Badge>
+                      </td>
+                      <td className="hint">
+                        {h.created_at
+                          ? new Date(h.created_at).toLocaleString("fa-IR")
+                          : "—"}
+                        {h.ref_number ? ` · ${h.ref_number}` : ""}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          ) : null}
+
           <div className="row-actions">
             <Link className="btn secondary" href="/seats">
               صندلی افزونه
+            </Link>
+            <Link className="btn secondary" href="/support">
+              پشتیبانی
             </Link>
             <Link className="btn secondary" href="/team">
               تیم

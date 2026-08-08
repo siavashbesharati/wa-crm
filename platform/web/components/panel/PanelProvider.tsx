@@ -43,6 +43,7 @@ const PANEL_PREFIXES = [
   "/ai-settings",
   "/kpi",
   "/billing",
+  "/support",
   "/whatsapp"
 ];
 
@@ -108,7 +109,8 @@ export function PanelProvider({ children }: { children: ReactNode }) {
           "/knowledge": "دانش AI",
           "/ai-settings": "تنظیمات AI",
           "/kpi": "KPI / OKR",
-          "/billing": "اشتراک و پرداخت"
+          "/billing": "اشتراک و پرداخت",
+          "/support": "پشتیبانی"
         };
         setMetaState((m) => ({
           ...m,

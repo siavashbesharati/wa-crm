@@ -141,46 +141,7 @@ export default function SuperBusinessesPage() {
   return (
     <SuperShell title="کسب‌وکارها" sub="ثبت، پلن، تعلیق و ورود پشتیبانی به پنل هر سازمان">
       <div className="stack" style={{ display: "grid", gap: 16 }}>
-        <Card
-          title="ساخت کسب‌وکار جدید"
-          help={{
-            title: "ثبت کسب‌وکار",
-            body: "سازمان جدید با مالک و پلن اولیه می‌سازد. مالک می‌تواند با OTP وارد پنل خودش شود."
-          }}
-        >
-          <div className="form-grid">
-            <label>
-              نام کسب‌وکار
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="مثلاً آژانس نمونه"
-              />
-            </label>
-            <label>
-              شماره مالک (OTP افزونه / پنل)
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="0912..."
-              />
-            </label>
-            <label>
-              پلن
-              <select value={plan} onChange={(e) => setPlan(e.target.value)}>
-                {planOpts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button loading={busy} onClick={createBusiness}>
-              ثبت کسب‌وکار
-            </Button>
-          </div>
-        </Card>
-
+      
         <Card
           title="همه کسب‌وکارهای ثبت‌شده"
           help={{

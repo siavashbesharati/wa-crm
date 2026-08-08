@@ -5,6 +5,7 @@ import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { Switch } from "@/components/ui/Switch";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
@@ -110,26 +111,17 @@ export default function AiSettingsPage() {
             }}
           >
             <div className="ai-settings-stack">
-              <div className="ai-switch-row">
-                <div>
-                  <strong>فعال‌سازی پاسخ خودکار</strong>
-                  <div className="hint">وقتی روشن باشد، به پیام‌های ورودی خودکار جواب داده می‌شود.</div>
-                </div>
-                <button
-                  type="button"
-                  className={`ui-switch${policy.auto_send_enabled ? " on" : ""}`}
-                  role="switch"
-                  aria-checked={policy.auto_send_enabled}
-                  onClick={() =>
-                    setPolicy({
-                      ...policy,
-                      auto_send_enabled: !policy.auto_send_enabled
-                    })
-                  }
-                >
-                  <span className="ui-switch-knob" />
-                </button>
-              </div>
+              <Switch
+                label="فعال‌سازی پاسخ خودکار"
+                hint="وقتی روشن باشد، به پیام‌های ورودی خودکار جواب داده می‌شود."
+                checked={policy.auto_send_enabled}
+                onChange={(v) =>
+                  setPolicy({
+                    ...policy,
+                    auto_send_enabled: v
+                  })
+                }
+              />
 
               <div className="ai-slider-block">
                 <div className="ai-slider-head">

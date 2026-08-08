@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 
 type Plan = {
@@ -253,30 +254,24 @@ export default function SuperPlansPage() {
                   }
                 />
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.ai_suggest}
-                  onChange={(e) => setForm((f) => ({ ...f, ai_suggest: e.target.checked }))}
-                />
-                پیشنهاد پاسخ AI
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.ai_auto_send}
-                  onChange={(e) => setForm((f) => ({ ...f, ai_auto_send: e.target.checked }))}
-                />
-                AI auto-send
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-                />
-                فعال (نمایش در خرید)
-              </label>
+              <Switch
+                full
+                label="پیشنهاد پاسخ AI"
+                checked={form.ai_suggest}
+                onChange={(v) => setForm((f) => ({ ...f, ai_suggest: v }))}
+              />
+              <Switch
+                full
+                label="AI auto-send"
+                checked={form.ai_auto_send}
+                onChange={(v) => setForm((f) => ({ ...f, ai_auto_send: v }))}
+              />
+              <Switch
+                full
+                label="فعال (نمایش در خرید)"
+                checked={form.is_active}
+                onChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+              />
               <label style={{ gridColumn: "1 / -1" }}>
                 آیتم‌های مجاز / امکانات (هر خط یک مورد)
                 <textarea

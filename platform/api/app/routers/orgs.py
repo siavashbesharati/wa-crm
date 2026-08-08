@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -168,6 +170,22 @@ def onboarding_pay(
     if amount <= 0 or provider == "mock":
         digits = "".join(ch for ch in (body.mock_card or "") if ch.isdigit())
         if amount > 0 and digits.endswith("0000"):
+            fail_pay = Payment(
+                org_id=auth.org.id,
+                user_id=auth.user.id,
+                purpose="onboarding",
+                plan=plan,
+                amount_irr=amount,
+                provider="mock",
+                status="failed",
+                raw_request=json.dumps(
+                    {"provider": "mock", "mock_card": digits[-4:], "purpose": "onboarding"},
+                    ensure_ascii=False,
+                ),
+                raw_verify=json.dumps({"ok": False, "error": "mock_card_0000"}, ensure_ascii=False),
+            )
+            db.add(fail_pay)
+            db.commit()
             raise HTTPException(status_code=402, detail="پرداخت ناموفق (mock)")
 
         token = apply_paid_plan(
@@ -189,6 +207,11 @@ def onboarding_pay(
                 provider="mock",
                 status="paid",
                 ref_number=ref,
+                raw_request=json.dumps(
+                    {"provider": "mock", "purpose": "onboarding", "plan": plan, "amount_irr": amount},
+                    ensure_ascii=False,
+                ),
+                raw_verify=json.dumps({"ok": True, "mock": True, "ref": ref}, ensure_ascii=False),
             )
             mark_payment_paid(payment, ref_number=ref)
             db.add(payment)

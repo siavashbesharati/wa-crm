@@ -106,6 +106,7 @@ class Payment(Base):
     ref_number: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(40), default="pending")  # pending|paid|failed
     raw_request: Mapped[str] = mapped_column(Text, default="")
+    raw_callback: Mapped[str] = mapped_column(Text, default="")
     raw_verify: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -443,3 +444,39 @@ class AuditEvent(Base):
     message: Mapped[str] = mapped_column(Text, default="")
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class SupportTicket(Base):
+    """Business ↔ platform support ticket."""
+
+    __tablename__ = "support_tickets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    subject: Mapped[str] = mapped_column(String(240), default="")
+    category: Mapped[str] = mapped_column(String(60), default="general")  # general|billing|technical|ai
+    status: Mapped[str] = mapped_column(String(40), default="open", index=True)  # open|in_progress|resolved|closed
+    priority: Mapped[str] = mapped_column(String(20), default="normal")  # low|normal|high
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+    messages = relationship(
+        "SupportMessage",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="SupportMessage.created_at",
+    )
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    ticket_id: Mapped[str] = mapped_column(ForeignKey("support_tickets.id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    sender_side: Mapped[str] = mapped_column(String(20), default="business")  # business|platform
+    body: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+    ticket = relationship("SupportTicket", back_populates="messages")

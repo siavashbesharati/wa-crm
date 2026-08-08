@@ -8,9 +8,12 @@ import { getCachedPlatformMe, loadPlatformMe } from "@/lib/me-cache";
 import { PageLoading } from "@/components/ui/Spinner";
 
 const NAV = [
-  { href: "/super/businesses", label: "کسب‌وکارها", ico: "▣" },
+  { href: "/super", label: "گزارش", ico: "▣", exact: true },
+  { href: "/super/businesses", label: "کسب‌وکارها", ico: "▦" },
+  { href: "/super/payments", label: "پرداخت‌ها", ico: "﷼" },
+  { href: "/super/tickets", label: "پشتیبانی", ico: "✉" },
   { href: "/super/plans", label: "پلن‌ها", ico: "◈" },
-  { href: "/super/sms-templates", label: "قالب پیامک", ico: "✉" },
+  { href: "/super/sms-templates", label: "قالب پیامک", ico: "✎" },
   { href: "/super/ai", label: "تنظیمات AI", ico: "✦" },
   { href: "/super/system", label: "سیستم", ico: "◉" }
 ];
@@ -131,17 +134,22 @@ export default function SuperShell({
 
         <div className="nav-label">پلتفرم</div>
         <nav className="nav">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={pathname.startsWith(item.href) ? "active" : ""}
-              title={item.label}
-            >
-              <span className="nav-ico">{item.ico}</span>
-              <span className="label">{item.label}</span>
-            </Link>
-          ))}
+          {NAV.map((item) => {
+            const active = item.exact
+              ? pathname === item.href
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={active ? "active" : ""}
+                title={item.label}
+              >
+                <span className="nav-ico">{item.ico}</span>
+                <span className="label">{item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="sidebar-foot">

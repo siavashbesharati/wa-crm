@@ -42,6 +42,37 @@ def _provider() -> str:
     return p if p in ("mock", "zibal") else "mock"
 
 
+@router.get("/history")
+def payment_history(
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(Payment)
+        .filter(Payment.org_id == auth.org.id)
+        .order_by(Payment.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return {
+        "payments": [
+            {
+                "id": p.id,
+                "purpose": p.purpose,
+                "plan": p.plan,
+                "amount_irr": int(p.amount_irr or 0),
+                "provider": p.provider,
+                "status": p.status,
+                "ref_number": p.ref_number or "",
+                "track_id": p.track_id or "",
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+            }
+            for p in rows
+        ]
+    }
+
+
 @router.get("/config")
 def payments_config():
     settings = get_settings()
@@ -145,6 +176,11 @@ def start_payment(
             provider="mock",
             status="paid",
             ref_number="MOCK-" + auth.org.id[:8].upper(),
+            raw_request=json.dumps(
+                {"provider": "mock", "purpose": purpose, "plan": plan, "amount_irr": amount},
+                ensure_ascii=False,
+            ),
+            raw_verify=json.dumps({"ok": True, "mock": True}, ensure_ascii=False),
         )
         mark_payment_paid(payment, ref_number=payment.ref_number)
         db.add(payment)
@@ -189,6 +225,17 @@ def zibal_callback(
     if not payment:
         q = urlencode({"paid": "0", "error": "payment_not_found"})
         return RedirectResponse(f"{web}/onboarding?{q}", status_code=302)
+
+    payment.raw_callback = json.dumps(
+        {
+            "trackId": tid,
+            "success": success,
+            "status": status,
+        },
+        ensure_ascii=False,
+    )
+    db.add(payment)
+    db.flush()
 
     org = db.get(Organization, payment.org_id)
     user = db.get(User, payment.user_id) if payment.user_id else None

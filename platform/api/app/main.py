@@ -17,6 +17,7 @@ from app.routers import (
     orgs,
     payments,
     seats,
+    support,
     tasks,
     whatsapp,
 )
@@ -52,6 +53,7 @@ ROUTERS = [
     kpi.router,
     extension.router,
     payments.router,
+    support.router,
 ]
 
 
@@ -81,6 +83,11 @@ def _ensure_sqlite_columns() -> None:
                 conn.execute(text("ALTER TABLE ai_policies ADD COLUMN agent_role VARCHAR(200) DEFAULT ''"))
             if "system_prompt" not in cols:
                 conn.execute(text("ALTER TABLE ai_policies ADD COLUMN system_prompt TEXT DEFAULT ''"))
+    if "payments" in tables:
+        cols = {c["name"] for c in insp.get_columns("payments")}
+        if "raw_callback" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE payments ADD COLUMN raw_callback TEXT DEFAULT ''"))
 
 
 _mount_routers()

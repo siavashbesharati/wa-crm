@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -27,6 +27,7 @@ from app.models import (
     MemberRole,
     Membership,
     Organization,
+    Payment,
     PlatformSetting,
     PricingPlan,
     SmsTemplate,
@@ -758,3 +759,322 @@ def delete_sms_template(
     db.delete(row)
     db.commit()
     return {"ok": True, "deleted": True}
+
+
+# ── Platform dashboard / payments / support ───────────────────────────
+
+
+def _payment_out(p: Payment, *, org_name: str = "", include_raw: bool = False) -> dict:
+    out = {
+        "id": p.id,
+        "org_id": p.org_id,
+        "org_name": org_name,
+        "user_id": p.user_id,
+        "purpose": p.purpose,
+        "plan": p.plan,
+        "amount_irr": int(p.amount_irr or 0),
+        "provider": p.provider,
+        "track_id": p.track_id or "",
+        "ref_number": p.ref_number or "",
+        "status": p.status,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+        "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+    }
+    if include_raw:
+        out["raw_request"] = p.raw_request or ""
+        out["raw_callback"] = getattr(p, "raw_callback", "") or ""
+        out["raw_verify"] = p.raw_verify or ""
+    return out
+
+
+@router.get("/dashboard")
+def admin_dashboard(
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from sqlalchemy import func
+
+    from app.models import Message, Payment, SupportTicket
+
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    orgs = db.query(Organization).count()
+    active = db.query(Organization).filter(Organization.status == "active").count()
+    suspended = db.query(Organization).filter(Organization.status == "suspended").count()
+    users = db.query(User).count()
+    leads = db.query(Lead).count()
+    channels = db.query(ChannelAccount).count()
+
+    pay_paid = (
+        db.query(func.count(Payment.id)).filter(Payment.status == "paid").scalar() or 0
+    )
+    pay_failed = (
+        db.query(func.count(Payment.id)).filter(Payment.status == "failed").scalar() or 0
+    )
+    pay_pending = (
+        db.query(func.count(Payment.id)).filter(Payment.status == "pending").scalar() or 0
+    )
+    revenue = (
+        db.query(func.coalesce(func.sum(Payment.amount_irr), 0))
+        .filter(Payment.status == "paid")
+        .scalar()
+        or 0
+    )
+    revenue_7d = (
+        db.query(func.coalesce(func.sum(Payment.amount_irr), 0))
+        .filter(Payment.status == "paid", Payment.paid_at >= week_ago)
+        .scalar()
+        or 0
+    )
+    tickets_open = (
+        db.query(func.count(SupportTicket.id))
+        .filter(SupportTicket.status.in_(["open", "in_progress"]))
+        .scalar()
+        or 0
+    )
+    messages_7d = (
+        db.query(func.count(Message.id)).filter(Message.created_at >= week_ago).scalar()
+        or 0
+    )
+
+    recent_payments = (
+        db.query(Payment, Organization)
+        .join(Organization, Organization.id == Payment.org_id)
+        .order_by(Payment.created_at.desc())
+        .limit(12)
+        .all()
+    )
+    recent_tickets = (
+        db.query(SupportTicket, Organization)
+        .join(Organization, Organization.id == SupportTicket.org_id)
+        .order_by(SupportTicket.updated_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    return {
+        "ok": True,
+        "metrics": {
+            "businesses": orgs,
+            "active_businesses": active,
+            "suspended_businesses": suspended,
+            "users": users,
+            "leads": leads,
+            "channel_accounts": channels,
+            "payments_paid": int(pay_paid),
+            "payments_failed": int(pay_failed),
+            "payments_pending": int(pay_pending),
+            "revenue_irr": int(revenue),
+            "revenue_7d_irr": int(revenue_7d),
+            "tickets_open": int(tickets_open),
+            "messages_7d": int(messages_7d),
+        },
+        "recent_payments": [
+            _payment_out(p, org_name=o.name) for p, o in recent_payments
+        ],
+        "recent_tickets": [
+            {
+                "id": t.id,
+                "subject": t.subject,
+                "status": t.status,
+                "priority": t.priority,
+                "category": t.category,
+                "org_id": t.org_id,
+                "org_name": o.name,
+                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            }
+            for t, o in recent_tickets
+        ],
+    }
+
+
+@router.get("/payments")
+def admin_list_payments(
+    status: str | None = None,
+    org_id: str | None = None,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    q = (
+        db.query(Payment, Organization)
+        .join(Organization, Organization.id == Payment.org_id)
+        .order_by(Payment.created_at.desc())
+    )
+    if status:
+        q = q.filter(Payment.status == status.strip())
+    if org_id:
+        q = q.filter(Payment.org_id == org_id.strip())
+    rows = q.limit(300).all()
+    return {"payments": [_payment_out(p, org_name=o.name) for p, o in rows]}
+
+
+@router.get("/payments/{payment_id}")
+def admin_get_payment(
+    payment_id: str,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    row = (
+        db.query(Payment, Organization)
+        .join(Organization, Organization.id == Payment.org_id)
+        .filter(Payment.id == payment_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="پرداخت یافت نشد")
+    p, o = row
+    return _payment_out(p, org_name=o.name, include_raw=True)
+
+
+@router.get("/tickets")
+def admin_list_tickets(
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from sqlalchemy import func
+
+    from app.models import SupportMessage, SupportTicket
+
+    q = (
+        db.query(SupportTicket, Organization)
+        .join(Organization, Organization.id == SupportTicket.org_id)
+        .order_by(SupportTicket.updated_at.desc())
+    )
+    if status:
+        q = q.filter(SupportTicket.status == status.strip())
+    rows = q.limit(200).all()
+    ids = [t.id for t, _ in rows]
+    counts: dict[str, int] = {}
+    if ids:
+        counts = dict(
+            db.query(SupportMessage.ticket_id, func.count(SupportMessage.id))
+            .filter(SupportMessage.ticket_id.in_(ids))
+            .group_by(SupportMessage.ticket_id)
+            .all()
+        )
+    return {
+        "tickets": [
+            {
+                "id": t.id,
+                "subject": t.subject,
+                "status": t.status,
+                "priority": t.priority,
+                "category": t.category,
+                "org_id": t.org_id,
+                "org_name": o.name,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+                "message_count": int(counts.get(t.id, 0)),
+            }
+            for t, o in rows
+        ]
+    }
+
+
+@router.get("/tickets/{ticket_id}")
+def admin_get_ticket(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from sqlalchemy.orm import joinedload
+
+    from app.models import SupportMessage, SupportTicket
+
+    ticket = (
+        db.query(SupportTicket)
+        .options(joinedload(SupportTicket.messages))
+        .filter(SupportTicket.id == ticket_id)
+        .first()
+    )
+    if not ticket:
+        raise HTTPException(status_code=404, detail="تیکت یافت نشد")
+    org = db.get(Organization, ticket.org_id)
+    return {
+        "id": ticket.id,
+        "subject": ticket.subject,
+        "status": ticket.status,
+        "priority": ticket.priority,
+        "category": ticket.category,
+        "org_id": ticket.org_id,
+        "org_name": org.name if org else "",
+        "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "messages": [
+            {
+                "id": m.id,
+                "sender_side": m.sender_side,
+                "body": m.body,
+                "user_name": (
+                    (db.get(User, m.user_id).display_name or db.get(User, m.user_id).phone)
+                    if m.user_id and db.get(User, m.user_id)
+                    else "—"
+                ),
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in (ticket.messages or [])
+        ],
+    }
+
+
+class AdminTicketPatchIn(BaseModel):
+    status: str | None = None
+    priority: str | None = None
+
+
+class AdminTicketMessageIn(BaseModel):
+    body: str = Field(min_length=1)
+
+
+@router.patch("/tickets/{ticket_id}")
+def admin_patch_ticket(
+    ticket_id: str,
+    body: AdminTicketPatchIn,
+    db: Session = Depends(get_db),
+    auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from app.models import SupportTicket
+
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="تیکت یافت نشد")
+    if body.status:
+        if body.status not in ("open", "in_progress", "resolved", "closed"):
+            raise HTTPException(status_code=400, detail="وضعیت نامعتبر")
+        ticket.status = body.status
+    if body.priority:
+        if body.priority not in ("low", "normal", "high"):
+            raise HTTPException(status_code=400, detail="اولویت نامعتبر")
+        ticket.priority = body.priority
+    ticket.updated_at = datetime.utcnow()
+    db.add(ticket)
+    db.commit()
+    return {"ok": True, "id": ticket.id, "status": ticket.status, "priority": ticket.priority}
+
+
+@router.post("/tickets/{ticket_id}/messages")
+def admin_reply_ticket(
+    ticket_id: str,
+    body: AdminTicketMessageIn,
+    db: Session = Depends(get_db),
+    auth: SuperAuthContext = Depends(get_super_auth),
+):
+    from app.models import SupportMessage, SupportTicket
+
+    ticket = db.get(SupportTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="تیکت یافت نشد")
+    db.add(
+        SupportMessage(
+            ticket_id=ticket.id,
+            user_id=auth.user.id,
+            sender_side="platform",
+            body=body.body.strip(),
+        )
+    )
+    if ticket.status == "open":
+        ticket.status = "in_progress"
+    ticket.updated_at = datetime.utcnow()
+    db.add(ticket)
+    db.commit()
+    return {"ok": True}
