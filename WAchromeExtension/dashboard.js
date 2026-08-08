@@ -3,7 +3,6 @@
     contacts: ["لیدها", "مدیریت لیدها، برچسب و مراحل فروش"],
     pipeline: ["پایپلاین", "برد مراحل فروش — کارت را بکشید تا مرحله عوض شود"],
     templates: ["قالب‌ها", "پیام‌های آماده با متغیر {name}"],
-    rules: ["اتوماسیون", "پاسخ خودکار بر اساس کلمه کلیدی"],
     activity: ["فعالیت‌ها", "لاگ ارسال‌ها و رویدادها"],
     settings: ["تنظیمات", "محدودیت ایمنی و ساعات کاری"]
   };
@@ -11,7 +10,6 @@
   var contacts = [];
   var templates = [];
   var tasks = [];
-  var rules = [];
   var events = [];
   var settings = null;
   var contactView = "list";
@@ -464,13 +462,11 @@
     contacts = await IranexpediaCrm.getContacts();
     templates = await IranexpediaCrm.getTemplates();
     tasks = await IranexpediaCrm.getTasks();
-    rules = await IranexpediaCrm.getKeywordRules();
     events = await IranexpediaCrm.getEvents();
     settings = await IranexpediaCrm.getSettings();
     renderStats();
     renderContacts();
     renderTemplates();
-    renderRules();
     renderEvents();
     renderSettings();
     refreshHealth();
@@ -523,30 +519,6 @@
       card.appendChild(p);
       card.appendChild(btn);
       list.appendChild(card);
-    });
-  }
-
-  function renderRules() {
-    var body = $("rules-body");
-    body.innerHTML = "";
-    rules.forEach(function (r, index) {
-      var tr = document.createElement("tr");
-      tr.innerHTML = "<td></td><td></td><td></td>";
-      tr.cells[0].textContent = r.keyword;
-      tr.cells[1].textContent = r.reply;
-      var del = document.createElement("button");
-      del.type = "button";
-      del.className = "btn danger";
-      del.textContent = "حذف";
-      del.onclick = async function () {
-        rules = rules.filter(function (_, i) {
-          return i !== index;
-        });
-        await IranexpediaCrm.saveKeywordRules(rules);
-        await loadAll();
-      };
-      tr.cells[2].appendChild(del);
-      body.appendChild(tr);
     });
   }
 
@@ -818,20 +790,6 @@
     e.preventDefault();
     await IranexpediaCrm.addTemplate($("tpl-title").value, $("tpl-body").value);
     $("template-form").reset();
-    await loadAll();
-  });
-
-  $("rule-form").addEventListener("submit", async function (e) {
-    e.preventDefault();
-    var keyword = $("rule-keyword").value.trim();
-    var reply = $("rule-reply").value.trim();
-    var idx = rules.findIndex(function (r) {
-      return String(r.keyword).toLowerCase() === keyword.toLowerCase();
-    });
-    if (idx >= 0) rules[idx] = { keyword: keyword, reply: reply };
-    else rules.push({ keyword: keyword, reply: reply });
-    await IranexpediaCrm.saveKeywordRules(rules);
-    $("rule-form").reset();
     await loadAll();
   });
 

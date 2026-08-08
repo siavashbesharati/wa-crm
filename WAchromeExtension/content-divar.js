@@ -12,21 +12,11 @@
     "background:#a62626;color:#fff;font-size:14px;padding:6px;"
   );
 
-  let MIN_DELAY_MS = 2500;
-  let MAX_DELAY_MS = 5000;
-  const REPLY_COOLDOWN_MS = 10000;
   const SCAN_MS = 3500;
-
-  const DEFAULT_RULES = [
-    { keyword: "سلام", reply: "سلام، در خدمتم. لطفاً سوالتون رو بفرمایید." },
-    { keyword: "قیمت", reply: "برای اعلام قیمت دقیق، جزئیات بیشتری بفرستید." }
-  ];
 
   let isEnabled = false;
   let licenseValid = false;
-  let keywordRules = DEFAULT_RULES.slice();
   let busy = false;
-  let lastReplyTime = 0;
   const handledKeys = {};
   const ingestedKeys = {};
 
@@ -40,10 +30,6 @@
     return new Promise(function (resolve) {
       setTimeout(resolve, ms);
     });
-  }
-
-  function randomDelay() {
-    return MIN_DELAY_MS + Math.floor(Math.random() * Math.max(1, MAX_DELAY_MS - MIN_DELAY_MS));
   }
 
   async function refreshLicenseStatus() {
@@ -103,28 +89,6 @@
       return res;
     });
   };
-
-  function loadRulesFromStorage() {
-    try {
-      chrome.storage.local.get({ keywordRules: null }, function (data) {
-        if (Array.isArray(data.keywordRules) && data.keywordRules.length) {
-          keywordRules = data.keywordRules;
-        }
-      });
-    } catch (_e) {}
-  }
-
-  function matchReply(text) {
-    const t = String(text || "").toLowerCase();
-    for (let i = 0; i < keywordRules.length; i++) {
-      const rule = keywordRules[i];
-      if (!rule || !rule.keyword) continue;
-      if (t.indexOf(String(rule.keyword).toLowerCase()) !== -1) {
-        return rule.reply || "";
-      }
-    }
-    return "";
-  }
 
   function getOpenChatId() {
     const m = String(location.pathname || "").match(/\/chat\/([^/?#]+)/);
@@ -510,7 +474,7 @@
     }
   }
 
-  /** Cloud AI path: ingest peer text even when local keyword auto-reply is OFF. */
+  /** Cloud AI path: ingest peer text (replies come only from cloud outbound jobs). */
   async function ingestOpenChatToCloud() {
     const chatId = getOpenChatId();
     if (!chatId) return;
@@ -521,7 +485,7 @@
     await ingestPeer(chatId, peer);
   }
 
-  async function replyInOpenChat() {
+  async function processOpenChatForCloud() {
     const chatId = getOpenChatId();
     if (!chatId) return false;
     if (!lastMessageIsPeer()) return false;
@@ -530,54 +494,15 @@
 
     const key = chatId + "|" + peer.time + "|" + peer.text;
     if (handledKeys[key]) return false;
-    if (Date.now() - lastReplyTime < REPLY_COOLDOWN_MS) return false;
 
     await ingestPeer(chatId, peer);
-
-    // When cloud connector is on, cloud AI owns replies — skip local keyword spam
-    try {
-      if (globalThis.IranexpediaCloudBridge) {
-        const cfg = await IranexpediaCloudBridge.getConfig();
-        if (cfg && cfg.enabled && cfg.accessToken) {
-          handledKeys[key] = true;
-          log("پاسخ کلمه‌کلیدی رد شد — پاسخ‌گویی با AI ابری");
-          return false;
-        }
-      }
-    } catch (_e) {}
-
-    const reply = matchReply(peer.text);
-    if (!reply) {
-      // No local keyword match — cloud AI may still reply via outbound job
-      handledKeys[key] = true;
-      return false;
-    }
-
-    await sleep(randomDelay());
-    const sent = await sendText(reply);
-    if (sent.ok) {
-      handledKeys[key] = true;
-      lastReplyTime = Date.now();
-      try {
-        await IranexpediaCloudBridge.ingestMessage({
-          chat_name: getContactName() || getAdTitle() || chatId,
-          body: reply,
-          direction: "outbound",
-          external_chat_id: chatId,
-          post_token: getPostToken(),
-          ad_title: getAdTitle(),
-          chat_type: "pv",
-          sender_type: "ai"
-        });
-      } catch (_e) {}
-      log("replied in", chatId);
-      return true;
-    }
-    return false;
+    handledKeys[key] = true;
+    log("پیام برای AI ابری ارسال شد — بدون پاسخ محلی");
+    return true;
   }
 
   async function processLoop() {
-    // Always try cloud ingest when a chat is open (does not need keyword toggle)
+    // Always ingest open chat for cloud AI
     try {
       if (getOpenChatId() && document.querySelector("#chat-input")) {
         await ingestOpenChatToCloud();
@@ -591,10 +516,9 @@
     if (!ok) return;
     busy = true;
     try {
-      // If a chat is already open, only reply there — do not bounce inbox↔chat
-      // (that was constantly remounting the CRM sidebar).
+      // If a chat is already open, only ingest there — do not bounce inbox↔chat
       if (getOpenChatId() && document.querySelector("#chat-input")) {
-        await replyInOpenChat();
+        await processOpenChatForCloud();
         return;
       }
 
@@ -605,7 +529,7 @@
       if (!opened) return;
       await sleep(500);
       await ingestOpenChatToCloud();
-      await replyInOpenChat();
+      await processOpenChatForCloud();
       await sleep(400);
       await goToInbox();
     } catch (err) {
@@ -645,9 +569,6 @@
     if (changes.autoReplyEnabled) {
       isEnabled = !!changes.autoReplyEnabled.newValue;
     }
-    if (changes.keywordRules && Array.isArray(changes.keywordRules.newValue)) {
-      keywordRules = changes.keywordRules.newValue;
-    }
   });
 
   async function activateDivarChannel() {
@@ -668,7 +589,6 @@
 
   async function boot() {
     log("boot on", location.href, "chatId=", getOpenChatId());
-    loadRulesFromStorage();
     await activateDivarChannel();
     try {
       const data = await chrome.storage.local.get({ autoReplyEnabled: false });

@@ -9,34 +9,22 @@ console.log(
 /* ================= CONFIG ================= */
 let MIN_DELAY_MS = 2500;
 let MAX_DELAY_MS = 5000;
-const REPLY_COOLDOWN_MS = 10000;
-const BATCH_WAIT_MS = 4000;
 const SIDEBAR_SCAN_MS = 2500;
 let crmSettingsCache = null;
 let taskRunnerBusy = false;
-
-const DEFAULT_RULES = [
-    { keyword: "hi", reply: "سلام! چطور می‌تونم کمکتون کنم؟" },
-    { keyword: "price", reply: "لطفاً کمی صبر کنید، نرخ را ارسال می‌کنم." }
-];
 
 /* ================= STATE ================= */
 let isEnabled = false;
 let licenseValid = false;
 let licenseMessage = "هنوز بررسی نشده";
-let keywordRules = DEFAULT_RULES.slice();
 let busy = false;
 
 let lastHandledText = "";
 let lastBotReply = "";
-let lastReplyTime = 0;
 let lastStableChat = "";
 let lastCapturedMsgKey = "";
 let lastCloudIngestKey = "";
 const sidebarContactSaved = {};
-
-let replyTimeout = null;
-let batchTimeout = null;
 
 const handledSidebarKeys = {};
 
@@ -83,8 +71,8 @@ async function applyAutoReplyEnabled(enabled, source) {
     if (isEnabled) resetMessageCache();
     log(
         isEnabled
-            ? "افزونه روشن شد — پاسخ خودکار فعال (" + (source || "ui") + ")"
-            : "افزونه خاموش شد — پاسخ خودکار غیرفعال (" + (source || "ui") + ")"
+            ? "افزونه روشن شد — اسکن برای AI ابری فعال (" + (source || "ui") + ")"
+            : "افزونه خاموش شد — اسکن خودکار غیرفعال (" + (source || "ui") + ")"
     );
     removeLegacyFloatingButtons();
     return isEnabled;
@@ -144,13 +132,6 @@ function sleep(ms) {
     });
 }
 
-function randomDelay() {
-    return (
-        Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) +
-        MIN_DELAY_MS
-    );
-}
-
 function log() {
     const args = Array.prototype.slice.call(arguments);
     args.unshift("[" + BRAND + " v" + EXT_VERSION + "]");
@@ -206,55 +187,6 @@ function isCloudAuthorized() {
         globalThis.IranexpediaAuthGate &&
         IranexpediaAuthGate.assertUnlocked()
     );
-}
-
-/* ================= RULES ================= */
-function loadRules() {
-    try {
-        chrome.storage.local.get({ keywordRules: null }, function (data) {
-            if (chrome.runtime.lastError) return;
-            if (Array.isArray(data.keywordRules) && data.keywordRules.length) {
-                keywordRules = data.keywordRules;
-            } else {
-                keywordRules = DEFAULT_RULES.slice();
-            }
-            log(
-                "قوانین:",
-                keywordRules.map(function (r) {
-                    return r.keyword;
-                })
-            );
-        });
-    } catch (e) {
-        keywordRules = DEFAULT_RULES.slice();
-    }
-}
-
-chrome.storage.onChanged.addListener(function (changes, area) {
-    if (area === "local" && changes.keywordRules) {
-        const next = changes.keywordRules.newValue;
-        keywordRules =
-            Array.isArray(next) && next.length ? next : DEFAULT_RULES.slice();
-        log(
-            "قوانین به‌روز شد:",
-            keywordRules.map(function (r) {
-                return r.keyword;
-            })
-        );
-    }
-});
-
-function findReply(text) {
-    const msg = String(text || "").toLowerCase();
-    for (let i = 0; i < keywordRules.length; i++) {
-        const k = String(keywordRules[i].keyword || "")
-            .toLowerCase()
-            .trim();
-        if (k && msg.indexOf(k) !== -1) {
-            return String(keywordRules[i].reply || "").trim();
-        }
-    }
-    return null;
 }
 
 /* ================= CHAT NAME ================= */
@@ -501,7 +433,6 @@ async function syncContactToCloud(contact, source) {
 
 /**
  * Push real inbound WhatsApp text to CRM so cloud AI auto-reply can run.
- * Independent of local keyword auto-reply toggle.
  */
 async function ingestCloudInbound(chatInfo, text) {
     if (!globalThis.IranexpediaCloudBridge || !isCloudAuthorized()) return null;
@@ -682,18 +613,8 @@ function mergeMembers(listA, listB) {
 function resetMessageCache() {
     lastHandledText = "";
     lastBotReply = "";
-    lastReplyTime = 0;
     lastCloudIngestKey = "";
     lastCapturedMsgKey = "";
-
-    if (replyTimeout) {
-        clearTimeout(replyTimeout);
-        replyTimeout = null;
-    }
-    if (batchTimeout) {
-        clearTimeout(batchTimeout);
-        batchTimeout = null;
-    }
 }
 
 /* ================= INPUT + SEND ================= */
@@ -936,7 +857,6 @@ async function runScheduledTask(task) {
         if (!sent) return { ok: false, error: "دکمه ارسال پیدا نشد." };
 
         lastBotReply = task.message;
-        lastReplyTime = Date.now();
         if (globalThis.IranexpediaCrm) {
             await IranexpediaCrm.upsertContact({
                 name: task.targetName,
@@ -1435,7 +1355,7 @@ function getSidebarCells() {
     return Array.from(cells);
 }
 
-function findSidebarMatches() {
+function findUnreadSidebarChats() {
     const cells = getSidebarCells();
     const matches = [];
 
@@ -1449,9 +1369,6 @@ function findSidebarMatches() {
         const preview = getCellPreview(cell, chatName);
         if (!preview) continue;
 
-        const reply = findReply(preview);
-        if (!reply) continue;
-
         const key = chatName + "||" + preview;
         if (handledSidebarKeys[key]) continue;
 
@@ -1459,7 +1376,6 @@ function findSidebarMatches() {
             cell: cell,
             chatName: chatName,
             preview: preview,
-            reply: reply,
             key: key
         });
     }
@@ -1467,27 +1383,9 @@ function findSidebarMatches() {
     return matches;
 }
 
-async function replyInOpenChat(reply) {
-    const delay = randomDelay();
-    log("ارسال تا " + (delay / 1000).toFixed(1) + " ثانیه دیگر");
-    await sleep(delay);
-
-    if (!isEnabled) return false;
-
-    lastBotReply = reply;
-    lastHandledText = reply;
-    if (!insertReply(reply)) {
-        log("باکس پیام پیدا نشد");
-        return false;
-    }
-    await sleep(700);
-    return sendWhatsAppMessage();
-}
-
-async function processSidebarMatch(match) {
+async function processSidebarUnreadForCloud(match) {
     handledSidebarKeys[match.key] = Date.now();
 
-    // cleanup old keys
     const keys = Object.keys(handledSidebarKeys);
     if (keys.length > 80) {
         keys.sort(function (a, b) {
@@ -1503,81 +1401,42 @@ async function processSidebarMatch(match) {
         return;
     }
 
-    log("چت خوانده‌نشده پیدا شد:", match.chatName, "| پیش‌نمایش:", match.preview);
+    log("چت خوانده‌نشده برای AI ابری:", match.chatName, "|", match.preview);
 
     clickSidebarCell(match.cell);
 
     const ready = await waitForChatReady(match.chatName, 10000);
     if (!ready) {
         log("باز شدن چت ناموفق بود:", match.chatName);
+        delete handledSidebarKeys[match.key];
         return;
     }
 
     await sleep(1200);
     resetMessageCache();
 
-    // Prefer exact last message in opened chat; fall back to sidebar preview reply
-    const spans = document.querySelectorAll(
-        '#main span[data-testid="selectable-text"]'
-    );
-    let reply = match.reply;
-    if (spans.length) {
-        const lastText = (spans[spans.length - 1].innerText || "").trim();
-        const fromOpen = findReply(lastText);
-        if (fromOpen) reply = fromOpen;
-        lastHandledText = lastText;
-        log("آخرین پیام چت بازشده:", lastText);
-    }
-
-    await refreshCrmSettings();
-    if (
-        globalThis.IranexpediaCrm &&
-        crmSettingsCache &&
-        !IranexpediaCrm.isWithinBusinessHours(crmSettingsCache)
-    ) {
-        const away =
-            (crmSettingsCache.businessHours &&
-                crmSettingsCache.businessHours.awayMessage) ||
-            "";
-        if (away) reply = away;
-        else {
-            log("خارج از ساعات کاری — بدون پیام away");
-            delete handledSidebarKeys[match.key];
-            return;
-        }
-    }
-
-    const now = Date.now();
-    if (now - lastReplyTime < REPLY_COOLDOWN_MS) {
-        log("کول‌داون فعال است، بعداً دوباره تلاش می‌شود");
+    const text = getLastIncomingText() || match.preview;
+    if (!text) {
         delete handledSidebarKeys[match.key];
         return;
     }
-    lastReplyTime = now;
 
-    const ok = await replyInOpenChat(reply);
-    if (ok) {
-        log("پاسخ به چت بسته/گروه ارسال شد:", match.chatName);
-        await logCrmEvent("auto_reply", "پاسخ خودکار به «" + match.chatName + "»", {
-            preview: match.preview
-        });
-        if (globalThis.IranexpediaCrm) {
-            await IranexpediaCrm.upsertContact({ name: match.chatName });
-        }
-    } else {
-        delete handledSidebarKeys[match.key];
-    }
+    lastHandledText = text;
+    const chatInfo = getChatIdentity();
+    await saveContactFromIncoming(chatInfo, "incoming");
+    await ingestCloudInbound(chatInfo, text);
+    log("ingest ابر از سایدبار ←", match.chatName);
 }
 
-async function scanSidebarAndReply() {
+async function scanSidebarForCloud() {
     if (!isEnabled || busy || taskRunnerBusy) return;
 
-    const matches = findSidebarMatches();
+    const matches = findUnreadSidebarChats();
     if (!matches.length) return;
 
     busy = true;
     try {
-        await processSidebarMatch(matches[0]);
+        await processSidebarUnreadForCloud(matches[0]);
     } catch (err) {
         console.error("[" + BRAND + " v" + EXT_VERSION + "] sidebar error:", err);
     } finally {
@@ -1665,104 +1524,22 @@ function handleOpenChatMessages() {
     if (text === lastBotReply) return;
 
     const chatInfo = getChatIdentity();
-    const chatName = chatInfo.name || "";
 
     // Always try to save contact on new incoming message (Farsi-safe)
     if (text !== lastHandledText) {
         captureContactsFromOpenChat();
     }
 
-    if (!isEnabled || busy || taskRunnerBusy) return;
+    if (busy || taskRunnerBusy) return;
     if (text === lastHandledText) return;
 
     lastHandledText = text;
-    log("پیام در چت باز:", text);
+    log("پیام در چت باز (AI ابری):", text);
 
     (async function () {
         await saveContactFromIncoming(chatInfo, "incoming");
-        // Always push real text to CRM for cloud AI (even if local keyword auto-reply is off)
+        // Replies are cloud-only — extension only ingests inbound text
         await ingestCloudInbound(chatInfo, text);
-
-        if (await isChatBotPaused(chatName)) {
-            log("ربات برای این چت متوقف است:", chatName);
-            return;
-        }
-
-        if (!isEnabled) return;
-
-        // Cloud connector ON → AI owns replies; skip local keyword duplicates
-        if (isCloudAuthorized() && globalThis.IranexpediaCloudBridge) {
-            try {
-                const cfg = await IranexpediaCloudBridge.getConfig();
-                if (cfg && cfg.enabled && cfg.accessToken) {
-                    log("پاسخ کلمه‌کلیدی رد شد — پاسخ‌گویی با AI ابری");
-                    return;
-                }
-            } catch (_e) {}
-        }
-
-        await refreshCrmSettings();
-        let reply = findReply(text);
-        const outside =
-            globalThis.IranexpediaCrm &&
-            crmSettingsCache &&
-            !IranexpediaCrm.isWithinBusinessHours(crmSettingsCache);
-
-        if (outside) {
-            reply =
-                (crmSettingsCache.businessHours &&
-                    crmSettingsCache.businessHours.awayMessage) ||
-                "";
-            if (!reply) {
-                log("خارج از ساعات کاری");
-                return;
-            }
-        } else if (!reply) {
-            log("کلمه‌ای مطابقت نداشت:", text);
-            return;
-        }
-
-        log("مطابقت در چت باز. پاسخ:", reply);
-
-        if (batchTimeout) clearTimeout(batchTimeout);
-
-        batchTimeout = setTimeout(function () {
-            if (!isEnabled || busy || taskRunnerBusy) return;
-            const now = Date.now();
-            if (now - lastReplyTime < REPLY_COOLDOWN_MS) return;
-            lastReplyTime = now;
-
-            const delay = randomDelay();
-            log("ارسال تا " + (delay / 1000).toFixed(1) + " ثانیه دیگر");
-
-            if (replyTimeout) clearTimeout(replyTimeout);
-            replyTimeout = setTimeout(function () {
-                if (!isEnabled || busy || taskRunnerBusy) return;
-                lastBotReply = reply;
-                if (insertReply(reply)) {
-                    setTimeout(function () {
-                        if (sendWhatsAppMessage()) {
-                            log(
-                                "پاسخ خودکار ارسال شد به",
-                                chatName || "(بدون نام)",
-                                "←",
-                                reply
-                            );
-                            logCrmEvent(
-                                "auto_reply",
-                                "پاسخ خودکار به «" + chatName + "»",
-                                { text: text }
-                            );
-                            saveContactFromIncoming(chatInfo, "auto_reply");
-                        } else {
-                            log("دکمه ارسال پیدا نشد");
-                        }
-                    }, 700);
-                } else {
-                    log("باکس پیام برای ارسال پیدا نشد");
-                }
-            }, delay);
-        }, BATCH_WAIT_MS);
     })();
 }
 
@@ -1787,7 +1564,7 @@ setInterval(function () {
 }, 1200);
 
 setInterval(function () {
-    scanSidebarAndReply();
+    scanSidebarForCloud();
     captureContactsFromSidebarUnread();
 }, SIDEBAR_SCAN_MS);
 
@@ -1815,7 +1592,6 @@ async function activateWhatsAppChannel() {
     }
 }
 
-loadRules();
 refreshCrmSettings();
 activateWhatsAppChannel().then(function () {
     return refreshLicenseStatus();
@@ -1829,9 +1605,9 @@ activateWhatsAppChannel().then(function () {
             applyAutoReplyEnabled(true, "restore");
         } else if (data.autoReplyEnabled && !licenseValid) {
             persistAutoReplyEnabled(false);
-            log("پاسخ خودکار ذخیره شده بود اما لایسنس فعال نیست");
+            log("اسکن خودکار ذخیره شده بود اما لایسنس فعال نیست");
         } else {
-            log("پاسخ خودکار خاموش است — از دکمه سبز یا پنل CRM روشن کنید");
+            log("اسکن خودکار خاموش است — از پنل CRM روشن کنید");
         }
     });
 });

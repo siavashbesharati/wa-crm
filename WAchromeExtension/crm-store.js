@@ -443,16 +443,6 @@
     await storageSet({ crmEvents: [] });
   }
 
-  async function getKeywordRules() {
-    var data = await storageGet({ keywordRules: [] });
-    return Array.isArray(data.keywordRules) ? data.keywordRules : [];
-  }
-
-  async function saveKeywordRules(list) {
-    await storageSet({ keywordRules: list || [] });
-    return list || [];
-  }
-
   function applyTemplateVars(body, vars) {
     var out = String(body || "");
     var map = vars || {};
@@ -526,8 +516,6 @@
     getEvents: getEvents,
     addEvent: addEvent,
     clearEvents: clearEvents,
-    getKeywordRules: getKeywordRules,
-    saveKeywordRules: saveKeywordRules,
     applyTemplateVars: applyTemplateVars,
     isWithinBusinessHours: isWithinBusinessHours,
     countSendsInLastHour: countSendsInLastHour,
