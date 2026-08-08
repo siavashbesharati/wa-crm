@@ -58,7 +58,7 @@ export function AuthLayout({
           {footer ? <div className="auth-footer">{footer}</div> : null}
           <p className="auth-legal">
             <Link href={variant === "business" ? "/super/login" : "/login"}>
-              {variant === "business" ? "ورود سوپر ادمین" : "ورود کسب‌وکار"}
+              {variant === "business" ? "" : "ورود کسب‌وکار"}
             </Link>
           </p>
         </main>
