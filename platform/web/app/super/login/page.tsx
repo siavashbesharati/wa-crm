@@ -21,6 +21,7 @@ export default function SuperLoginPage() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [shake, setShake] = useState(false);
   const autoSubmitRef = useRef("");
+  const verifyingRef = useRef(false);
 
   useEffect(() => {
     if (secondsLeft <= 0) return;
@@ -30,7 +31,11 @@ export default function SuperLoginPage() {
 
   useEffect(() => {
     const clean = code.replace(/\D/g, "");
-    if (clean.length !== 6 || busy || step !== "otp") return;
+    if (clean.length < 6) {
+      autoSubmitRef.current = "";
+      return;
+    }
+    if (busy || step !== "otp" || verifyingRef.current) return;
     if (autoSubmitRef.current === clean) return;
     autoSubmitRef.current = clean;
     const t = window.setTimeout(() => {
@@ -38,7 +43,7 @@ export default function SuperLoginPage() {
     }, 120);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, step, busy]);
+  }, [code, step]);
 
   function bumpShake() {
     setShake(true);
@@ -78,6 +83,8 @@ export default function SuperLoginPage() {
       bumpShake();
       return;
     }
+    if (verifyingRef.current) return;
+    verifyingRef.current = true;
     setBusy(true);
     try {
       const tok = await api<{
@@ -103,9 +110,11 @@ export default function SuperLoginPage() {
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
       bumpShake();
-      autoSubmitRef.current = "";
+      autoSubmitRef.current = finalCode;
+      setCode("");
     } finally {
       setBusy(false);
+      verifyingRef.current = false;
     }
   }
 
