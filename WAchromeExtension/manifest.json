@@ -2,11 +2,12 @@
   "manifest_version": 3,
   "name": "پاسخ خودکار چندکاناله",
   "description": "CRM و پاسخ خودکار واتساپ و دیوار. توسعه: iranexpedia.ir",
-  "version": "7.3.3",
+  "version": "7.3.6",
   "permissions": [
     "storage",
     "alarms",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",
@@ -45,6 +46,16 @@
         "https://divar.ir/*",
         "https://chat.divar.ir/*"
       ]
+    },
+    {
+      "resources": [
+        "inject.js"
+      ],
+      "matches": [
+        "https://divar.ir/*",
+        "https://*.divar.ir/*",
+        "https://chat.divar.ir/*"
+      ]
     }
   ],
   "content_scripts": [
@@ -60,6 +71,20 @@
         "crm-panel.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://divar.ir/chat",
+        "https://divar.ir/chat/*",
+        "https://chat.divar.ir/*",
+        "https://chat.divar.ir/chat",
+        "https://chat.divar.ir/chat/*"
+      ],
+      "js": [
+        "content-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
     },
     {
       "matches": [

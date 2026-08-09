@@ -109,10 +109,17 @@ const SW_SAFE_FILES = new Set([
 const HARD_FILES = new Set([
   "content.js",
   "content-divar.js",
+  "content-bridge.js",
   "popup.js",
   "dashboard.js",
   "crm-panel.js"
 ]);
+
+/**
+ * MAIN-world page inject (Divar webpack hook).
+ * Keep MEDIUM: must keep working against page globals; avoid SW profile.
+ */
+const MAIN_WORLD_FILES = new Set(["inject.js"]);
 
 function ensureCleanOutDir() {
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -137,6 +144,7 @@ function copyDir(relPath) {
 function profileFor(file) {
   if (SW_SAFE_FILES.has(file)) return "sw";
   if (HARD_FILES.has(file)) return "hard";
+  if (MAIN_WORLD_FILES.has(file)) return "medium";
   return "medium";
 }
 
@@ -198,6 +206,8 @@ function main() {
     "crm-store.js",
     "content.js",
     "content-divar.js",
+    "content-bridge.js",
+    "inject.js",
     "crm-panel.js",
     "popup.js",
     "dashboard.js"

@@ -455,8 +455,100 @@ chrome.alarms.onAlarm.addListener(function (alarm) {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Divar Event Sourcing bridge (MAIN world inject.js → content-bridge → here)
+// ---------------------------------------------------------------------------
+var DIVAR_CHAT_EVENT = "DIVAR_AUTO_CHAT_EVENT";
+var DIVAR_HOOK_FAILED = "DIVAR_AUTO_HOOK_FAILED";
+/** In-memory dedupe of inbound Divar message ids (SW lifetime). */
+var divarSeenMessageIds = new Set();
+var DIVAR_SEEN_MAX = 2000;
+
+/**
+ * Placeholder for future Divar auto-reply / cloud ingest automation.
+ * @param {string} chatId
+ * @param {object} messageData  engine payload.message
+ */
+function handleNewIncomingMessage(chatId, messageData) {
+  try {
+    console.log(
+      "[DivarAuto:bg] new incoming message",
+      "chatId=",
+      chatId,
+      "id=",
+      messageData && messageData.id,
+      "data=",
+      messageData && String(messageData.data || "").slice(0, 120)
+    );
+    // TODO: wire to IranexpediaCloudBridge.ingestMessage / auto-reply pipeline.
+  } catch (err) {
+    console.warn("[DivarAuto:bg] handleNewIncomingMessage error:", err);
+  }
+}
+
+function rememberDivarMessageId(id) {
+  if (!id) return false;
+  if (divarSeenMessageIds.has(id)) return false;
+  divarSeenMessageIds.add(id);
+  if (divarSeenMessageIds.size > DIVAR_SEEN_MAX) {
+    // Drop oldest-ish entries (Set iteration order = insertion order).
+    var drop = divarSeenMessageIds.size - DIVAR_SEEN_MAX;
+    var it = divarSeenMessageIds.values();
+    for (var i = 0; i < drop; i++) {
+      var next = it.next();
+      if (next.done) break;
+      divarSeenMessageIds.delete(next.value);
+    }
+  }
+  return true;
+}
+
+function onDivarChatEvent(message) {
+  try {
+    var ev = message && message.event;
+    var payload = ev && ev.payload;
+    if (!payload || typeof payload !== "object") return;
+
+    // Only peer-authored chat messages count as "new incoming".
+    // Other payload.type values (FULL_SYNC, typing, …) are intentionally ignored here.
+    if (payload.type !== "message") return;
+    var msg = payload.message;
+    if (!msg || msg.peer !== true) return;
+
+    var mid = msg.id != null ? String(msg.id) : "";
+    if (!mid) return;
+    if (!rememberDivarMessageId(mid)) return;
+
+    var chatId = msg.chatId != null ? String(msg.chatId) : "";
+    handleNewIncomingMessage(chatId, msg);
+  } catch (err) {
+    console.warn("[DivarAuto:bg] onDivarChatEvent error (non-fatal):", err);
+  }
+}
+
 chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
   if (!message || !message.type) return;
+
+  if (message.type === DIVAR_CHAT_EVENT) {
+    onDivarChatEvent(message);
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message.type === DIVAR_HOOK_FAILED) {
+    console.warn(
+      "[DivarAuto:bg] MAIN-world webpack hook failed — Divar reliable stream inactive.",
+      "reason=",
+      message.reason,
+      "detail=",
+      message.detail || "",
+      "moduleId=",
+      message.moduleId,
+      "| Update WAchromeExtension/inject.js after checking Divar's bundle."
+    );
+    sendResponse({ ok: true });
+    return;
+  }
 
   if (message.type === "getTrustedTime") {
     fetchTrustedTime().then(sendResponse);
