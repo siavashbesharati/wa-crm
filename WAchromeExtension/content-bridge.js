@@ -43,6 +43,7 @@
   var SOURCE = "divar-auto-inject";
   var EVENT_TYPE = "DIVAR_AUTO_CHAT_EVENT";
   var FAIL_TYPE = "DIVAR_AUTO_HOOK_FAILED";
+  var OK_TYPE = "DIVAR_AUTO_HOOK_OK";
 
   /** Set true when MAIN-world hook reports failure — enables DOM fallback. */
   var hookFailed = false;
@@ -141,12 +142,20 @@
   function enableDomFallback(reason) {
     try {
       window.__divarAutoUseDomFallback = true;
+      window.__divarAutoEngineHookLive = false;
       window.__divarAutoHookFailedReason = String(reason || "");
       logWarn(
         "Fallback flag set (__divarAutoUseDomFallback=true). Reason:",
         reason,
         "— content-divar.js DOM loop remains the safety net."
       );
+    } catch (_e) {}
+  }
+
+  function markEngineHookLive() {
+    try {
+      window.__divarAutoEngineHookLive = true;
+      window.__divarAutoUseDomFallback = false;
     } catch (_e) {}
   }
 
@@ -159,7 +168,13 @@
     var data = event.data;
     if (!data || typeof data !== "object") return false;
     if (data.source !== SOURCE) return false;
-    if (data.type !== EVENT_TYPE && data.type !== FAIL_TYPE) return false;
+    if (
+      data.type !== EVENT_TYPE &&
+      data.type !== FAIL_TYPE &&
+      data.type !== OK_TYPE
+    ) {
+      return false;
+    }
     return true;
   }
 
@@ -174,9 +189,22 @@
           // Helpful for multi-tab debugging
           pageUrl: String(location.href || "")
         },
-        function (_res) {
-          // Ignore missing receiver during SW sleep; next event will retry.
+        function (res) {
           void chrome.runtime.lastError;
+          try {
+            if (!res) return;
+            if (res.duplicate) return;
+            if (res.skipped) return;
+            if (res.ingested) {
+              log(
+                "ingest ابر OK → messages/AI",
+                res.external_message_id || "",
+                (res && res.error) || ""
+              );
+            } else if (res.ok === false) {
+              logWarn("ingest ابر ناموفق:", res.error || "unknown");
+            }
+          } catch (_e) {}
         }
       );
     } catch (err) {
@@ -210,6 +238,15 @@
     try {
       if (!isValidBridgeMessage(event)) return;
 
+      if (event.data.type === OK_TYPE) {
+        markEngineHookLive();
+        if (!hookReady) {
+          hookReady = true;
+          log("MAIN-world webpack hook OK — engine ingest path active.");
+        }
+        return;
+      }
+
       if (event.data.type === FAIL_TYPE) {
         hookFailed = true;
         logWarn(
@@ -240,6 +277,7 @@
       // DIVAR_AUTO_CHAT_EVENT
       if (!hookReady) {
         hookReady = true;
+        markEngineHookLive();
         log("First chat event received — MAIN↔isolated bridge is live.");
       }
       logPeerIncomingIfAny(event.data.event);

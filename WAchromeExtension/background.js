@@ -468,21 +468,71 @@ var DIVAR_SEEN_MAX = 2000;
  * Placeholder for future Divar auto-reply / cloud ingest automation.
  * @param {string} chatId
  * @param {object} messageData  engine payload.message
+ * @returns {Promise<{ok:boolean, error?:string, ingested?:boolean}>}
  */
-function handleNewIncomingMessage(chatId, messageData) {
+async function handleNewIncomingMessage(chatId, messageData) {
   try {
-    console.log(
-      "[DivarAuto:bg] new incoming message",
-      "chatId=",
-      chatId,
-      "id=",
-      messageData && messageData.id,
-      "data=",
-      messageData && String(messageData.data || "").slice(0, 120)
+    var body = String((messageData && messageData.data) || "").trim();
+    if (!chatId || !body) {
+      return { ok: false, error: "empty_chat_or_body" };
+    }
+    // Skip Divar bot / system noise if flagged
+    if (messageData && messageData.isBot === true) {
+      return { ok: true, ingested: false, skipped: "bot" };
+    }
+
+    if (!(await requireCloudAuth(false))) {
+      console.log("[DivarAuto:bg] skip ingest — auth required");
+      return { ok: false, error: "auth_required" };
+    }
+
+    try {
+      await IranexpediaCloudBridge.ensureChannelAccount("divar");
+    } catch (_e) {}
+
+    var externalId =
+      messageData && messageData.id != null
+        ? String(messageData.id)
+        : String(chatId) +
+          ":" +
+          String((messageData && messageData.time) || "") +
+          ":" +
+          body.slice(0, 40);
+
+    var ing = await IranexpediaCloudBridge.ingestMessage({
+      chat_name: String(chatId),
+      body: body,
+      direction: "inbound",
+      external_chat_id: String(chatId),
+      post_token: "",
+      ad_title: "",
+      chat_type: "pv",
+      sender_type: "customer",
+      external_message_id: externalId
+    });
+
+    if (ing && ing.ok) {
+      console.log(
+        "[DivarAuto:bg] ingest OK → messages + AI pipeline",
+        "chatId=",
+        chatId,
+        "id=",
+        externalId,
+        "data=",
+        body.slice(0, 80)
+      );
+      return { ok: true, ingested: true, external_message_id: externalId };
+    }
+
+    console.warn(
+      "[DivarAuto:bg] ingest FAIL",
+      (ing && ing.error) || "unknown",
+      chatId
     );
-    // TODO: wire to IranexpediaCloudBridge.ingestMessage / auto-reply pipeline.
+    return { ok: false, error: (ing && ing.error) || "ingest_failed" };
   } catch (err) {
     console.warn("[DivarAuto:bg] handleNewIncomingMessage error:", err);
+    return { ok: false, error: String((err && err.message) || err) };
   }
 }
 
@@ -503,26 +553,38 @@ function rememberDivarMessageId(id) {
   return true;
 }
 
-function onDivarChatEvent(message) {
+/**
+ * @returns {Promise<{ok:boolean, ingested?:boolean, error?:string, duplicate?:boolean}>}
+ */
+async function onDivarChatEvent(message) {
   try {
     var ev = message && message.event;
     var payload = ev && ev.payload;
-    if (!payload || typeof payload !== "object") return;
+    if (!payload || typeof payload !== "object") {
+      return { ok: true, ingested: false, skipped: "no_payload" };
+    }
 
     // Only peer-authored chat messages count as "new incoming".
     // Other payload.type values (FULL_SYNC, typing, …) are intentionally ignored here.
-    if (payload.type !== "message") return;
+    if (payload.type !== "message") {
+      return { ok: true, ingested: false, skipped: "not_message" };
+    }
     var msg = payload.message;
-    if (!msg || msg.peer !== true) return;
+    if (!msg || msg.peer !== true) {
+      return { ok: true, ingested: false, skipped: "not_peer" };
+    }
 
     var mid = msg.id != null ? String(msg.id) : "";
-    if (!mid) return;
-    if (!rememberDivarMessageId(mid)) return;
+    if (!mid) return { ok: false, error: "missing_message_id" };
+    if (!rememberDivarMessageId(mid)) {
+      return { ok: true, ingested: false, duplicate: true };
+    }
 
     var chatId = msg.chatId != null ? String(msg.chatId) : "";
-    handleNewIncomingMessage(chatId, msg);
+    return await handleNewIncomingMessage(chatId, msg);
   } catch (err) {
     console.warn("[DivarAuto:bg] onDivarChatEvent error (non-fatal):", err);
+    return { ok: false, error: String((err && err.message) || err) };
   }
 }
 
@@ -530,9 +592,8 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
   if (!message || !message.type) return;
 
   if (message.type === DIVAR_CHAT_EVENT) {
-    onDivarChatEvent(message);
-    sendResponse({ ok: true });
-    return;
+    onDivarChatEvent(message).then(sendResponse);
+    return true;
   }
 
   if (message.type === DIVAR_HOOK_FAILED) {

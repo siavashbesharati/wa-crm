@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "پاسخ خودکار چندکاناله",
   "description": "CRM و پاسخ خودکار واتساپ و دیوار. توسعه: iranexpedia.ir",
-  "version": "7.3.6",
+  "version": "7.3.7",
   "permissions": [
     "storage",
     "alarms",

@@ -502,6 +502,12 @@
   }
 
   async function processLoop() {
+    // Reliable Event Sourcing hook owns inbound ingest → cloud AI.
+    // Keep DOM path only when hook failed / unavailable.
+    if (window.__divarAutoEngineHookLive && !window.__divarAutoUseDomFallback) {
+      return;
+    }
+
     // Always ingest open chat for cloud AI
     try {
       if (getOpenChatId() && document.querySelector("#chat-input")) {

@@ -22,6 +22,7 @@
   var SOURCE = "divar-auto-inject";
   var EVENT_TYPE = "DIVAR_AUTO_CHAT_EVENT";
   var FAIL_TYPE = "DIVAR_AUTO_HOOK_FAILED";
+  var OK_TYPE = "DIVAR_AUTO_HOOK_OK";
 
   /** @type {number} webpack module id — bump when Divar rebundles */
   var ENGINE_MODULE_ID = 66478;
@@ -295,6 +296,9 @@
         var outcome = attemptHook();
         if (outcome.status === "ok") {
           done = true;
+          try {
+            postToBridge(OK_TYPE, { moduleId: ENGINE_MODULE_ID });
+          } catch (_e) {}
           log("Hook ready.");
           return;
         }
