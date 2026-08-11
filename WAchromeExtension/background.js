@@ -504,6 +504,8 @@ async function handleNewIncomingMessage(chatId, messageData) {
       body: body,
       direction: "inbound",
       external_chat_id: String(chatId),
+      // Same id CRM panel stores as phone — merges into existing inbox lead
+      phone: String(chatId),
       post_token: "",
       ad_title: "",
       chat_type: "pv",
@@ -570,7 +572,20 @@ async function onDivarChatEvent(message) {
       return { ok: true, ingested: false, skipped: "not_message" };
     }
     var msg = payload.message;
-    if (!msg || msg.peer !== true) {
+    if (!msg) {
+      return { ok: true, ingested: false, skipped: "not_peer" };
+    }
+    // Divar uses peer:true for counterpart. Some envelopes omit it; treat
+    // explicit peer:false / sendPhase pending-own as not inbound.
+    if (msg.peer === false || msg.peer === "false") {
+      return { ok: true, ingested: false, skipped: "not_peer" };
+    }
+    if (msg.peer !== true && msg.peer !== "true") {
+      // Without peer flag, only accept if clearly not our own outgoing draft
+      if (msg.sendPhase === "pending" || msg.sendPhase === "sending") {
+        return { ok: true, ingested: false, skipped: "not_peer" };
+      }
+      // Require peer===true for reliability — closed-chat events should still set it
       return { ok: true, ingested: false, skipped: "not_peer" };
     }
 
@@ -763,7 +778,14 @@ async function syncLocalContactsToCloud() {
       stage: c.stage || "جدید",
       tags: c.tags || [],
       notes: c.notes || "",
-      botPaused: !!c.botPaused
+      botPaused: !!c.botPaused,
+      // Divar contacts store chat UUID in phone — keep external_chat_id in sync
+      externalChatId:
+        c.externalChatId ||
+        c.chatId ||
+        (c.channel === "divar" || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(c.phone || ""))
+          ? c.phone || ""
+          : "")
     });
     if (res && res.ok) synced += 1;
     else errors += 1;

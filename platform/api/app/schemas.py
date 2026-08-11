@@ -252,6 +252,8 @@ class AiPolicyIn(BaseModel):
     hours_end: str = "18:00"
     agent_role: str = ""
     system_prompt: str = ""
+    # Empty string = use platform global fallback_message
+    fallback_message: str = ""
 
 
 class OkrIn(BaseModel):

@@ -44,10 +44,13 @@
   var EVENT_TYPE = "DIVAR_AUTO_CHAT_EVENT";
   var FAIL_TYPE = "DIVAR_AUTO_HOOK_FAILED";
   var OK_TYPE = "DIVAR_AUTO_HOOK_OK";
+  var HEARTBEAT_TYPE = "DIVAR_AUTO_HOOK_HEARTBEAT";
 
   /** Set true when MAIN-world hook reports failure — enables DOM fallback. */
   var hookFailed = false;
   var hookReady = false;
+  var lastHeartbeatAt = 0;
+  var HEARTBEAT_STALE_MS = 28000;
 
   function log() {
     try {
@@ -156,6 +159,8 @@
     try {
       window.__divarAutoEngineHookLive = true;
       window.__divarAutoUseDomFallback = false;
+      lastHeartbeatAt = Date.now();
+      hookFailed = false;
     } catch (_e) {}
   }
 
@@ -171,7 +176,8 @@
     if (
       data.type !== EVENT_TYPE &&
       data.type !== FAIL_TYPE &&
-      data.type !== OK_TYPE
+      data.type !== OK_TYPE &&
+      data.type !== HEARTBEAT_TYPE
     ) {
       return false;
     }
@@ -219,7 +225,16 @@
   function logPeerIncomingIfAny(engineEvent) {
     try {
       var payload = engineEvent && engineEvent.payload;
-      if (!payload || payload.type !== "message") return;
+      if (!payload) return;
+      // Visibility for debugging closed-chat delivery
+      if (payload.type && payload.type !== "message") {
+        if (!logPeerIncomingIfAny._lastOther || Date.now() - logPeerIncomingIfAny._lastOther > 15000) {
+          logPeerIncomingIfAny._lastOther = Date.now();
+          log("engine event type=", payload.type, "(non-message — ignored for ingest)");
+        }
+        return;
+      }
+      if (payload.type !== "message") return;
       var msg = payload.message;
       if (!msg || msg.peer !== true) return;
       log(
@@ -238,11 +253,23 @@
     try {
       if (!isValidBridgeMessage(event)) return;
 
+      if (event.data.type === HEARTBEAT_TYPE) {
+        lastHeartbeatAt = Date.now();
+        if (event.data.hooked) {
+          markEngineHookLive();
+        } else if (hookReady) {
+          enableDomFallback("heartbeat_unhooked");
+        }
+        return;
+      }
+
       if (event.data.type === OK_TYPE) {
         markEngineHookLive();
         if (!hookReady) {
           hookReady = true;
           log("MAIN-world webpack hook OK — engine ingest path active.");
+        } else if (event.data.rehooked) {
+          log("MAIN-world webpack hook re-attached after SPA remount.");
         }
         return;
       }
@@ -275,10 +302,13 @@
       }
 
       // DIVAR_AUTO_CHAT_EVENT
+      lastHeartbeatAt = Date.now();
       if (!hookReady) {
         hookReady = true;
         markEngineHookLive();
         log("First chat event received — MAIN↔isolated bridge is live.");
+      } else {
+        markEngineHookLive();
       }
       logPeerIncomingIfAny(event.data.event);
       forwardChatEventToBackground(event.data);
@@ -289,5 +319,17 @@
 
   window.addEventListener("message", onWindowMessage, false);
   injectIntoMainWorld();
+
+  // If inject dies after OK (no heartbeat), re-enable DOM unread scanner.
+  setInterval(function () {
+    try {
+      if (!hookReady || hookFailed) return;
+      if (!lastHeartbeatAt) return;
+      if (Date.now() - lastHeartbeatAt > HEARTBEAT_STALE_MS) {
+        enableDomFallback("heartbeat_stale");
+      }
+    } catch (_e) {}
+  }, 5000);
+
   log("content-bridge armed at", location.href);
 })();

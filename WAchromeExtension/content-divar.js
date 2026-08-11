@@ -455,6 +455,7 @@
         body: peer.text,
         direction: "inbound",
         external_chat_id: chatId,
+        phone: chatId,
         post_token: getPostToken(),
         ad_title: getAdTitle(),
         chat_type: "pv",
@@ -501,30 +502,78 @@
     return true;
   }
 
-  async function processLoop() {
-    // Reliable Event Sourcing hook owns inbound ingest → cloud AI.
-    // Keep DOM path only when hook failed / unavailable.
-    if (window.__divarAutoEngineHookLive && !window.__divarAutoUseDomFallback) {
-      return;
-    }
-
-    // Always ingest open chat for cloud AI
-    try {
-      if (getOpenChatId() && document.querySelector("#chat-input")) {
-        await ingestOpenChatToCloud();
+  async function ingestUnreadPreviewsFromSidebar() {
+    // Does NOT open chats — works while another thread is open.
+    if (!(await refreshLicenseStatus())) return 0;
+    if (!globalThis.IranexpediaCloudBridge) return 0;
+    var unread = collectUnreadChats();
+    if (!unread.length) return 0;
+    var n = 0;
+    for (var i = 0; i < unread.length; i++) {
+      var u = unread[i];
+      var text = String(u.preview || "").trim();
+      if (!text || text === "…") continue;
+      var key = "sidebar|" + u.id + "|" + text;
+      if (ingestedKeys[key]) continue;
+      try {
+        var ing = await IranexpediaCloudBridge.ingestMessage({
+          chat_name: u.name || u.adTitle || u.id,
+          body: text,
+          direction: "inbound",
+          external_chat_id: u.id,
+          phone: u.id,
+          post_token: "",
+          ad_title: u.adTitle || "",
+          chat_type: "pv",
+          sender_type: "customer",
+          // Stable-ish id from preview (engine UUID preferred when available)
+          external_message_id: "divar-preview:" + u.id + ":" + text.slice(0, 80)
+        });
+        if (ing && ing.ok) {
+          ingestedKeys[key] = true;
+          n += 1;
+          log("ingest سایدبار (چت بسته) ←", u.name || u.id, ":", text.slice(0, 80));
+        }
+      } catch (err) {
+        log("sidebar ingest failed", err);
       }
+    }
+    return n;
+  }
+
+  async function processLoop() {
+    // 1) Always try sidebar unread previews — works even when another chat is open
+    //    and even when the webpack ingest hook is quiet.
+    try {
+      await ingestUnreadPreviewsFromSidebar();
     } catch (err) {
-      log("cloud ingest error", err);
+      log("sidebar unread error", err);
     }
 
+    var engineLive =
+      !!window.__divarAutoEngineHookLive && !window.__divarAutoUseDomFallback;
+
+    // 2) Open-chat DOM scrape only if engine is not healthy
+    if (!engineLive) {
+      try {
+        if (getOpenChatId() && document.querySelector("#chat-input")) {
+          await ingestOpenChatToCloud();
+        }
+      } catch (err) {
+        log("cloud ingest error", err);
+      }
+    }
+
+    // 3) Optional: open unread threads when auto-reply is on (full message body)
     if (!isEnabled || busy) return;
     const ok = await refreshLicenseStatus();
     if (!ok) return;
     busy = true;
     try {
-      // If a chat is already open, only ingest there — do not bounce inbox↔chat
-      if (getOpenChatId() && document.querySelector("#chat-input")) {
-        await processOpenChatForCloud();
+      var openId = getOpenChatId();
+      if (openId && document.querySelector("#chat-input")) {
+        if (!engineLive) await processOpenChatForCloud();
+        // Do not return early forever — other unread already handled via sidebar.
         return;
       }
 

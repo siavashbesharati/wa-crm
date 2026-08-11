@@ -23,12 +23,18 @@
   var EVENT_TYPE = "DIVAR_AUTO_CHAT_EVENT";
   var FAIL_TYPE = "DIVAR_AUTO_HOOK_FAILED";
   var OK_TYPE = "DIVAR_AUTO_HOOK_OK";
+  var HEARTBEAT_TYPE = "DIVAR_AUTO_HOOK_HEARTBEAT";
 
   /** @type {number} webpack module id — bump when Divar rebundles */
   var ENGINE_MODULE_ID = 66478;
 
   var POLL_MS = 200;
   var TIMEOUT_MS = 30000;
+  var WATCHDOG_MS = 4000;
+  var HEARTBEAT_MS = 8000;
+
+  /** Live engine ref for watchdog re-patch after SPA remounts. */
+  var hookedEngine = null;
 
   function log() {
     try {
@@ -153,11 +159,41 @@
   }
 
   /**
+   * Resolve engine from a webpack require fn.
+   * Tries known module id first, then scans exports for *.T.ingest.
+   */
+  function resolveEngineFromRequire(require) {
+    if (typeof require !== "function") return null;
+
+    function fromMod(mod, id) {
+      if (!mod || !mod.T || typeof mod.T.ingest !== "function") return null;
+      return { engine: mod.T, moduleId: id };
+    }
+
+    try {
+      var known = fromMod(require(ENGINE_MODULE_ID), ENGINE_MODULE_ID);
+      if (known) return known;
+    } catch (_e) {}
+
+    var cache = require.c || require.cache || null;
+    if (cache && typeof cache === "object") {
+      var ids = Object.keys(cache);
+      for (var i = 0; i < ids.length; i++) {
+        try {
+          var mod = cache[ids[i]] && cache[ids[i]].exports;
+          var hit = fromMod(mod, ids[i]);
+          if (hit) {
+            log("Discovered engine module id=", ids[i], "(expected", ENGINE_MODULE_ID + ")");
+            return hit;
+          }
+        } catch (_e2) {}
+      }
+    }
+    return null;
+  }
+
+  /**
    * Grab the live engine singleton via webpack's chunk push/require API.
-   * Returns:
-   *   { ok: true, engine }
-   *   { ok: false, pending: true }   — keep polling (runtime/module not ready)
-   *   { ok: false, pending: false, error } — fatal shape mismatch
    */
   function tryGrabEngine() {
     try {
@@ -166,7 +202,7 @@
         return { ok: false, pending: true };
       }
 
-      var engine = null;
+      var found = null;
       /** @type {string|null} */
       var fatalError = null;
       var moduleNotReady = false;
@@ -177,30 +213,14 @@
         function (require) {
           try {
             if (typeof require !== "function") {
-              // Webpack runtime not installed yet — chunk may only be queued.
               moduleNotReady = true;
               return;
             }
-            var mod;
-            try {
-              mod = require(ENGINE_MODULE_ID);
-            } catch (_reqErr) {
-              // Module id not in cache yet (chat chunk still loading) → keep polling.
+            found = resolveEngineFromRequire(require);
+            if (!found) {
+              // Module cache present but shape not found yet / wrong bundle
               moduleNotReady = true;
-              return;
             }
-            if (!mod) {
-              moduleNotReady = true;
-              return;
-            }
-            // webpack getter export: n.d(t,{T:function(){return V}}) → mod.T is instance
-            if (!mod.T) {
-              fatalError =
-                "mod.T missing — export shape changed? keys=" +
-                Object.keys(mod).slice(0, 20).join(",");
-              return;
-            }
-            engine = mod.T;
           } catch (inner) {
             fatalError = String((inner && inner.message) || inner);
           }
@@ -210,16 +230,22 @@
       if (fatalError) {
         return { ok: false, pending: false, error: fatalError };
       }
-      if (!engine) {
-        // Factory deferred, or module still loading.
+      if (!found) {
         return { ok: false, pending: true, deferred: moduleNotReady };
       }
-      return { ok: true, engine: engine };
+      return { ok: true, engine: found.engine, moduleId: found.moduleId };
     } catch (err) {
-      // Unexpected — treat as pending until timeout rather than crashing.
       logWarn("tryGrabEngine exception (will retry):", err);
       return { ok: false, pending: true };
     }
+  }
+
+  function isIngestPatched(engine) {
+    return !!(
+      engine &&
+      typeof engine.ingest === "function" &&
+      engine.ingest.__divarAutoPatched === true
+    );
   }
 
   /**
@@ -228,8 +254,8 @@
    */
   function patchIngest(engine) {
     try {
-      if (engine.__divarAutoHooked === true) {
-        log("Already hooked — skipping re-patch (re-injection safe).");
+      if (isIngestPatched(engine)) {
+        hookedEngine = engine;
         return { ok: true, already: true };
       }
 
@@ -243,13 +269,15 @@
         };
       }
 
-      var originalIngest = engine.ingest.bind(engine);
+      // If Divar replaced ingest but left our flag, clear and wrap again.
+      var previous = engine.ingest;
+      var originalIngest =
+        previous && previous.__divarAutoOriginal
+          ? previous.__divarAutoOriginal
+          : previous.bind(engine);
 
-      engine.ingest = function patchedIngest(event) {
+      function patchedIngest(event) {
         try {
-          // Forward ALL events (message, typing, FULL_SYNC, …) as JSON-safe
-          // snapshots. Filtering (peer / type) happens in background — not here.
-          // Never pass the live object: it may hold React render functions.
           var snapshot = toCloneable(event);
           if (snapshot != null) {
             postToBridge(EVENT_TYPE, { event: snapshot });
@@ -258,13 +286,17 @@
           logWarn("forward failed (non-fatal):", fwdErr);
         }
         return originalIngest(event);
-      };
+      }
+      patchedIngest.__divarAutoPatched = true;
+      patchedIngest.__divarAutoOriginal = originalIngest;
 
+      engine.ingest = patchedIngest;
       engine.__divarAutoHooked = true;
+      hookedEngine = engine;
       log(
         "Patched engine.ingest on module",
         ENGINE_MODULE_ID,
-        "— listening for chat events."
+        "— listening for chat events (incl. closed chats)."
       );
       return { ok: true, already: false };
     } catch (err) {
@@ -283,7 +315,43 @@
     if (!patch.ok) {
       return { status: "fatal", error: patch.error || "patch_failed" };
     }
-    return { status: "ok", already: !!patch.already };
+    return { status: "ok", already: !!patch.already, moduleId: result.moduleId };
+  }
+
+  function startWatchdog() {
+    setInterval(function () {
+      try {
+        var result = tryGrabEngine();
+        if (!result.ok || !result.engine) return;
+        var engine = result.engine;
+        if (isIngestPatched(engine)) {
+          hookedEngine = engine;
+          return;
+        }
+        logWarn("Engine ingest not patched — re-wrapping live instance.");
+        var patch = patchIngest(engine);
+        if (patch.ok) {
+          postToBridge(OK_TYPE, {
+            moduleId: result.moduleId || ENGINE_MODULE_ID,
+            rehooked: true
+          });
+        } else {
+          logWarn("re-patch failed:", patch.error || "unknown");
+        }
+      } catch (err) {
+        logWarn("watchdog error:", err);
+      }
+    }, WATCHDOG_MS);
+
+    setInterval(function () {
+      try {
+        var alive = isIngestPatched(hookedEngine);
+        postToBridge(HEARTBEAT_TYPE, {
+          hooked: alive,
+          moduleId: ENGINE_MODULE_ID
+        });
+      } catch (_e) {}
+    }, HEARTBEAT_MS);
   }
 
   function startPolling() {
@@ -300,6 +368,7 @@
             postToBridge(OK_TYPE, { moduleId: ENGINE_MODULE_ID });
           } catch (_e) {}
           log("Hook ready.");
+          startWatchdog();
           return;
         }
         if (outcome.status === "fatal") {

@@ -48,8 +48,81 @@ def _to_out(m: Message) -> MessageOut:
     )
 
 
+def _touch_lead_from_ingest(
+    lead: Lead,
+    *,
+    phone: str | None,
+    external_chat_id: str | None,
+    post_token: str,
+    source_channel: str,
+    body: MessageIngestIn,
+    chat_name: str,
+) -> None:
+    if phone and not lead.phone:
+        lead.phone = phone
+    # Divar CRM often stores chat UUID in phone without external_chat_id
+    if external_chat_id and not lead.phone:
+        lead.phone = external_chat_id
+    if body.group_id and not lead.group_id:
+        lead.group_id = body.group_id
+    if external_chat_id and not lead.external_chat_id:
+        lead.external_chat_id = external_chat_id
+    if post_token and not lead.post_token:
+        lead.post_token = post_token
+    if not lead.source_channel:
+        lead.source_channel = source_channel
+    # Prefer human name over raw UUID chat id
+    if body.ad_title and (not lead.name or lead.name == chat_name or lead.name == external_chat_id):
+        lead.name = body.ad_title[:200]
+    elif (
+        chat_name
+        and chat_name != external_chat_id
+        and (not lead.name or lead.name == external_chat_id)
+    ):
+        lead.name = chat_name[:200]
+    lead.last_message_at = datetime.utcnow()
+    lead.updated_at = datetime.utcnow()
+
+
+def _ensure_account_link(
+    db: Session,
+    *,
+    org_id: str,
+    lead_id: str,
+    account_id: str,
+    chat_name: str,
+    external_chat_id: str | None,
+) -> LeadAccountLink:
+    link = (
+        db.query(LeadAccountLink)
+        .filter(
+            LeadAccountLink.org_id == org_id,
+            LeadAccountLink.lead_id == lead_id,
+            LeadAccountLink.account_id == account_id,
+        )
+        .first()
+    )
+    if link:
+        if external_chat_id and not link.external_chat_id:
+            link.external_chat_id = external_chat_id
+        if chat_name and (not link.chat_name or link.chat_name == external_chat_id):
+            link.chat_name = chat_name
+        db.add(link)
+        return link
+    link = LeadAccountLink(
+        org_id=org_id,
+        lead_id=lead_id,
+        account_id=account_id,
+        chat_name=chat_name,
+        external_chat_id=external_chat_id,
+    )
+    db.add(link)
+    return link
+
+
 def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, acc: ChannelAccount) -> Lead:
     external_chat_id = (body.external_chat_id or "").strip() or None
+    phone = (body.phone or "").strip() or None
     chat_name = (body.chat_name or body.ad_title or "").strip() or "بدون نام"
     post_token = (body.post_token or "").strip()
     source_channel = acc.channel.value if isinstance(acc.channel, ChannelType) else str(acc.channel)
@@ -65,7 +138,7 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             )
             .first()
         )
-    if not link:
+    if not link and chat_name and chat_name != external_chat_id:
         link = (
             db.query(LeadAccountLink)
             .filter(
@@ -79,20 +152,15 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
     if link:
         lead = db.get(Lead, link.lead_id)
         if lead:
-            if body.phone and not lead.phone:
-                lead.phone = body.phone
-            if body.group_id and not lead.group_id:
-                lead.group_id = body.group_id
-            if external_chat_id and not lead.external_chat_id:
-                lead.external_chat_id = external_chat_id
-            if post_token and not lead.post_token:
-                lead.post_token = post_token
-            if not lead.source_channel:
-                lead.source_channel = source_channel
-            if body.ad_title and (not lead.name or lead.name == chat_name):
-                lead.name = body.ad_title[:200] if body.ad_title else lead.name
-            lead.last_message_at = datetime.utcnow()
-            lead.updated_at = datetime.utcnow()
+            _touch_lead_from_ingest(
+                lead,
+                phone=phone,
+                external_chat_id=external_chat_id,
+                post_token=post_token,
+                source_channel=source_channel,
+                body=body,
+                chat_name=chat_name,
+            )
             db.add(lead)
             if external_chat_id and not link.external_chat_id:
                 link.external_chat_id = external_chat_id
@@ -106,43 +174,56 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             .filter(Lead.org_id == org_id, Lead.external_chat_id == external_chat_id)
             .first()
         )
-    if not lead and body.phone:
-        lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == body.phone).first()
+    # CRM sync often saved Divar chatId as phone with empty external_chat_id
+    if not lead and external_chat_id:
+        lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == external_chat_id).first()
+    if not lead and phone:
+        lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == phone).first()
+    if not lead and phone:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == org_id, Lead.external_chat_id == phone)
+            .first()
+        )
     if not lead and body.group_id:
         lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.group_id == body.group_id).first()
+
     if not lead:
         display = (body.ad_title or chat_name)[:200]
+        if display == external_chat_id and phone:
+            display = phone[:200]
         lead = Lead(
             org_id=org_id,
             name=display,
-            phone=body.phone if body.chat_type != "group" else "",
+            phone=(phone or external_chat_id or "") if body.chat_type != "group" else "",
             group_id=body.group_id if body.chat_type == "group" else "",
             external_chat_id=external_chat_id,
             post_token=post_token,
             source_channel=source_channel,
             chat_type=body.chat_type or "pv",
+            last_message_at=datetime.utcnow(),
         )
         db.add(lead)
         db.flush()
     else:
-        if external_chat_id and not lead.external_chat_id:
-            lead.external_chat_id = external_chat_id
-        if post_token and not lead.post_token:
-            lead.post_token = post_token
-        if not lead.source_channel:
-            lead.source_channel = source_channel
-        lead.last_message_at = datetime.utcnow()
-        lead.updated_at = datetime.utcnow()
+        _touch_lead_from_ingest(
+            lead,
+            phone=phone,
+            external_chat_id=external_chat_id,
+            post_token=post_token,
+            source_channel=source_channel,
+            body=body,
+            chat_name=chat_name,
+        )
         db.add(lead)
 
-    db.add(
-        LeadAccountLink(
-            org_id=org_id,
-            lead_id=lead.id,
-            account_id=body.account_id,
-            chat_name=chat_name,
-            external_chat_id=external_chat_id,
-        )
+    _ensure_account_link(
+        db,
+        org_id=org_id,
+        lead_id=lead.id,
+        account_id=body.account_id,
+        chat_name=chat_name,
+        external_chat_id=external_chat_id,
     )
     return lead
 

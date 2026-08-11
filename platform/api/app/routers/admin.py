@@ -168,6 +168,7 @@ class AiDefaultsIn(BaseModel):
     top_p: float = 1.0
     reasoning_effort: str = ""  # "", low, medium, high (Groq / reasoning models)
     system_prompt: str = ""
+    fallback_message: str = ""
     default_min_confidence: float = 0.55
     auto_send_default: bool = False
     notes: str = ""
@@ -421,7 +422,7 @@ def put_ai_defaults(
 ):
     from app.services import gemini as gemini_svc
     from app.services import openai_compat
-    from app.services.ai_reply import DEFAULT_PLATFORM_SYSTEM, PROVIDERS
+    from app.services.ai_reply import DEFAULT_FALLBACK_MESSAGE, DEFAULT_PLATFORM_SYSTEM, PROVIDERS
 
     current = _get_ai_defaults(db)
     provider = (body.provider or "openai_compatible").strip().lower()
@@ -444,6 +445,7 @@ def put_ai_defaults(
         current.get("gemini_model") or gemini_svc.DEFAULT_MODEL
     )
     system_prompt = (body.system_prompt or "").strip() or DEFAULT_PLATFORM_SYSTEM
+    fallback_message = (body.fallback_message or "").strip() or DEFAULT_FALLBACK_MESSAGE
 
     value = {
         "provider": provider,
@@ -455,6 +457,7 @@ def put_ai_defaults(
         "top_p": float(body.top_p),
         "reasoning_effort": (body.reasoning_effort or "").strip(),
         "system_prompt": system_prompt,
+        "fallback_message": fallback_message,
         "default_min_confidence": float(body.default_min_confidence),
         "auto_send_default": bool(body.auto_send_default),
         "notes": (body.notes or "").strip(),

@@ -30,6 +30,10 @@ DEFAULT_PLATFORM_SYSTEM = (
     "از تاریخچه گفتگو برای حفظ زمینه استفاده کن و تکرار سوال‌های قبلی را نکن."
 )
 
+DEFAULT_FALLBACK_MESSAGE = (
+    "سلام، پیام شما دریافت شد. همکاران ما به‌زودی پاسخ می‌دهند."
+)
+
 PROVIDERS = ("openai_compatible", "gemini")
 
 
@@ -45,6 +49,7 @@ def get_platform_ai_settings(db: Session) -> dict:
         "top_p": 1.0,
         "reasoning_effort": "",
         "system_prompt": DEFAULT_PLATFORM_SYSTEM,
+        "fallback_message": DEFAULT_FALLBACK_MESSAGE,
         "default_min_confidence": 0.55,
         "auto_send_default": False,
         "notes": "",
@@ -106,6 +111,8 @@ def get_platform_ai_settings(db: Session) -> dict:
         base["gemini_model"] = gemini.DEFAULT_MODEL
     if not (base.get("system_prompt") or "").strip():
         base["system_prompt"] = DEFAULT_PLATFORM_SYSTEM
+    if not (base.get("fallback_message") or "").strip():
+        base["fallback_message"] = DEFAULT_FALLBACK_MESSAGE
 
     try:
         base["temperature"] = float(base.get("temperature") if base.get("temperature") is not None else 0.4)
@@ -293,6 +300,37 @@ def _compose_user_prompt(
     )
 
 
+def resolve_fallback_message(
+    db: Session,
+    *,
+    org_id: str,
+    policy: AiPolicy | None = None,
+    platform: dict | None = None,
+) -> str:
+    """Org override wins; else platform global; else hardcoded default."""
+    if policy is None:
+        policy = db.query(AiPolicy).filter(AiPolicy.org_id == org_id).first()
+    org_fb = (getattr(policy, "fallback_message", None) or "").strip() if policy else ""
+    if org_fb:
+        return org_fb
+    plat = platform if platform is not None else get_platform_ai_settings(db)
+    plat_fb = (plat.get("fallback_message") or "").strip()
+    if plat_fb:
+        return plat_fb
+    return DEFAULT_FALLBACK_MESSAGE
+
+
+def _fallback_result(reply: str) -> dict:
+    return {
+        "reply": reply,
+        "confidence": 1.0,
+        "sources": [],
+        "provider": "fallback",
+        "model": "",
+        "force_send": True,
+    }
+
+
 def generate_reply(
     db: Session,
     *,
@@ -304,6 +342,9 @@ def generate_reply(
     """Return {reply, confidence, sources, provider, model}."""
     platform = get_platform_ai_settings(db)
     policy = db.query(AiPolicy).filter(AiPolicy.org_id == org_id).first()
+    fallback_text = resolve_fallback_message(
+        db, org_id=org_id, policy=policy, platform=platform
+    )
     hits = retrieve_knowledge(db, org_id, message, k=4)
     top_score = float(hits[0][1]) if hits else 0.0
     sources = [h[0].content[:120] for h in hits if h[1] > 0.05]
@@ -316,36 +357,40 @@ def generate_reply(
     history_text = format_chat_history(history_msgs, current_message=message)
 
     if not llm_is_configured(platform):
-        if not hits or top_score < 0.05:
+        # Prefer knowledge snippet when retrieval is strong; else configured fallback.
+        if hits and top_score >= 0.05:
+            name = (lead.name if lead else "") or ""
+            reply = f"سلام {name}".strip() + "،\n" + hits[0][0].content[:500]
             return {
-                "reply": "سلام، پیام شما دریافت شد. همکاران ما به‌زودی پاسخ می‌دهند.",
-                "confidence": 0.2,
-                "sources": [],
-                "provider": "fallback",
+                "reply": reply,
+                "confidence": round(max(0.5, top_score), 3),
+                "sources": sources,
+                "provider": "knowledge_only",
                 "model": "",
             }
-        name = (lead.name if lead else "") or ""
-        reply = f"سلام {name}".strip() + "،\n" + hits[0][0].content[:500]
-        return {
-            "reply": reply,
-            "confidence": round(top_score, 3),
-            "sources": sources,
-            "provider": "knowledge_only",
-            "model": "",
-        }
+        return _fallback_result(fallback_text)
 
     system_prompt = _compose_system_prompt(platform, policy)
     user_prompt = _compose_user_prompt(
         lead=lead, message=message, hits=hits, history_text=history_text
     )
-    out = generate_llm_text(platform, system_prompt=system_prompt, user_prompt=user_prompt)
+    try:
+        out = generate_llm_text(platform, system_prompt=system_prompt, user_prompt=user_prompt)
+    except Exception as e:  # noqa: BLE001
+        print(f"[ai_reply] LLM failed, using fallback: {e}")
+        return _fallback_result(fallback_text)
+
+    reply = (out.get("reply") or "").strip()
+    if not reply:
+        return _fallback_result(fallback_text)
+
     # LLM actually produced a reply — don't keep confidence stuck at ~0.45 (that blocked auto-send
     # when org min_confidence was 0.55 and no knowledge hits existed).
     confidence = round(max(0.65, min(0.98, 0.62 + top_score * 0.35)), 3)
     if sources:
         confidence = max(confidence, 0.72)
     return {
-        "reply": out["reply"],
+        "reply": reply,
         "confidence": confidence,
         "sources": sources,
         "provider": out["provider"],

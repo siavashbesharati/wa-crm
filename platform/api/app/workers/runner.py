@@ -110,7 +110,10 @@ def handle_auto_reply(payload: dict) -> None:
 
         result = generate_reply(db, org_id=org.id, lead=lead, message=msg.body)
         min_conf = float(policy.min_confidence or 0)
-        if float(result["confidence"]) < min_conf:
+        is_fallback = (
+            result.get("provider") == "fallback" or bool(result.get("force_send"))
+        )
+        if (not is_fallback) and float(result["confidence"]) < min_conf:
             print(
                 f"[worker] auto_reply skip low_confidence={result['confidence']} "
                 f"min={min_conf} lead={lead.id}"

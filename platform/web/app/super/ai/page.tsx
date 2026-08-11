@@ -23,6 +23,7 @@ type AiDefaults = {
   top_p: number;
   reasoning_effort: string;
   system_prompt: string;
+  fallback_message: string;
   default_min_confidence: number;
   auto_send_default: boolean;
   notes: string;
@@ -93,6 +94,7 @@ export default function SuperAiPage() {
           top_p: form.top_p,
           reasoning_effort: form.reasoning_effort,
           system_prompt: form.system_prompt,
+          fallback_message: form.fallback_message || "",
           default_min_confidence: form.default_min_confidence,
           auto_send_default: form.auto_send_default,
           notes: form.notes,
@@ -350,6 +352,18 @@ export default function SuperAiPage() {
                   onChange={(e) => setForm({ ...form, system_prompt: e.target.value })}
                   placeholder="دستورالعمل کلی برای همه کسب‌وکارها…"
                 />
+              </label>
+              <label className="full">
+                پیام جایگزین سراسری (Fallback)
+                <textarea
+                  rows={3}
+                  value={form.fallback_message || ""}
+                  onChange={(e) => setForm({ ...form, fallback_message: e.target.value })}
+                  placeholder="اگر AI خطا بدهد یا در دسترس نباشد، این متن برای مشتری ارسال می‌شود…"
+                />
+                <span className="hint" style={{ display: "block", marginTop: 6 }}>
+                  کسب‌وکارها می‌توانند در تنظیمات AI خودشان این پیام را فقط برای سازمان خود override کنند.
+                </span>
               </label>
               <label className="full">
                 یادداشت داخلی

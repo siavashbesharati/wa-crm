@@ -396,6 +396,8 @@ class AiPolicy(Base):
     hours_end: Mapped[str] = mapped_column(String(8), default="18:00")
     agent_role: Mapped[str] = mapped_column(String(200), default="")
     system_prompt: Mapped[str] = mapped_column(Text, default="")
+    # Empty = inherit platform ai_defaults.fallback_message
+    fallback_message: Mapped[str] = mapped_column(Text, default="")
 
 
 class KpiDefinition(Base):

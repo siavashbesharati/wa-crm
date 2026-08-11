@@ -38,6 +38,7 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         "hours_end": policy.hours_end,
         "agent_role": getattr(policy, "agent_role", "") or "",
         "system_prompt": getattr(policy, "system_prompt", "") or "",
+        "fallback_message": getattr(policy, "fallback_message", "") or "",
         "plan_allows_auto": True,
         "plan_allows_suggest": True,
     }
@@ -60,6 +61,7 @@ def put_policy(
     policy.hours_end = body.hours_end
     policy.agent_role = (body.agent_role or "").strip()
     policy.system_prompt = (body.system_prompt or "").strip()
+    policy.fallback_message = (body.fallback_message or "").strip()
     db.add(policy)
     db.commit()
     return {"ok": True}

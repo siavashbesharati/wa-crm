@@ -20,6 +20,7 @@ type Policy = {
   hours_end: string;
   agent_role: string;
   system_prompt: string;
+  fallback_message: string;
 };
 
 export default function AiSettingsPage() {
@@ -154,6 +155,23 @@ export default function AiSettingsPage() {
                   })}
                 </div>
               </div>
+
+              <label className="full" style={{ display: "block" }}>
+                <strong>پیام جایگزین (Fallback)</strong>
+                <div className="hint" style={{ margin: "4px 0 8px" }}>
+                  اگر AI خطا بدهد یا پاسخ نسازد، این متن ارسال می‌شود. خالی بگذارید تا پیام سراسری
+                  سوپرادمین استفاده شود.
+                </div>
+                <textarea
+                  rows={3}
+                  value={policy.fallback_message || ""}
+                  onChange={(e) =>
+                    setPolicy({ ...policy, fallback_message: e.target.value })
+                  }
+                  placeholder="خالی = استفاده از پیام سراسری پلتفرم"
+                  style={{ width: "100%" }}
+                />
+              </label>
 
               <Button loading={busy} onClick={save}>
                 ذخیره تنظیمات
