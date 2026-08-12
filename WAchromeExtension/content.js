@@ -453,6 +453,9 @@ async function ingestCloudInbound(chatInfo, text) {
     lastCloudIngestKey = msgKey;
 
     try {
+        if (IranexpediaCloudBridge.ensureChannelAccount) {
+            await IranexpediaCloudBridge.ensureChannelAccount("whatsapp");
+        }
         await IranexpediaCloudBridge.upsertLead({
             name: name,
             phone: phone,
@@ -1424,8 +1427,10 @@ async function processSidebarUnreadForCloud(match) {
     lastHandledText = text;
     const chatInfo = getChatIdentity();
     await saveContactFromIncoming(chatInfo, "incoming");
-    await ingestCloudInbound(chatInfo, text);
-    log("ingest ابر از سایدبار ←", match.chatName);
+    const ing = await ingestCloudInbound(chatInfo, text);
+    if (ing && ing.ok) {
+        log("ingest ابر از سایدبار OK ←", match.chatName);
+    }
 }
 
 async function scanSidebarForCloud() {

@@ -109,6 +109,39 @@ def _ensure_account_link(
             link.chat_name = chat_name
         db.add(link)
         return link
+
+    # Reuse an existing chat slot (unique on org+account+chat_name / external_chat_id)
+    if chat_name:
+        link = (
+            db.query(LeadAccountLink)
+            .filter(
+                LeadAccountLink.org_id == org_id,
+                LeadAccountLink.account_id == account_id,
+                LeadAccountLink.chat_name == chat_name,
+            )
+            .first()
+        )
+    else:
+        link = None
+    if not link and external_chat_id:
+        link = (
+            db.query(LeadAccountLink)
+            .filter(
+                LeadAccountLink.org_id == org_id,
+                LeadAccountLink.account_id == account_id,
+                LeadAccountLink.external_chat_id == external_chat_id,
+            )
+            .first()
+        )
+    if link:
+        link.lead_id = lead_id
+        if external_chat_id and not link.external_chat_id:
+            link.external_chat_id = external_chat_id
+        if chat_name:
+            link.chat_name = chat_name
+        db.add(link)
+        return link
+
     link = LeadAccountLink(
         org_id=org_id,
         lead_id=lead_id,
@@ -138,7 +171,7 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             )
             .first()
         )
-    if not link and chat_name and chat_name != external_chat_id:
+    if not link and chat_name:
         link = (
             db.query(LeadAccountLink)
             .filter(
@@ -187,6 +220,13 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         )
     if not lead and body.group_id:
         lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.group_id == body.group_id).first()
+    # WhatsApp sync often stores display name only (no phone / external_chat_id yet)
+    if not lead and external_chat_id and chat_name == external_chat_id:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == org_id, Lead.name == chat_name)
+            .first()
+        )
 
     if not lead:
         display = (body.ad_title or chat_name)[:200]

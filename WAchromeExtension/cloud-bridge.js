@@ -122,18 +122,38 @@
       { "Content-Type": "application/json" },
       options.headers || {}
     );
-    var res = await fetch(String(apiUrl || DEFAULT_API).replace(/\/$/, "") + path, {
+    var url = String(apiUrl || DEFAULT_API).replace(/\/$/, "") + path;
+    var res = await fetch(url, {
       method: options.method || "GET",
       headers: headers,
       body: options.body ? JSON.stringify(options.body) : undefined
     });
-    var data = await res.json().catch(function () {
-      return {};
+    var rawText = await res.text().catch(function () {
+      return "";
     });
+    var data = {};
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText);
+      } catch (_e) {
+        data = { message: rawText.slice(0, 200) };
+      }
+    }
     if (!res.ok) {
+      var err = data.detail || data.message || "";
+      if (Array.isArray(err)) {
+        err = err
+          .map(function (item) {
+            return (item && (item.msg || item.message)) || String(item);
+          })
+          .join("; ");
+      }
+      if (!err) {
+        err = res.status === 500 ? "server_error" : "http_error:" + res.status;
+      }
       return {
         ok: false,
-        error: data.detail || data.message || "http_error",
+        error: err,
         data: data,
         status: res.status
       };
