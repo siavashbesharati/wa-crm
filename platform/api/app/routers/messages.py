@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.plans import plan_limits
 from app.schemas import MessageIngestIn, MessageOut, OutboundJobOut, SendMessageIn
+from app.services.bot_commands import BOT_ACK_START, BOT_ACK_STOP, parse_bot_command
 from app.services.queue import enqueue
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -33,6 +34,63 @@ def _run_auto_reply_job(payload: dict) -> None:
         handle_auto_reply(payload)
     except Exception as e:  # noqa: BLE001
         print(f"[ingest] auto_reply background error: {e}")
+
+
+def _queue_bot_command_ack(
+    *,
+    org_id: str,
+    account_id: str,
+    lead_id: str,
+    target_name: str,
+    body: str,
+) -> None:
+    """Send a short system ack after stop/start — not AI."""
+    from app.database import SessionLocal
+    from app.workers.runner import _outbound_target
+
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return
+        link = (
+            db.query(LeadAccountLink)
+            .filter(
+                LeadAccountLink.org_id == org_id,
+                LeadAccountLink.lead_id == lead_id,
+                LeadAccountLink.account_id == account_id,
+            )
+            .first()
+        )
+        target = (target_name or "").strip() or _outbound_target(lead, link)
+        if not target:
+            return
+        job = OutboundJob(
+            org_id=org_id,
+            account_id=account_id,
+            lead_id=lead_id,
+            target_name=target,
+            body=body,
+            sender_type=SenderType.system,
+            status=OutboundStatus.queued,
+        )
+        db.add(job)
+        db.add(
+            Message(
+                org_id=org_id,
+                account_id=account_id,
+                lead_id=lead_id,
+                direction=MessageDirection.outbound,
+                sender_type=SenderType.system,
+                body=body,
+            )
+        )
+        db.commit()
+        print(f"[ingest] bot_command ack queued job={job.id} lead={lead_id}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[ingest] bot_command ack error: {e}")
+    finally:
+        db.close()
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -310,10 +368,41 @@ def ingest(
         wa_message_id=ext_msg_id,
     )
     db.add(msg)
+
+    body_text = (body.body or "").strip()
+    bot_cmd = (
+        parse_bot_command(body_text)
+        if body.direction == "inbound" and body_text and body_text != "(sync)"
+        else None
+    )
+    ack_text = ""
+    if bot_cmd == "stop":
+        if not lead.bot_paused:
+            lead.bot_paused = True
+            lead.updated_at = datetime.utcnow()
+            db.add(lead)
+            ack_text = BOT_ACK_STOP
+    elif bot_cmd == "start":
+        if lead.bot_paused:
+            lead.bot_paused = False
+            lead.updated_at = datetime.utcnow()
+            db.add(lead)
+            ack_text = BOT_ACK_START
+
     db.commit()
     db.refresh(msg)
 
-    if body.direction == "inbound" and (body.body or "").strip() and (body.body or "").strip() != "(sync)":
+    chat_name = (body.chat_name or lead.name or "").strip()
+    if bot_cmd and ack_text:
+        background_tasks.add_task(
+            _queue_bot_command_ack,
+            org_id=auth.org.id,
+            account_id=body.account_id,
+            lead_id=lead.id,
+            target_name=chat_name,
+            body=ack_text,
+        )
+    elif not bot_cmd and body.direction == "inbound" and body_text and body_text != "(sync)":
         payload = {"org_id": auth.org.id, "lead_id": lead.id, "message_id": msg.id}
         # Run once in-process only (enqueue+background was causing duplicate AI replies)
         background_tasks.add_task(_run_auto_reply_job, payload)

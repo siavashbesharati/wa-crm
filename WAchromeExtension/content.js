@@ -116,6 +116,66 @@ async function isChatBotPaused(chatName) {
     return !!(contact && contact.botPaused);
 }
 
+/** Match server bot_commands.py — whole message only */
+function parseBotCommand(text) {
+    const t = String(text || "").trim();
+    if (!t) return null;
+    if (/^(stop|pause|halt|\/stop|#stop|توقف|قطع|بس|ایست|خاموش)$/i.test(t)) return "stop";
+    if (/^(start|resume|go|\/start|#start|شروع|ادامه|روشن|فعال)$/i.test(t)) return "start";
+    return null;
+}
+
+/** Sync stop/start to local CRM + cloud lead before ingest */
+async function applyBotCommandFromMessage(chatInfo, text) {
+    const cmd = parseBotCommand(text);
+    if (!cmd) return false;
+    const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
+    if (!name || !globalThis.IranexpediaCrm) return true;
+
+    const chatType = (chatInfo && chatInfo.chatType) || "pv";
+    const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
+    const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
+    const pause = cmd === "stop";
+
+    let contact = await IranexpediaCrm.getContactByName(name);
+    if (contact) {
+        contact = await IranexpediaCrm.updateContact(contact.id, { botPaused: pause });
+    } else {
+        contact = await IranexpediaCrm.upsertContact({
+            name: name,
+            phone: phone,
+            groupId: groupId,
+            chatType: chatType,
+            botPaused: pause
+        });
+    }
+
+    if (globalThis.IranexpediaCloudBridge && isCloudAuthorized()) {
+        try {
+            await IranexpediaCloudBridge.upsertLead({
+                name: name,
+                phone: phone,
+                groupId: groupId,
+                chatType: chatType,
+                botPaused: pause
+            });
+        } catch (_e) {
+            // ingest will still apply on server
+        }
+    }
+
+    log(
+        pause ? "دستور توقف ربات ←" : "دستور فعال‌سازی ربات ←",
+        name
+    );
+    await logCrmEvent(
+        "bot_pause",
+        (pause ? "ربات متوقف (دستور چت): " : "ربات فعال (دستور چت): ") + name,
+        { command: cmd }
+    );
+    return true;
+}
+
 async function logCrmEvent(type, message, meta) {
     if (!globalThis.IranexpediaCrm) return;
     try {
@@ -456,6 +516,7 @@ async function ingestCloudInbound(chatInfo, text) {
         if (IranexpediaCloudBridge.ensureChannelAccount) {
             await IranexpediaCloudBridge.ensureChannelAccount("whatsapp");
         }
+        await applyBotCommandFromMessage(chatInfo, body);
         await IranexpediaCloudBridge.upsertLead({
             name: name,
             phone: phone,
