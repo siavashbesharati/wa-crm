@@ -28,6 +28,12 @@ class TokenOut(BaseModel):
     onboarding_step: str = "done"
 
 
+class TokenRefreshIn(BaseModel):
+    refresh_token: str = Field(min_length=16)
+    org_id: str = ""
+    install_id: str = ""
+
+
 class OrgOut(BaseModel):
     id: str
     name: str

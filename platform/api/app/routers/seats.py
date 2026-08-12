@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import ExtensionSeat, MemberRole, Membership, Organization, User
@@ -17,6 +18,7 @@ from app.services.seat_tokens import hash_token, new_raw_token
 from app.services.security import create_access_token, create_refresh_token
 
 router = APIRouter(prefix="/seats", tags=["seats"])
+settings = get_settings()
 
 
 def _seat_out(seat: ExtensionSeat, *, include_raw: str | None = None) -> dict:
@@ -219,6 +221,7 @@ def activate_seat(body: SeatActivateIn, db: Session = Depends(get_db)):
         scope="org",
         seat_id=seat.id,
         install_id=install_id,
+        access_minutes=settings.jwt_access_minutes_seat,
     )
     refresh = create_refresh_token(db, user.id)
     return TokenOut(

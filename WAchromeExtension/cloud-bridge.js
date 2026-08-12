@@ -88,6 +88,7 @@
       plan: cfg.plan || "",
       seatId: cfg.seatId || "",
       seatTokenPrefix: cfg.seatTokenPrefix || "",
+      seatToken: cfg.seatToken || "",
       deviceId: data.cloudDeviceId,
       installId: data.cloudInstallId
     };
@@ -110,7 +111,8 @@
         orgName: next.orgName,
         plan: next.plan,
         seatId: next.seatId || "",
-        seatTokenPrefix: next.seatTokenPrefix || ""
+        seatTokenPrefix: next.seatTokenPrefix || "",
+        seatToken: next.seatToken || ""
       }
     });
     return getConfig();
@@ -161,19 +163,70 @@
     return { ok: true, data: data, status: res.status };
   }
 
+  var refreshInFlight = null;
+
+  async function refreshAccessTokenImpl() {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async function () {
+      var cfg = await getConfig();
+      if (!cfg.refreshToken) {
+        if (cfg.seatToken) {
+          return activateSeatImpl(cfg.seatToken, cfg.apiUrl);
+        }
+        return { ok: false, error: "no_refresh" };
+      }
+      var res = await rawRequest(cfg.apiUrl, "/auth/refresh", {
+        method: "POST",
+        body: {
+          refresh_token: cfg.refreshToken,
+          org_id: cfg.orgId,
+          install_id: cfg.installId
+        }
+      });
+      if (!res.ok && cfg.seatToken) {
+        return activateSeatImpl(cfg.seatToken, cfg.apiUrl);
+      }
+      if (!res.ok) return res;
+      var token = res.data || {};
+      await setConfig({
+        enabled: true,
+        accessToken: token.access_token || "",
+        refreshToken: token.refresh_token || cfg.refreshToken,
+        orgId: token.org_id || cfg.orgId,
+        role: token.role || cfg.role
+      });
+      return { ok: true, data: token };
+    })();
+    try {
+      return await refreshInFlight;
+    } finally {
+      refreshInFlight = null;
+    }
+  }
+
   async function request(path, options) {
     var cfg = await getConfig();
     if (!cfg.enabled || !cfg.accessToken || !cfg.orgId) {
       return { ok: false, error: "cloud_disabled" };
     }
-    return rawRequest(cfg.apiUrl, path, {
+    var reqOpts = {
       method: options && options.method,
       body: options && options.body,
       headers: {
         Authorization: "Bearer " + cfg.accessToken,
         "X-Org-Id": cfg.orgId
       }
-    });
+    };
+    var res = await rawRequest(cfg.apiUrl, path, reqOpts);
+    if (res.status === 401 && (cfg.refreshToken || cfg.seatToken)) {
+      var refreshed = await refreshAccessTokenImpl();
+      if (refreshed && refreshed.ok) {
+        cfg = await getConfig();
+        reqOpts.headers.Authorization = "Bearer " + cfg.accessToken;
+        return rawRequest(cfg.apiUrl, path, reqOpts);
+      }
+    }
+    return res;
   }
 
   async function requestOtpImpl(phone, apiUrl) {
@@ -253,7 +306,8 @@
       orgId: token.org_id,
       role: "connector",
       seatId: "",
-      seatTokenPrefix: prefix
+      seatTokenPrefix: prefix,
+      seatToken: String(seatToken || "").trim()
     });
     var me = await request("/auth/me", { method: "GET" });
     if (me.ok && me.data && me.data.org) {
@@ -414,7 +468,10 @@
     }
 
     var list = await listAccountsImpl();
-    var accounts = list.ok && Array.isArray(list.data) ? list.data : [];
+    if (!list.ok) {
+      return { ok: false, error: list.error || "list_accounts_failed" };
+    }
+    var accounts = Array.isArray(list.data) ? list.data : [];
     var acc = null;
     for (var i = 0; i < accounts.length; i++) {
       if (accounts[i] && accounts[i].channel === ch) {
@@ -477,6 +534,9 @@
     status: wrap("status", statusImpl),
     /** Used by background only — never proxied. */
     __impl: {
+      request: request,
+      rawRequest: rawRequest,
+      refreshAccessToken: refreshAccessTokenImpl,
       requestOtp: requestOtpImpl,
       verifyOtp: verifyOtpImpl,
       activateSeat: activateSeatImpl,

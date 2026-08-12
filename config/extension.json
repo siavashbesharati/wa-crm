@@ -1,5 +1,5 @@
 {
-  "version": "7.4.2",
+  "version": "7.4.3",
   "download_file": "iranexpedia-extension.zip",
   "download_path": "/downloads/iranexpedia-extension.zip",
   "notes": "Single source of truth. Edit version here, then: npm run release:ext  (or start:all). Use --bump to auto-increment patch."

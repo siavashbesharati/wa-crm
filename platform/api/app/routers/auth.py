@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from app.database import get_db
 from app.deps import AuthContext, get_auth
 from app.models import (
     AiPolicy,
+    ExtensionSeat,
     MemberRole,
     Membership,
     Organization,
@@ -15,9 +18,15 @@ from app.models import (
     User,
 )
 from app.plans import plan_limits
-from app.schemas import OtpRequestIn, OtpVerifyIn, TokenOut
+from app.schemas import OtpRequestIn, OtpVerifyIn, TokenOut, TokenRefreshIn
 from app.services.otp import consume_otp, issue_otp
-from app.services.security import create_access_token, create_refresh_token
+from app.services.security import (
+    create_access_token,
+    create_refresh_token,
+    get_membership,
+    revoke_refresh_token,
+    verify_refresh_token,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -144,6 +153,79 @@ def verify_otp(body: OtpVerifyIn, db: Session = Depends(get_db)):
     is_new = True
     db.commit()
     return _token_out(db, user, org, membership, is_new=is_new)
+
+
+@router.post("/refresh", response_model=TokenOut)
+def refresh_session(body: TokenRefreshIn, db: Session = Depends(get_db)):
+    """Issue a new access token from a valid refresh token (extension / web)."""
+    try:
+        user = verify_refresh_token(db, body.refresh_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    org_id = (body.org_id or "").strip()
+    membership = get_membership(db, user.id, org_id) if org_id else None
+    if not membership:
+        membership = (
+            db.query(Membership)
+            .filter(Membership.user_id == user.id)
+            .order_by(Membership.created_at.asc())
+            .first()
+        )
+    if not membership:
+        raise HTTPException(status_code=404, detail="عضویت سازمان یافت نشد")
+
+    org = db.get(Organization, membership.org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    if getattr(org, "status", "active") == "suspended":
+        raise HTTPException(status_code=403, detail="این کسب‌وکار موقتاً غیرفعال است")
+
+    install_id = (body.install_id or "").strip()
+    seat_id = ""
+    seat: ExtensionSeat | None = None
+    if install_id:
+        seat = (
+            db.query(ExtensionSeat)
+            .filter(
+                ExtensionSeat.org_id == org.id,
+                ExtensionSeat.bound_install_id == install_id,
+                ExtensionSeat.status != "revoked",
+            )
+            .first()
+        )
+        if seat:
+            seat_id = seat.id
+            seat.last_seen_at = datetime.utcnow()
+            db.add(seat)
+
+    role = membership.role.value
+    access_mins = settings.jwt_access_minutes
+    if seat_id:
+        role = "agent"
+        access_mins = settings.jwt_access_minutes_seat
+
+    revoke_refresh_token(db, body.refresh_token)
+    access = create_access_token(
+        user.id,
+        org.id,
+        role,
+        scope="org",
+        seat_id=seat_id,
+        install_id=install_id,
+        access_minutes=access_mins,
+    )
+    refresh = create_refresh_token(db, user.id)
+    db.commit()
+    return TokenOut(
+        access_token=access,
+        refresh_token=refresh,
+        user_id=user.id,
+        org_id=org.id,
+        role=role,
+        is_new=False,
+        onboarding_step=_org_step(org),
+    )
 
 
 @router.get("/me")

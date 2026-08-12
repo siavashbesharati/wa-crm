@@ -22,8 +22,10 @@ def create_access_token(
     scope: str = "org",
     seat_id: str = "",
     install_id: str = "",
+    access_minutes: int | None = None,
 ) -> str:
-    exp = datetime.utcnow() + timedelta(minutes=settings.jwt_access_minutes)
+    mins = access_minutes if access_minutes is not None else settings.jwt_access_minutes
+    exp = datetime.utcnow() + timedelta(minutes=mins)
     payload = {
         "sub": user_id,
         "org_id": org_id or "",
@@ -77,3 +79,37 @@ def get_membership(db: Session, user_id: str, org_id: str) -> Membership | None:
 
 def get_user(db: Session, user_id: str) -> User | None:
     return db.get(User, user_id)
+
+
+def verify_refresh_token(db: Session, raw: str) -> User:
+    """Validate a refresh token and return its user."""
+    token = (raw or "").strip()
+    if len(token) < 16:
+        raise ValueError("نشست منقضی شده — دوباره وارد شوید")
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked.is_(False),
+            RefreshToken.expires_at > datetime.utcnow(),
+        )
+        .first()
+    )
+    if not row:
+        raise ValueError("نشست منقضی شده — دوباره وارد شوید")
+    user = db.get(User, row.user_id)
+    if not user:
+        raise ValueError("کاربر یافت نشد")
+    return user
+
+
+def revoke_refresh_token(db: Session, raw: str) -> None:
+    token = (raw or "").strip()
+    if len(token) < 16:
+        return
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    if row:
+        row.revoked = True
+        db.add(row)

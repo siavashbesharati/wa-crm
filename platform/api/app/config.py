@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "dev-change-me"
     jwt_access_minutes: int = 60
+    jwt_access_minutes_seat: int = 60 * 24 * 7  # extension seat JWT — 7 days
     jwt_refresh_days: int = 30
     # Platform owner phone (must match OTP login for /super)
     super_admin_phone: str = "09120674032"

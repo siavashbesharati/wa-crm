@@ -1589,8 +1589,14 @@ async function activateWhatsAppChannel() {
         const res = await IranexpediaCloudBridge.ensureChannelAccount("whatsapp");
         if (res && res.ok) {
             log("channel active: whatsapp", res.account && res.account.id);
+            if (res.error) {
+                log("channel heartbeat:", res.error);
+            }
         } else {
             log("channel activate failed", res && res.error);
+            if (res && res.error && String(res.error).indexOf("نامعتبر") !== -1) {
+                log("توکن منقضی شده — از پنل CRM دوباره seat token وارد کنید");
+            }
         }
     } catch (err) {
         log("channel activate error", err);

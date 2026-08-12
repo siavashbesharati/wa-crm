@@ -58,6 +58,7 @@ if (cloudDisconnect) {
       phone: "",
       seatId: "",
       seatTokenPrefix: "",
+      seatToken: "",
       orgName: "",
       plan: ""
     });
