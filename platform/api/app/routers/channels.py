@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import (
     ChannelAccount,
@@ -211,48 +211,62 @@ async def events_stream(
     request: Request,
     account_id: str = Query(default=""),
     device_id: str = Query(default=""),
-    auth: AuthContext = Depends(get_auth),
-    db: Session = Depends(get_db),
 ):
     """
     SSE stream. Prefer org-wide (no account_id) so one extension gets WA+Divar nudges.
     Optional account_id scopes to a single channel account.
     Emits: hello, job_ready, keepalives.
-    """
-    aid = (account_id or "").strip()
-    if aid:
-        acc = (
-            db.query(ChannelAccount)
-            .filter(ChannelAccount.id == aid, ChannelAccount.org_id == auth.org.id)
-            .first()
-        )
-        if not acc:
-            raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
-        sub_key = aid
-        account_filter = aid
-    else:
-        sub_key = f"org:{auth.org.id}"
-        account_filter = ""
 
+    DB session is closed before the long-lived stream starts so SQLite pool
+    slots are not held open for the entire SSE connection.
+    """
+    # Avoid Depends(get_db)/get_auth — those keep the session open until
+    # StreamingResponse finishes (hours for SSE).
+    authorization = request.headers.get("authorization")
+    x_org_id = request.headers.get("x-org-id")
+
+    aid = (account_id or "").strip()
     pending_id = ""
     pending_account = ""
-    q_pending = db.query(OutboundJob).filter(
-        OutboundJob.org_id == auth.org.id,
-        OutboundJob.status == OutboundStatus.queued,
-    )
-    if account_filter:
-        q_pending = q_pending.filter(OutboundJob.account_id == account_filter)
-    pending = q_pending.order_by(OutboundJob.created_at.asc()).first()
-    if pending:
-        pending_id = pending.id
-        pending_account = pending.account_id
+    org_id = ""
+    sub_key = ""
+    account_filter = ""
+
+    db = SessionLocal()
+    try:
+        auth = get_auth(authorization=authorization, x_org_id=x_org_id, db=db)
+        org_id = auth.org.id
+        if aid:
+            acc = (
+                db.query(ChannelAccount)
+                .filter(ChannelAccount.id == aid, ChannelAccount.org_id == org_id)
+                .first()
+            )
+            if not acc:
+                raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
+            sub_key = aid
+            account_filter = aid
+        else:
+            sub_key = f"org:{org_id}"
+            account_filter = ""
+
+        q_pending = db.query(OutboundJob).filter(
+            OutboundJob.org_id == org_id,
+            OutboundJob.status == OutboundStatus.queued,
+        )
+        if account_filter:
+            q_pending = q_pending.filter(OutboundJob.account_id == account_filter)
+        pending = q_pending.order_by(OutboundJob.created_at.asc()).first()
+        if pending:
+            pending_id = pending.id
+            pending_account = pending.account_id
+    finally:
+        db.close()
 
     try:
         sse_hub.bind_loop()
     except RuntimeError:
         pass
-
-    org_id = auth.org.id
 
     async def event_generator():
         q = await sse_hub.subscribe(sub_key)
