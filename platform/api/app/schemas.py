@@ -221,6 +221,8 @@ class MessageIngestOut(MessageOut):
     auto_reply_status: str = ""  # queued | skipped | error
     auto_reply_reason: str = ""
     job_id: str = ""
+    bot_paused: bool | None = None
+    bot_command: str = ""  # stop | start | handoff | ""
 
 
 class SendMessageIn(BaseModel):

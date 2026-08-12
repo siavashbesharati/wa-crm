@@ -785,8 +785,8 @@ async function syncLocalContactsToCloud() {
       stage: c.stage || "جدید",
       tags: c.tags || [],
       notes: c.notes || "",
-      botPaused: !!c.botPaused,
-      // Divar contacts store chat UUID in phone — keep external_chat_id in sync
+      // Do NOT push botPaused on bulk sync — stale local pause was re-pausing
+      // chats after «شروع» / CRM «فعال‌سازی ربات».
       externalChatId:
         c.externalChatId ||
         c.chatId ||

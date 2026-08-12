@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.5.0";
+const EXT_VERSION = "7.5.2";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -176,16 +176,30 @@ async function isChatBotPaused(chatName) {
     return !!(contact && contact.botPaused);
 }
 
-/** Match server bot_commands.py — whole message only */
+/** Match server bot_commands.py — exact + soft handoff/restart intents */
 function parseBotCommand(text) {
     const t = String(text || "").trim();
     if (!t) return null;
     if (/^(stop|pause|halt|\/stop|#stop|توقف|قطع|بس|ایست|خاموش)$/i.test(t)) return "stop";
     if (/^(start|resume|go|\/start|#start|شروع|ادامه|روشن|فعال)$/i.test(t)) return "start";
+    if (
+        /ربات\s*(?:را\s*)?(?:روشن|فعال)|(?:روشن|فعال)\s*(?:کن|کنید)?\s*ربات|برگشت\s*به\s*ربات|بازگشت\s*به\s*ربات|شروع\s*(?:کن|کنید)?\s*ربات|ادامه\s*(?:بده|بدهید)|enable\s*(?:the\s*)?bot|start\s*(?:the\s*)?bot|resume\s*(?:the\s*)?bot|turn\s*(?:the\s*)?bot\s*on|\bunpause\b/i.test(
+            t
+        )
+    ) {
+        return "start";
+    }
+    if (
+        /اپراتور|پشتیبان|کارشناس|انسان|آدم\s*واقعی|شخص\s*واقعی|صحبت\s*با\s*(?:انسان|آدم|شخص|اپراتور|پشتیبان|کارشناس)|حرف\s*با\s*(?:انسان|آدم|شخص|اپراتور|پشتیبان)|وصل(?:م|مان)?\s*(?:کن|کنید)?\s*(?:به\s*)?(?:اپراتور|پشتیبان|کارشناس)|منشی|\boperator\b|\b(?:live\s*)?agent\b|\bhuman\b|talk\s*to\s*(?:a\s*)?(?:human|person|agent|operator)|speak\s*(?:to|with)\s*(?:a\s*)?(?:human|person|agent|operator)|customer\s*support/i.test(
+            t
+        )
+    ) {
+        return "handoff";
+    }
     return null;
 }
 
-/** Sync stop/start to local CRM + cloud lead before ingest */
+/** Apply stop/start/handoff locally only — server owns pause + ack on ingest. */
 async function applyBotCommandFromMessage(chatInfo, text) {
     const cmd = parseBotCommand(text);
     if (!cmd) return false;
@@ -195,7 +209,7 @@ async function applyBotCommandFromMessage(chatInfo, text) {
     const chatType = (chatInfo && chatInfo.chatType) || "pv";
     const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
     const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
-    const pause = cmd === "stop";
+    const pause = cmd === "stop" || cmd === "handoff";
 
     let contact = await IranexpediaCrm.getContactByName(name);
     if (contact) {
@@ -210,30 +224,39 @@ async function applyBotCommandFromMessage(chatInfo, text) {
         });
     }
 
-    if (globalThis.IranexpediaCloudBridge && isCloudAuthorized()) {
-        try {
-            await IranexpediaCloudBridge.upsertLead({
-                name: name,
-                phone: phone,
-                groupId: groupId,
-                chatType: chatType,
-                botPaused: pause
-            });
-        } catch (_e) {
-            // ingest will still apply on server
-        }
-    }
+    // Do NOT upsertLead(botPaused) here — that raced ingest and skipped server ack
+    // (server saw already-paused and never queued the handoff message).
 
     log(
-        pause ? "دستور توقف ربات ←" : "دستور فعال‌سازی ربات ←",
+        cmd === "handoff"
+            ? "درخواست اپراتور (handoff) ←"
+            : pause
+              ? "دستور توقف ربات ←"
+              : "دستور فعال‌سازی ربات ←",
         name
     );
     await logCrmEvent(
         "bot_pause",
-        (pause ? "ربات متوقف (دستور چت): " : "ربات فعال (دستور چت): ") + name,
+        (cmd === "handoff"
+            ? "درخواست اپراتور: "
+            : pause
+              ? "ربات متوقف (دستور چت): "
+              : "ربات فعال (دستور چت): ") + name,
         { command: cmd }
     );
     return true;
+}
+
+async function syncLocalBotPaused(chatInfo, paused) {
+    const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
+    if (!name || !globalThis.IranexpediaCrm || typeof paused !== "boolean") return;
+    try {
+        let contact = await IranexpediaCrm.getContactByName(name);
+        if (!contact) return;
+        if (!!contact.botPaused === paused) return;
+        await IranexpediaCrm.updateContact(contact.id, { botPaused: paused });
+        log(paused ? "sync pause ← پاسخ ابر:" : "sync resume ← پاسخ ابر:", name);
+    } catch (_e) {}
 }
 
 async function logCrmEvent(type, message, meta) {
@@ -644,8 +667,20 @@ async function ingestCloudInbound(chatInfo, text, opts) {
                 message_id: data.id || "",
                 auto_reply_status: data.auto_reply_status || "",
                 auto_reply_reason: data.auto_reply_reason || "",
-                job_id: data.job_id || ""
+                job_id: data.job_id || "",
+                bot_command: data.bot_command || "",
+                bot_paused:
+                    typeof data.bot_paused === "boolean" ? data.bot_paused : ""
             });
+            if (data.bot_command === "handoff") {
+                RT.event(traceId, "handoff_to_operator", {
+                    paused: data.bot_paused
+                });
+            } else if (data.bot_command === "start") {
+                RT.event(traceId, "bot_resumed", { paused: data.bot_paused });
+            } else if (data.bot_command === "stop") {
+                RT.event(traceId, "bot_stopped", { paused: data.bot_paused });
+            }
             if (data.auto_reply_status === "queued" && data.job_id) {
                 RT.event(traceId, "auto_reply_queued", {
                     job_id: data.job_id,
@@ -661,6 +696,9 @@ async function ingestCloudInbound(chatInfo, text, opts) {
                 });
             }
             RT.pollServer(traceId);
+        }
+        if (ing.data && typeof ing.data.bot_paused === "boolean") {
+            await syncLocalBotPaused(chatInfo, ing.data.bot_paused);
         }
         try {
             chrome.runtime.sendMessage({ type: "pollCloudBridgeNow" });
@@ -1591,10 +1629,10 @@ async function processSidebarUnreadForCloud(match) {
     const cmd = parseBotCommand(match.preview);
     const paused = await isChatBotPaused(match.chatName);
 
-    // After «توقف», still allow «شروع» through — otherwise resume never reaches the server.
-    if (paused && cmd !== "start" && cmd !== "stop") {
-        log("ربات برای این چت متوقف است (سایدبار رد شد):", match.chatName, "|", match.preview);
-        return;
+    // Always ingest (DB history). When paused, only AI is skipped on the server.
+    // Still prioritize start/handoff/stop so resume/handoff are never stuck.
+    if (paused && !cmd) {
+        log("ربات متوقف — فقط ذخیره پیام (بدون AI):", match.chatName, "|", match.preview);
     }
 
     handledSidebarKeys[match.key] = Date.now();
@@ -1793,10 +1831,9 @@ function handleOpenChatMessages() {
     const cmd = parseBotCommand(text);
 
     (async function () {
-        // When paused, still process start/stop; skip normal messages locally
-        if (chatName && (await isChatBotPaused(chatName)) && cmd !== "start" && cmd !== "stop") {
-            log("ربات متوقف — پیام رد شد:", chatName, "|", text.slice(0, 60));
-            return;
+        // Always ingest — server skips AI when bot_paused; start/handoff still applied
+        if (chatName && (await isChatBotPaused(chatName)) && !cmd) {
+            log("ربات متوقف — ذخیره پیام بدون AI:", chatName, "|", text.slice(0, 60));
         }
         log("پیام در چت باز (AI ابری):", text);
         await saveContactFromIncoming(chatInfo, "incoming");

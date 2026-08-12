@@ -971,31 +971,44 @@
   async function toggleBot() {
     if (!currentName) return;
     await ensureContact();
+    var nextPaused = !currentContact.botPaused;
     currentContact = await IranexpediaCrm.updateContact(currentContact.id, {
-      botPaused: !currentContact.botPaused
+      botPaused: nextPaused
     });
     await IranexpediaCrm.addEvent(
       "bot_pause",
-      (currentContact.botPaused ? "ربات متوقف شد برای " : "ربات فعال شد برای ") +
-        currentName
+      (nextPaused ? "ربات متوقف شد برای " : "ربات فعال شد برای ") + currentName
     );
-    // Sync pause state to cloud so server auto-reply matches CRM panel
+    var syncOk = false;
+    var syncErr = "";
     if (globalThis.IranexpediaCloudBridge) {
       try {
-        await IranexpediaCloudBridge.upsertLead({
+        var res = await IranexpediaCloudBridge.upsertLead({
           name: currentContact.name,
           phone: currentContact.phone || "",
           groupId: currentContact.groupId || "",
           chatType: currentContact.chatType || "pv",
-          botPaused: !!currentContact.botPaused
+          botPaused: nextPaused
         });
-      } catch (_e) {}
+        syncOk = !!(res && res.ok);
+        syncErr = (res && res.error) || "";
+      } catch (e) {
+        syncErr = String((e && e.message) || e);
+      }
     }
     console.log(
       "[reply-trace]",
-      currentContact.botPaused ? "bot_paused_local" : "bot_resumed_local",
-      currentName
+      nextPaused ? "bot_paused_local" : "bot_resumed_local",
+      currentName,
+      "cloud_sync=" + (syncOk ? "ok" : "fail:" + syncErr)
     );
+    if (!syncOk) {
+      alert(
+        nextPaused
+          ? "ربات محلی متوقف شد، ولی همگام‌سازی ابر ناموفق بود."
+          : "ربات محلی فعال شد، ولی همگام‌سازی ابر ناموفق بود — AI ممکن است همچنان خاموش باشد."
+      );
+    }
     render();
   }
 

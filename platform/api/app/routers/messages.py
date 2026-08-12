@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.plans import plan_limits
 from app.schemas import MessageIngestIn, MessageIngestOut, MessageOut, OutboundJobOut, SendMessageIn
-from app.services.bot_commands import BOT_ACK_START, BOT_ACK_STOP, parse_bot_command
+from app.services.bot_commands import BOT_ACK_START, ack_for_command, parse_bot_command
 from app.services.reply_trace import get_trace_events, trace_event
 from app.services.queue import enqueue
 
@@ -46,8 +46,8 @@ def _queue_bot_command_ack(
     lead_id: str,
     target_name: str,
     body: str,
-) -> None:
-    """Send a short system ack after stop/start — not AI."""
+) -> str:
+    """Queue stop/start/handoff ack immediately (not BackgroundTasks). Returns job id."""
     from app.database import SessionLocal
     from app.workers.runner import _outbound_target
 
@@ -55,7 +55,7 @@ def _queue_bot_command_ack(
     try:
         lead = db.get(Lead, lead_id)
         if not lead:
-            return
+            return ""
         link = (
             db.query(LeadAccountLink)
             .filter(
@@ -67,7 +67,7 @@ def _queue_bot_command_ack(
         )
         target = (target_name or "").strip() or _outbound_target(lead, link)
         if not target:
-            return
+            return ""
         job = OutboundJob(
             org_id=org_id,
             account_id=account_id,
@@ -90,10 +90,53 @@ def _queue_bot_command_ack(
         )
         db.commit()
         print(f"[ingest] bot_command ack queued job={job.id} lead={lead_id}")
+        return job.id
     except Exception as e:  # noqa: BLE001
         print(f"[ingest] bot_command ack error: {e}")
+        return ""
     finally:
         db.close()
+
+
+def _apply_bot_intent(
+    *,
+    lead: Lead,
+    bot_cmd: str | None,
+    db: Session,
+) -> tuple[str, bool]:
+    """
+    Apply stop/handoff/start to lead.
+    Returns (ack_text, changed).
+    Handoff always gets the operator ack when newly pausing OR when already paused
+    but user explicitly asked for a human again (re-send once via changed=False + ack).
+    """
+    if not bot_cmd:
+        return "", False
+    if bot_cmd in ("stop", "handoff"):
+        was_paused = bool(lead.bot_paused)
+        lead.bot_paused = True
+        lead.updated_at = datetime.utcnow()
+        if bot_cmd == "handoff":
+            tags = list(lead.tags or [])
+            if "handoff" not in tags:
+                tags.append("handoff")
+                lead.tags = tags
+        db.add(lead)
+        # Handoff: always send operator message (even if already paused via «توقف»).
+        # Stop: ack only when newly pausing.
+        if bot_cmd == "handoff":
+            return ack_for_command(bot_cmd), True
+        if not was_paused:
+            return ack_for_command(bot_cmd), True
+        return "", False
+    if bot_cmd == "start":
+        if lead.bot_paused:
+            lead.bot_paused = False
+            lead.updated_at = datetime.utcnow()
+            db.add(lead)
+            return BOT_ACK_START, True
+        return "", False
+    return "", False
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -114,6 +157,8 @@ def _to_ingest_out(
     *,
     trace_id: str = "",
     auto_reply: dict | None = None,
+    bot_paused: bool | None = None,
+    bot_command: str = "",
 ) -> MessageIngestOut:
     ar = auto_reply or {}
     base = _to_out(m)
@@ -123,6 +168,8 @@ def _to_ingest_out(
         auto_reply_status=str(ar.get("status") or ""),
         auto_reply_reason=str(ar.get("reason") or ""),
         job_id=str(ar.get("job_id") or ""),
+        bot_paused=bot_paused,
+        bot_command=bot_command or "",
     )
 
 
@@ -439,6 +486,40 @@ def ingest(
         )
         if existing:
             trace_event(trace_id, "ingest_deduped", message_id=existing.id)
+            bot_cmd = (
+                parse_bot_command(body_text)
+                if body.direction == "inbound" and body_text and body_text != "(sync)"
+                else None
+            )
+            ack_text, _changed = _apply_bot_intent(lead=lead, bot_cmd=bot_cmd, db=db)
+            if bot_cmd:
+                db.commit()
+            ack_job_id = ""
+            if bot_cmd and ack_text:
+                chat_name = (body.chat_name or lead.name or "").strip()
+                ack_job_id = _queue_bot_command_ack(
+                    org_id=auth.org.id,
+                    account_id=body.account_id,
+                    lead_id=lead.id,
+                    target_name=chat_name,
+                    body=ack_text,
+                )
+                trace_event(trace_id, "bot_command_ack", command=bot_cmd, job_id=ack_job_id)
+                return _to_ingest_out(
+                    existing,
+                    trace_id=trace_id,
+                    auto_reply={"status": "queued", "reason": f"bot_{bot_cmd}", "job_id": ack_job_id},
+                    bot_paused=lead.bot_paused,
+                    bot_command=bot_cmd,
+                )
+            if bot_cmd:
+                trace_event(trace_id, "bot_command_noop", command=bot_cmd, paused=lead.bot_paused)
+                return _to_ingest_out(
+                    existing,
+                    trace_id=trace_id,
+                    bot_paused=lead.bot_paused,
+                    bot_command=bot_cmd,
+                )
             auto_reply = _maybe_auto_reply(
                 auth=auth,
                 lead=lead,
@@ -448,7 +529,13 @@ def ingest(
                 trace_id=trace_id,
                 background_tasks=background_tasks,
             )
-            return _to_ingest_out(existing, trace_id=trace_id, auto_reply=auto_reply)
+            return _to_ingest_out(
+                existing,
+                trace_id=trace_id,
+                auto_reply=auto_reply,
+                bot_paused=lead.bot_paused,
+                bot_command="",
+            )
 
     msg = Message(
         org_id=auth.org.id,
@@ -466,19 +553,7 @@ def ingest(
         if body.direction == "inbound" and body_text and body_text != "(sync)"
         else None
     )
-    ack_text = ""
-    if bot_cmd == "stop":
-        if not lead.bot_paused:
-            lead.bot_paused = True
-            lead.updated_at = datetime.utcnow()
-            db.add(lead)
-            ack_text = BOT_ACK_STOP
-    elif bot_cmd == "start":
-        if lead.bot_paused:
-            lead.bot_paused = False
-            lead.updated_at = datetime.utcnow()
-            db.add(lead)
-            ack_text = BOT_ACK_START
+    ack_text, _changed = _apply_bot_intent(lead=lead, bot_cmd=bot_cmd, db=db)
 
     db.commit()
     db.refresh(msg)
@@ -487,15 +562,17 @@ def ingest(
     chat_name = (body.chat_name or lead.name or "").strip()
     auto_reply: dict | None = None
     if bot_cmd and ack_text:
-        trace_event(trace_id, "bot_command_ack", command=bot_cmd)
-        background_tasks.add_task(
-            _queue_bot_command_ack,
+        ack_job_id = _queue_bot_command_ack(
             org_id=auth.org.id,
             account_id=body.account_id,
             lead_id=lead.id,
             target_name=chat_name,
             body=ack_text,
         )
+        trace_event(trace_id, "bot_command_ack", command=bot_cmd, job_id=ack_job_id)
+        auto_reply = {"status": "queued", "reason": f"bot_{bot_cmd}", "job_id": ack_job_id}
+    elif bot_cmd in ("stop", "handoff", "start"):
+        trace_event(trace_id, "bot_command_noop", command=bot_cmd, paused=lead.bot_paused)
     else:
         auto_reply = _maybe_auto_reply(
             auth=auth,
@@ -507,7 +584,13 @@ def ingest(
             background_tasks=background_tasks,
         )
 
-    return _to_ingest_out(msg, trace_id=trace_id, auto_reply=auto_reply)
+    return _to_ingest_out(
+        msg,
+        trace_id=trace_id,
+        auto_reply=auto_reply,
+        bot_paused=lead.bot_paused,
+        bot_command=bot_cmd or "",
+    )
 
 
 @router.get("/trace/{trace_id}")
