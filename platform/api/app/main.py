@@ -85,6 +85,12 @@ def _ensure_sqlite_columns() -> None:
                 conn.execute(text("ALTER TABLE ai_policies ADD COLUMN system_prompt TEXT DEFAULT ''"))
             if "fallback_message" not in cols:
                 conn.execute(text("ALTER TABLE ai_policies ADD COLUMN fallback_message TEXT DEFAULT ''"))
+            if "group_auto_send_enabled" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE ai_policies ADD COLUMN group_auto_send_enabled BOOLEAN DEFAULT 0"
+                    )
+                )
     if "payments" in tables:
         cols = {c["name"] for c in insp.get_columns("payments")}
         if "raw_callback" not in cols:

@@ -7,6 +7,7 @@ type SwitchProps = {
   hint?: string;
   className?: string;
   full?: boolean;
+  disabled?: boolean;
 };
 
 /** Consistent toggle used instead of native checkboxes across the panel. */
@@ -16,11 +17,12 @@ export function Switch({
   label,
   hint,
   className = "",
-  full = false
+  full = false,
+  disabled = false
 }: SwitchProps) {
   return (
     <div
-      className={`switch-row${full ? " full" : ""} ${className}`.trim()}
+      className={`switch-row${full ? " full" : ""}${disabled ? " disabled" : ""} ${className}`.trim()}
     >
       <div className="switch-row-copy">
         <strong>{label}</strong>
@@ -32,7 +34,10 @@ export function Switch({
         role="switch"
         aria-checked={checked}
         aria-label={label}
-        onClick={() => onChange(!checked)}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) onChange(!checked);
+        }}
       >
         <span className="ui-switch-knob" />
       </button>

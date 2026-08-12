@@ -251,6 +251,7 @@ class SuggestOut(BaseModel):
 
 class AiPolicyIn(BaseModel):
     auto_send_enabled: bool = False
+    group_auto_send_enabled: bool = False
     min_confidence: float = 0.45
     allowed_stages: list[str] = Field(default_factory=lambda: ["جدید"])
     business_hours_only: bool = False

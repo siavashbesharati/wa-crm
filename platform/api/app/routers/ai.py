@@ -31,6 +31,7 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         db.refresh(policy)
     return {
         "auto_send_enabled": policy.auto_send_enabled,
+        "group_auto_send_enabled": getattr(policy, "group_auto_send_enabled", False),
         "min_confidence": policy.min_confidence,
         "allowed_stages": policy.allowed_stages or [],
         "business_hours_only": policy.business_hours_only,
@@ -54,6 +55,7 @@ def put_policy(
     if not policy:
         policy = AiPolicy(org_id=auth.org.id)
     policy.auto_send_enabled = body.auto_send_enabled
+    policy.group_auto_send_enabled = body.group_auto_send_enabled
     policy.min_confidence = body.min_confidence
     policy.allowed_stages = body.allowed_stages
     policy.business_hours_only = body.business_hours_only
@@ -142,6 +144,10 @@ def run_auto_reply_for_lead(
         return {"sent": False, "reason": "lead_paused_or_missing"}
     if lead.stage not in (policy.allowed_stages or []):
         return {"sent": False, "reason": "stage_not_allowed"}
+    chat_type = (lead.chat_type or "pv").strip().lower()
+    is_group = chat_type == "group" or bool((lead.group_id or "").strip())
+    if is_group and not getattr(policy, "group_auto_send_enabled", False):
+        return {"sent": False, "reason": "group_reply_disabled"}
 
     result = generate_reply(db, org_id=auth.org.id, lead=lead, message=message)
     if float(result["confidence"]) < policy.min_confidence:

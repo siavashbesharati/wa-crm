@@ -93,6 +93,11 @@ def handle_auto_reply(payload: dict) -> None:
                 f"allowed={policy.allowed_stages} lead={lead.id}"
             )
             return
+        chat_type = (lead.chat_type or "pv").strip().lower()
+        is_group = chat_type == "group" or bool((lead.group_id or "").strip())
+        if is_group and not getattr(policy, "group_auto_send_enabled", False):
+            print(f"[worker] auto_reply skip: group_reply_disabled lead={lead.id}")
+            return
 
         # Idempotent: already queued an AI reply for this inbound message
         already = (

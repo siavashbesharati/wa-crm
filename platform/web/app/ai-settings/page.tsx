@@ -13,6 +13,7 @@ import { STAGES } from "@/components/crm/shared";
 
 type Policy = {
   auto_send_enabled: boolean;
+  group_auto_send_enabled: boolean;
   min_confidence: number;
   allowed_stages: string[];
   business_hours_only: boolean;
@@ -102,7 +103,21 @@ export default function AiSettingsPage() {
                 onChange={(v) =>
                   setPolicy({
                     ...policy,
-                    auto_send_enabled: v
+                    auto_send_enabled: v,
+                    group_auto_send_enabled: v ? policy.group_auto_send_enabled : false
+                  })
+                }
+              />
+
+              <Switch
+                label="پاسخ خودکار در گروه‌های واتساپ"
+                hint="وقتی خاموش باشد، فقط چت خصوصی (PV) پاسخ می‌گیرد — گروه‌ها فقط در inbox ذخیره می‌شوند."
+                checked={policy.group_auto_send_enabled}
+                disabled={!policy.auto_send_enabled}
+                onChange={(v) =>
+                  setPolicy({
+                    ...policy,
+                    group_auto_send_enabled: v
                   })
                 }
               />
