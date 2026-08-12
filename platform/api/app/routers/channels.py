@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,6 +21,7 @@ from app.models import (
 from app.plans import plan_limits
 from app.schemas import ChannelAccountIn, ChannelAccountOut, HeartbeatIn
 from app.services.reply_trace import job_trace_id, trace_event
+from app.services.sse_hub import format_sse, sse_hub
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -201,6 +204,102 @@ def pick_session(db: Session, org_id: str, account_id: str) -> ConnectorSession 
     if connector:
         return connector
     return base.filter(ConnectorSession.role == ConnectorRole.agent).first()
+
+
+@router.get("/events/stream")
+async def events_stream(
+    request: Request,
+    account_id: str = Query(default=""),
+    device_id: str = Query(default=""),
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """
+    SSE stream. Prefer org-wide (no account_id) so one extension gets WA+Divar nudges.
+    Optional account_id scopes to a single channel account.
+    Emits: hello, job_ready, keepalives.
+    """
+    aid = (account_id or "").strip()
+    if aid:
+        acc = (
+            db.query(ChannelAccount)
+            .filter(ChannelAccount.id == aid, ChannelAccount.org_id == auth.org.id)
+            .first()
+        )
+        if not acc:
+            raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
+        sub_key = aid
+        account_filter = aid
+    else:
+        sub_key = f"org:{auth.org.id}"
+        account_filter = ""
+
+    pending_id = ""
+    pending_account = ""
+    q_pending = db.query(OutboundJob).filter(
+        OutboundJob.org_id == auth.org.id,
+        OutboundJob.status == OutboundStatus.queued,
+    )
+    if account_filter:
+        q_pending = q_pending.filter(OutboundJob.account_id == account_filter)
+    pending = q_pending.order_by(OutboundJob.created_at.asc()).first()
+    if pending:
+        pending_id = pending.id
+        pending_account = pending.account_id
+
+    try:
+        sse_hub.bind_loop()
+    except RuntimeError:
+        pass
+
+    org_id = auth.org.id
+
+    async def event_generator():
+        q = await sse_hub.subscribe(sub_key)
+        try:
+            yield format_sse(
+                "hello",
+                {
+                    "account_id": account_filter or "",
+                    "sub_key": sub_key,
+                    "device_id": device_id or "",
+                    "org_id": org_id,
+                    "subscribers": sse_hub.subscriber_count(sub_key),
+                },
+            )
+            if pending_id:
+                yield format_sse(
+                    "job_ready",
+                    {
+                        "account_id": pending_account,
+                        "job_id": pending_id,
+                        "reason": "pending_on_connect",
+                        "org_id": org_id,
+                    },
+                )
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=25.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                ev = str(payload.get("event") or "message")
+                data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                yield format_sse(ev, data)
+        finally:
+            await sse_hub.unsubscribe(sub_key, q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/jobs/claim")

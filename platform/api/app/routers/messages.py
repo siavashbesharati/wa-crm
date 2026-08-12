@@ -90,6 +90,12 @@ def _queue_bot_command_ack(
         )
         db.commit()
         print(f"[ingest] bot_command ack queued job={job.id} lead={lead_id}")
+        try:
+            from app.services.sse_hub import publish_job_ready
+
+            publish_job_ready(account_id, job_id=job.id, reason="bot_ack", org_id=org_id)
+        except Exception:  # noqa: BLE001
+            pass
         return job.id
     except Exception as e:  # noqa: BLE001
         print(f"[ingest] bot_command ack error: {e}")
@@ -713,6 +719,14 @@ def send_message(body: SendMessageIn, auth: AuthContext = Depends(get_auth), db:
 
     db.commit()
     db.refresh(job)
+    try:
+        from app.services.sse_hub import publish_job_ready
+
+        publish_job_ready(
+            body.account_id, job_id=job.id, reason="manual_send", org_id=auth.org.id
+        )
+    except Exception:  # noqa: BLE001
+        pass
     enqueue("outbound_send", {"job_id": job.id, "org_id": auth.org.id})
     return OutboundJobOut(
         id=job.id,

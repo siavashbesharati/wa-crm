@@ -195,6 +195,14 @@ def run_auto_reply_for_lead(
     )
     db.commit()
     db.refresh(job)
+    try:
+        from app.services.sse_hub import publish_job_ready
+
+        publish_job_ready(
+            account_id, job_id=job.id, reason="ai_suggest_send", org_id=auth.org.id
+        )
+    except Exception:  # noqa: BLE001
+        pass
     enqueue_job("outbound_send", {"job_id": job.id, "org_id": auth.org.id})
     return {
         "sent": True,

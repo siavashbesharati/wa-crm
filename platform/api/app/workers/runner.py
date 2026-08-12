@@ -243,6 +243,14 @@ def handle_auto_reply(payload: dict) -> dict:
         )
         db.commit()
         link_job_trace(job.id, trace_id)
+        try:
+            from app.services.sse_hub import publish_job_ready
+
+            publish_job_ready(
+                account_id, job_id=job.id, reason="ai_reply", org_id=org.id
+            )
+        except Exception:  # noqa: BLE001
+            pass
         trace_event(
             trace_id,
             "outbound_job_queued",

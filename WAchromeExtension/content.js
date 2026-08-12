@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.5.2";
+const EXT_VERSION = "7.6.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(

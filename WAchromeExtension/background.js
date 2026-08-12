@@ -910,6 +910,7 @@ async function pollCloudBridge() {
     // Activate + claim per open tab — no manual channel choice
     if (await findWhatsAppTab()) await runJobsForChannel("whatsapp");
     if (await findDivarTab()) await runJobsForChannel("divar");
+    await ensureSseConnected();
     await relayTrace("poll_done", {});
   } catch (err) {
     await relayTrace("poll_error", { error: String((err && err.message) || err) });
@@ -917,9 +918,64 @@ async function pollCloudBridge() {
 }
 
 chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });
-// Claim AI outbound jobs every ~5s (chrome.alarms alone is too slow at 1 min)
+// Fallback poll every 30s (SSE pushes job_ready for fast path).
+var IDLE_POLL_MS = 30 * 1000;
 if (!globalThis.__iranexpediaCloudPollTimer) {
   globalThis.__iranexpediaCloudPollTimer = setInterval(function () {
     pollCloudBridge();
-  }, 5 * 1000);
+  }, IDLE_POLL_MS);
 }
+
+var __sseStarted = false;
+var __sseClaimBusy = false;
+
+function onSseEvent(eventName, data) {
+  if (eventName === "hello") {
+    relayTrace("sse_hello", {
+      account: (data && data.account_id) || "",
+      subs: (data && data.subscribers) || 0
+    });
+    return;
+  }
+  if (eventName === "sse_error") {
+    relayTrace("sse_error", { error: (data && data.error) || "" });
+    return;
+  }
+  if (eventName === "job_ready") {
+    relayTrace("sse_job_ready", {
+      account: (data && data.account_id) || "",
+      job_id: (data && data.job_id) || "",
+      reason: (data && data.reason) || ""
+    });
+    if (__sseClaimBusy) return;
+    __sseClaimBusy = true;
+    pollCloudBridge()
+      .catch(function () {})
+      .finally(function () {
+        __sseClaimBusy = false;
+      });
+  }
+}
+
+async function ensureSseConnected() {
+  try {
+    if (!(await requireCloudAuth(false))) return;
+    var cfg = await IranexpediaCloudBridge.getConfig();
+    if (!cfg.enabled || !cfg.orgId) return;
+    if (typeof IranexpediaCloudBridge.startSseEvents !== "function") return;
+    if (__sseStarted) return;
+    __sseStarted = true;
+    await IranexpediaCloudBridge.startSseEvents(onSseEvent);
+    await relayTrace("sse_started", { org: cfg.orgId });
+  } catch (err) {
+    __sseStarted = false;
+    await relayTrace("sse_start_fail", {
+      error: String((err && err.message) || err)
+    });
+  }
+}
+
+// Kick SSE soon after SW loads; also after each successful channel bind in poll.
+setTimeout(function () {
+  ensureSseConnected();
+}, 1500);

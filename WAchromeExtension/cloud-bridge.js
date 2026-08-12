@@ -407,6 +407,130 @@
     );
   }
 
+  /** Background-only SSE client — pushes job_ready so we claim without 5s polling. */
+  var _sse = {
+    abort: null,
+    accountId: "",
+    running: false,
+    backoffMs: 2000,
+    onEvent: null
+  };
+
+  function parseSseChunk(buffer, onEvent) {
+    var parts = buffer.split("\n\n");
+    var rest = parts.pop() || "";
+    for (var i = 0; i < parts.length; i++) {
+      var block = parts[i];
+      if (!block || block.charAt(0) === ":") continue;
+      var eventName = "message";
+      var dataLines = [];
+      var lines = block.split("\n");
+      for (var j = 0; j < lines.length; j++) {
+        var line = lines[j];
+        if (line.indexOf("event:") === 0) {
+          eventName = line.slice(6).trim();
+        } else if (line.indexOf("data:") === 0) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+      if (!dataLines.length) continue;
+      var raw = dataLines.join("\n");
+      var data = {};
+      try {
+        data = JSON.parse(raw);
+      } catch (_e) {
+        data = { raw: raw };
+      }
+      if (typeof onEvent === "function") onEvent(eventName, data);
+    }
+    return rest;
+  }
+
+  async function stopSseEventsImpl() {
+    _sse.running = false;
+    if (_sse.abort) {
+      try {
+        _sse.abort.abort();
+      } catch (_e) {}
+    }
+    _sse.abort = null;
+    _sse.accountId = "";
+    return { ok: true };
+  }
+
+  async function startSseEventsImpl(onEvent) {
+    if (typeof onEvent === "function") _sse.onEvent = onEvent;
+    if (_sse.running) return { ok: true, already: true };
+    _sse.running = true;
+    _sse.backoffMs = 2000;
+
+    (async function loop() {
+      while (_sse.running) {
+        var cfg = await getConfig();
+        if (!cfg.enabled || !cfg.accessToken || !cfg.orgId) {
+          await new Promise(function (r) {
+            setTimeout(r, 5000);
+          });
+          continue;
+        }
+        _sse.accountId = cfg.accountId || "";
+        var ctrl = new AbortController();
+        _sse.abort = ctrl;
+        var url =
+          String(cfg.apiUrl || DEFAULT_API).replace(/\/$/, "") +
+          "/channels/events/stream?device_id=" +
+          encodeURIComponent(cfg.deviceId || "");
+        // Org-wide stream (covers WhatsApp + Divar accounts). Optional account filter unused.
+        try {
+          var res = await fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: "Bearer " + cfg.accessToken,
+              "X-Org-Id": cfg.orgId,
+              Accept: "text/event-stream"
+            },
+            signal: ctrl.signal
+          });
+          if (res.status === 401 && (cfg.refreshToken || cfg.seatToken)) {
+            var refreshed = await refreshAccessTokenImpl();
+            if (refreshed && refreshed.ok) continue;
+          }
+          if (!res.ok || !res.body) {
+            throw new Error("sse_http_" + res.status);
+          }
+          _sse.backoffMs = 2000;
+          var reader = res.body.getReader();
+          var decoder = new TextDecoder();
+          var buf = "";
+          while (_sse.running) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buf += decoder.decode(chunk.value, { stream: true });
+            buf = parseSseChunk(buf, function (ev, data) {
+              if (_sse.onEvent) _sse.onEvent(ev, data);
+            });
+          }
+        } catch (err) {
+          if (ctrl.signal.aborted) {
+            // stopped intentionally
+          } else if (_sse.onEvent) {
+            _sse.onEvent("sse_error", {
+              error: String((err && err.message) || err)
+            });
+          }
+        }
+        if (!_sse.running) break;
+        var wait = _sse.backoffMs;
+        _sse.backoffMs = Math.min(30000, Math.floor(_sse.backoffMs * 1.6));
+        await new Promise(function (r) {
+          setTimeout(r, wait);
+        });
+      }
+    })();
+
+    return { ok: true };
+  }
+
   async function ingestMessageImpl(payload) {
     var cfg = await getConfig();
     if (!cfg.enabled || !cfg.accountId) return { ok: false, error: "cloud_disabled" };
@@ -560,6 +684,9 @@
     upsertLead: wrap("upsertLead", upsertLeadImpl),
     listLeads: wrap("listLeads", listLeadsImpl),
     fetchTrace: wrap("fetchTrace", fetchTraceImpl),
+    /** Background SW only — long-lived fetch stream. */
+    startSseEvents: startSseEventsImpl,
+    stopSseEvents: stopSseEventsImpl,
     status: wrap("status", statusImpl),
     /** Used by background only — never proxied. */
     __impl: {
@@ -579,6 +706,8 @@
       upsertLead: upsertLeadImpl,
       listLeads: listLeadsImpl,
       fetchTrace: fetchTraceImpl,
+      startSseEvents: startSseEventsImpl,
+      stopSseEvents: stopSseEventsImpl,
       status: statusImpl,
       getConfig: getConfig,
       setConfig: setConfig

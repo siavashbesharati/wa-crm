@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,10 +23,25 @@ from app.routers import (
     tasks,
     whatsapp,
 )
+from app.services.sse_hub import sse_hub
 
 settings = get_settings()
 
-app = FastAPI(title="IranExpedia Multi-Channel CRM API", version="1.2.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        sse_hub.bind_loop()
+    except RuntimeError:
+        pass
+    yield
+
+
+app = FastAPI(
+    title="IranExpedia Multi-Channel CRM API",
+    version="1.2.0",
+    lifespan=lifespan,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["http://localhost:3000"],
@@ -114,4 +131,8 @@ except Exception:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "env": settings.app_env}
+    return {
+        "ok": True,
+        "env": settings.app_env,
+        "sse_subscribers": sse_hub.subscriber_count(),
+    }
