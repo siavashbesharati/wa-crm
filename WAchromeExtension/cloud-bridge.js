@@ -209,8 +209,11 @@
     if (!cfg.enabled || !cfg.accessToken || !cfg.orgId) {
       return { ok: false, error: "cloud_disabled" };
     }
+    var t0 = Date.now();
+    var method = (options && options.method) || "GET";
+    var RT = global.IranexpediaReplyTrace;
     var reqOpts = {
-      method: options && options.method,
+      method: method,
       body: options && options.body,
       headers: {
         Authorization: "Bearer " + cfg.accessToken,
@@ -223,10 +226,30 @@
       if (refreshed && refreshed.ok) {
         cfg = await getConfig();
         reqOpts.headers.Authorization = "Bearer " + cfg.accessToken;
-        return rawRequest(cfg.apiUrl, path, reqOpts);
+        res = await rawRequest(cfg.apiUrl, path, reqOpts);
       }
     }
+    if (RT) {
+      RT.debug("api_" + method.toLowerCase(), {
+        path: path.split("?")[0],
+        ok: !!res.ok,
+        ms: Date.now() - t0,
+        status: res.status || 0,
+        error: res.ok ? "" : res.error || ""
+      });
+    }
     return res;
+  }
+
+  async function fetchTraceImpl(traceId, since) {
+    var tid = String(traceId || "").trim();
+    if (!tid) return { ok: false, error: "no_trace_id" };
+    var q =
+      "/messages/trace/" +
+      encodeURIComponent(tid) +
+      "?since=" +
+      encodeURIComponent(String(since || 0));
+    return request(q, { method: "GET" });
   }
 
   async function requestOtpImpl(phone, apiUrl) {
@@ -393,6 +416,10 @@
     });
   }
 
+  async function listLeadsImpl() {
+    return request("/leads", { method: "GET" });
+  }
+
   async function upsertLeadImpl(lead) {
     var cfg = await getConfig();
     if (!cfg.enabled) return { ok: false, error: "cloud_disabled" };
@@ -531,6 +558,8 @@
     completeJob: wrap("completeJob", completeJobImpl),
     ingestMessage: wrap("ingestMessage", ingestMessageImpl),
     upsertLead: wrap("upsertLead", upsertLeadImpl),
+    listLeads: wrap("listLeads", listLeadsImpl),
+    fetchTrace: wrap("fetchTrace", fetchTraceImpl),
     status: wrap("status", statusImpl),
     /** Used by background only — never proxied. */
     __impl: {
@@ -548,6 +577,8 @@
       completeJob: completeJobImpl,
       ingestMessage: ingestMessageImpl,
       upsertLead: upsertLeadImpl,
+      listLeads: listLeadsImpl,
+      fetchTrace: fetchTraceImpl,
       status: statusImpl,
       getConfig: getConfig,
       setConfig: setConfig

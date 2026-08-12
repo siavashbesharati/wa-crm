@@ -1,6 +1,6 @@
 {
   "name": "iranexpedia-whatsapp-extension-build",
-  "version": "7.0.0",
+  "version": "7.5.0",
   "private": true,
   "type": "module",
   "scripts": {

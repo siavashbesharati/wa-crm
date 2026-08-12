@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "پاسخ خودکار چندکاناله",
   "description": "CRM و پاسخ خودکار واتساپ و دیوار. توسعه: iranexpedia.ir",
-  "version": "7.4.3",
+  "version": "7.5.0",
   "permissions": [
     "storage",
     "alarms",
@@ -64,6 +64,7 @@
         "https://web.whatsapp.com/*"
       ],
       "js": [
+        "reply-trace.js",
         "cloud-bridge.js",
         "auth-gate.js",
         "crm-store.js",

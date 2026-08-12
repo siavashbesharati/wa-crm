@@ -2,7 +2,7 @@
  * Trusted time + CRM task scheduler dispatcher + cloud bridge.
  */
 
-importScripts("cloud-bridge.js", "auth-gate.js");
+importScripts("reply-trace.js", "cloud-bridge.js", "auth-gate.js");
 
 var SWEEP_ALARM = "crm_task_sweep";
 var CLOUD_ALARM = "cloud_bridge_poll";
@@ -733,6 +733,13 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     return true;
   }
 
+  if (message.type === "pollCloudBridgeNow") {
+    pollCloudBridge().then(function () {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
   if (message.type === "cloudScanWhatsAppChats") {
     findWhatsAppTab().then(function (tab) {
       if (!tab) {
@@ -794,33 +801,80 @@ async function syncLocalContactsToCloud() {
   return { ok: true, synced: synced, total: contacts.length, errors: errors };
 }
 
+async function relayTrace(stage, extra) {
+  if (globalThis.IranexpediaReplyTrace) {
+    IranexpediaReplyTrace.debug("[bg] " + stage, extra || {});
+  }
+  try {
+    var tab = await findWhatsAppTab();
+    if (!tab) return;
+    chrome.tabs.sendMessage(tab.id, {
+      type: "replyTraceRelay",
+      stage: stage,
+      extra: extra || {}
+    });
+  } catch (_e) {}
+}
+
 async function runJobsForChannel(channel) {
   var tab = await findChannelTab(channel);
-  if (!tab) return;
+  if (!tab) {
+    await relayTrace("poll_skip", { channel: channel, reason: "tab_not_found" });
+    return;
+  }
   var bound = await IranexpediaCloudBridge.ensureChannelAccount(channel);
-  if (!bound || !bound.ok) return;
+  if (!bound || !bound.ok) {
+    await relayTrace("poll_skip", {
+      channel: channel,
+      reason: (bound && bound.error) || "channel_bind_failed"
+    });
+    return;
+  }
+  if (!bound.heartbeatOk) {
+    await relayTrace("poll_warn", { channel: channel, reason: "heartbeat_failed" });
+  }
   await IranexpediaCloudBridge.heartbeat();
   var jobs = await IranexpediaCloudBridge.claimJobs(3);
-  if (!jobs || !jobs.length) return;
+  if (!jobs || !jobs.length) {
+    await relayTrace("poll_no_jobs", { channel: channel });
+    return;
+  }
+  await relayTrace("poll_claimed", { channel: channel, count: jobs.length });
   console.log("[cloud-bridge] claimed", jobs.length, "job(s) for", channel);
   for (var i = 0; i < jobs.length; i++) {
     var job = jobs[i];
     try {
       var target = job.target_name || "";
+      var traceId = job.trace_id || "";
+      if (traceId && globalThis.IranexpediaReplyTrace) {
+        IranexpediaReplyTrace.event(traceId, "job_claimed", {
+          job_id: job.id,
+          target: target
+        });
+      }
       var msg =
         channel === "divar"
           ? {
               type: "sendDivarMessage",
               chatId: target,
               targetName: target,
-              message: job.body
+              message: job.body,
+              traceId: traceId
             }
           : {
               type: "sendTemplateNow",
               targetName: target,
-              message: job.body
+              message: job.body,
+              traceId: traceId
             };
       var res = await chrome.tabs.sendMessage(tab.id, msg);
+      if (traceId && globalThis.IranexpediaReplyTrace) {
+        IranexpediaReplyTrace.event(traceId, "job_send_result", {
+          job_id: job.id,
+          ok: !!(res && res.ok),
+          error: (res && res.error) || ""
+        });
+      }
       console.log(
         "[cloud-bridge] send",
         channel,
@@ -837,9 +891,16 @@ async function runJobsForChannel(channel) {
 
 async function pollCloudBridge() {
   try {
+    await relayTrace("poll_start", {});
     var cfg = await IranexpediaCloudBridge.getConfig();
-    if (!cfg.enabled) return;
-    if (!(await requireCloudAuth(false))) return;
+    if (!cfg.enabled) {
+      await relayTrace("poll_skip", { reason: "cloud_disabled" });
+      return;
+    }
+    if (!(await requireCloudAuth(false))) {
+      await relayTrace("poll_skip", { reason: "auth_required" });
+      return;
+    }
 
     // Push local CRM contacts → server
     if (Date.now() - lastCloudContactSyncAt > 45 * 1000) {
@@ -849,15 +910,16 @@ async function pollCloudBridge() {
     // Activate + claim per open tab — no manual channel choice
     if (await findWhatsAppTab()) await runJobsForChannel("whatsapp");
     if (await findDivarTab()) await runJobsForChannel("divar");
-  } catch (_err) {
-    // ignore transient bridge errors
+    await relayTrace("poll_done", {});
+  } catch (err) {
+    await relayTrace("poll_error", { error: String((err && err.message) || err) });
   }
 }
 
 chrome.alarms.create(CLOUD_ALARM, { periodInMinutes: 1 });
-// Claim AI outbound jobs every ~12s (chrome.alarms alone is too slow at 1 min)
+// Claim AI outbound jobs every ~5s (chrome.alarms alone is too slow at 1 min)
 if (!globalThis.__iranexpediaCloudPollTimer) {
   globalThis.__iranexpediaCloudPollTimer = setInterval(function () {
     pollCloudBridge();
-  }, 12 * 1000);
+  }, 5 * 1000);
 }

@@ -979,6 +979,23 @@
       (currentContact.botPaused ? "ربات متوقف شد برای " : "ربات فعال شد برای ") +
         currentName
     );
+    // Sync pause state to cloud so server auto-reply matches CRM panel
+    if (globalThis.IranexpediaCloudBridge) {
+      try {
+        await IranexpediaCloudBridge.upsertLead({
+          name: currentContact.name,
+          phone: currentContact.phone || "",
+          groupId: currentContact.groupId || "",
+          chatType: currentContact.chatType || "pv",
+          botPaused: !!currentContact.botPaused
+        });
+      } catch (_e) {}
+    }
+    console.log(
+      "[reply-trace]",
+      currentContact.botPaused ? "bot_paused_local" : "bot_resumed_local",
+      currentName
+    );
     render();
   }
 

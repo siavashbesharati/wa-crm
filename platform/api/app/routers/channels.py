@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.plans import plan_limits
 from app.schemas import ChannelAccountIn, ChannelAccountOut, HeartbeatIn
+from app.services.reply_trace import job_trace_id, trace_event
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
@@ -254,6 +255,7 @@ def claim_jobs(
                 "body": job.body,
                 "sender_type": job.sender_type.value,
                 "status": job.status.value,
+                "trace_id": job_trace_id(job.id),
             }
         )
     db.commit()
@@ -276,4 +278,12 @@ def complete_job(
     job.updated_at = datetime.utcnow()
     db.add(job)
     db.commit()
+    trace_event(
+        job_trace_id(job_id),
+        "job_complete",
+        job_id=job_id,
+        ok=ok,
+        error=error or "",
+        target=job.target_name,
+    )
     return {"ok": True}

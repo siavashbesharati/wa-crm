@@ -102,8 +102,11 @@ const HARD_OPTIONS = {
 const SW_SAFE_FILES = new Set([
   "background.js",
   "cloud-bridge.js",
-  "auth-gate.js"
+  "auth-gate.js",
+  "reply-trace.js"
 ]);
+
+const COPY_AS_IS = new Set(["reply-trace.js"]);
 
 /** Page scripts — harder obfuscation OK. */
 const HARD_FILES = new Set([
@@ -200,6 +203,7 @@ function main() {
   copyDir("icons");
 
   const jsFiles = [
+    "reply-trace.js",
     "background.js",
     "cloud-bridge.js",
     "auth-gate.js",
@@ -214,6 +218,14 @@ function main() {
   ];
 
   for (const file of jsFiles) {
+    if (COPY_AS_IS.has(file)) {
+      const from = path.join(srcDir, file);
+      const to = path.join(outDir, file);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+      console.log("copied [as-is]:", file);
+      continue;
+    }
     obfuscateJs(file, profileFor(file));
   }
 

@@ -202,6 +202,7 @@ class MessageIngestIn(BaseModel):
     wa_message_id: str = ""
     external_message_id: str = ""
     sender_type: str = "customer"
+    trace_id: str = ""
 
 
 class MessageOut(BaseModel):
@@ -213,6 +214,13 @@ class MessageOut(BaseModel):
     body: str
     agent_id: str | None
     created_at: datetime
+
+
+class MessageIngestOut(MessageOut):
+    trace_id: str = ""
+    auto_reply_status: str = ""  # queued | skipped | error
+    auto_reply_reason: str = ""
+    job_id: str = ""
 
 
 class SendMessageIn(BaseModel):

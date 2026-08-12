@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.0.0";
+const EXT_VERSION = "7.5.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -24,7 +24,67 @@ let lastBotReply = "";
 let lastStableChat = "";
 let lastCapturedMsgKey = "";
 let lastCloudIngestKey = "";
+const recentOutboundTexts = {};
+const recentIngestKeys = {};
+const OUTBOUND_TTL_MS = 20 * 60 * 1000;
+const INGEST_DEDUPE_MS = 10 * 60 * 1000;
 const sidebarContactSaved = {};
+
+function normalizeMsgText(text) {
+    return String(text || "")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+function pruneRecentMap(map, ttlMs) {
+    const now = Date.now();
+    Object.keys(map).forEach(function (key) {
+        if (now - map[key] > ttlMs) delete map[key];
+    });
+}
+
+/** Track bot / template / cloud job replies so we never ingest them as inbound */
+function rememberOutboundText(text) {
+    const n = normalizeMsgText(text);
+    if (!n) return;
+    lastBotReply = n;
+    recentOutboundTexts[n] = Date.now();
+    if (n.length > 60) {
+        recentOutboundTexts[n.slice(0, 60)] = Date.now();
+        recentOutboundTexts[n.slice(0, 120)] = Date.now();
+    }
+    pruneRecentMap(recentOutboundTexts, OUTBOUND_TTL_MS);
+}
+
+function isOurOutboundText(text) {
+    const n = normalizeMsgText(text);
+    if (!n) return false;
+    if (normalizeMsgText(lastBotReply) === n) return true;
+    pruneRecentMap(recentOutboundTexts, OUTBOUND_TTL_MS);
+    if (recentOutboundTexts[n]) return true;
+    if (n.length >= 60 && recentOutboundTexts[n.slice(0, 60)]) return true;
+    if (n.length >= 120 && recentOutboundTexts[n.slice(0, 120)]) return true;
+    const keys = Object.keys(recentOutboundTexts);
+    for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (key.length < 24) continue;
+        if (n.indexOf(key) === 0 || key.indexOf(n) === 0) return true;
+    }
+    return false;
+}
+
+function shouldSkipIngest(msgKey) {
+    if (msgKey && msgKey === lastCloudIngestKey) return true;
+    pruneRecentMap(recentIngestKeys, INGEST_DEDUPE_MS);
+    return !!(msgKey && recentIngestKeys[msgKey]);
+}
+
+function markIngested(msgKey) {
+    if (!msgKey) return;
+    lastCloudIngestKey = msgKey;
+    recentIngestKeys[msgKey] = Date.now();
+    pruneRecentMap(recentIngestKeys, INGEST_DEDUPE_MS);
+}
 
 const handledSidebarKeys = {};
 
@@ -493,29 +553,55 @@ async function syncContactToCloud(contact, source) {
 
 /**
  * Push real inbound WhatsApp text to CRM so cloud AI auto-reply can run.
+ * opts: { source, traceId }
  */
-async function ingestCloudInbound(chatInfo, text) {
+async function ingestCloudInbound(chatInfo, text, opts) {
+    opts = opts || {};
     if (!globalThis.IranexpediaCloudBridge || !isCloudAuthorized()) return null;
-    const body = String(text || "").trim();
+    const body = normalizeMsgText(text);
     if (!body || body === "(sync)") return null;
-    if (body === lastBotReply) return null;
+    if (isOurOutboundText(body)) return null;
     if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(body)) return null;
 
     const name = cleanChatLabel((chatInfo && chatInfo.name) || "");
     if (!name) return null;
+
+    const RT = globalThis.IranexpediaReplyTrace;
+    let traceId = opts.traceId || "";
+    if (!traceId && RT) {
+        traceId = RT.start({
+            chat: name,
+            source: opts.source || "ingest",
+            text: body.slice(0, 80)
+        });
+    } else if (traceId && RT) {
+        RT.event(traceId, "ingest_prepare", {
+            source: opts.source || "ingest",
+            text: body.slice(0, 80)
+        });
+    }
 
     const chatType = (chatInfo && chatInfo.chatType) || "pv";
     const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
     const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
     const externalChatId = groupId || phone || name;
     const msgKey = [name, phone, groupId, body].join("||");
-    if (msgKey === lastCloudIngestKey) return null;
-    lastCloudIngestKey = msgKey;
+    if (shouldSkipIngest(msgKey)) return null;
+
+    // Unique per send attempt — same text on another day must not block auto-reply forever.
+    // Keep short-window client dedupe via shouldSkipIngest(msgKey) above.
+    const extMsgId =
+        "wa:" +
+        String(Date.now()) +
+        ":" +
+        msgKey.replace(/\s+/g, " ").slice(0, 140);
 
     try {
+        if (RT) RT.event(traceId, "ingest_api_start", { chat: name });
         if (IranexpediaCloudBridge.ensureChannelAccount) {
             await IranexpediaCloudBridge.ensureChannelAccount("whatsapp");
         }
+        if (RT) RT.event(traceId, "channel_ready", { chat: name });
         await applyBotCommandFromMessage(chatInfo, body);
         await IranexpediaCloudBridge.upsertLead({
             name: name,
@@ -532,7 +618,8 @@ async function ingestCloudInbound(chatInfo, text) {
             chat_type: chatType,
             external_chat_id: externalChatId,
             sender_type: "customer",
-            external_message_id: "wa:" + msgKey.slice(0, 180)
+            external_message_id: extMsgId,
+            trace_id: traceId || ""
         });
         if (!ing || !ing.ok) {
             // cloud-bridge returns { ok, error } — detail may be object
@@ -545,13 +632,47 @@ async function ingestCloudInbound(chatInfo, text) {
                 }
             }
             log("ingest ابر ناموفق:", errMsg);
+            if (RT) RT.event(traceId, "ingest_api_fail", { error: errMsg });
             // allow retry on next scan
             if (lastCloudIngestKey === msgKey) lastCloudIngestKey = "";
             return null;
         }
         log("ingest ابر OK ←", name, ":", body.slice(0, 80));
+        if (RT) {
+            const data = ing.data || {};
+            RT.event(traceId, "ingest_api_ok", {
+                message_id: data.id || "",
+                auto_reply_status: data.auto_reply_status || "",
+                auto_reply_reason: data.auto_reply_reason || "",
+                job_id: data.job_id || ""
+            });
+            if (data.auto_reply_status === "queued" && data.job_id) {
+                RT.event(traceId, "auto_reply_queued", {
+                    job_id: data.job_id,
+                    reason: data.auto_reply_reason || ""
+                });
+            } else if (data.auto_reply_status === "skipped") {
+                RT.event(traceId, "auto_reply_skipped", {
+                    reason: data.auto_reply_reason || "unknown"
+                });
+            } else if (data.auto_reply_status === "error") {
+                RT.event(traceId, "auto_reply_error", {
+                    error: data.auto_reply_reason || "unknown"
+                });
+            }
+            RT.pollServer(traceId);
+        }
+        try {
+            chrome.runtime.sendMessage({ type: "pollCloudBridgeNow" });
+        } catch (_e) {}
+        markIngested(msgKey);
         return ing;
     } catch (err) {
+        if (RT) {
+            RT.event(traceId, "ingest_api_error", {
+                error: err && err.message ? err.message : String(err)
+            });
+        }
         if (lastCloudIngestKey === msgKey) lastCloudIngestKey = "";
         log("ingest ابر خطا:", err && err.message ? err.message : err);
         return null;
@@ -601,7 +722,7 @@ function captureContactsFromOpenChat() {
     const text = getLastIncomingText();
     if (!text) return;
     if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
-    if (text === lastBotReply) return;
+    if (isOurOutboundText(text)) return;
 
     const info = getChatIdentity();
     if (!info.name) return;
@@ -676,9 +797,8 @@ function mergeMembers(listA, listB) {
 
 function resetMessageCache() {
     lastHandledText = "";
-    lastBotReply = "";
-    lastCloudIngestKey = "";
     lastCapturedMsgKey = "";
+    // Keep lastBotReply / recentOutboundTexts / ingest dedupe — avoid re-reading our sends
 }
 
 /* ================= INPUT + SEND ================= */
@@ -801,7 +921,7 @@ async function sendTextNow(text) {
     await sleep(700);
     const ok = sendWhatsAppMessage();
     if (ok) {
-        lastBotReply = msg;
+        rememberOutboundText(msg);
         await logCrmEvent("manual_sent", "ارسال دستی/قالب: " + (getChatName() || ""), {
             text: msg,
             contactName: getChatName() || ""
@@ -823,12 +943,17 @@ async function openContactChatAction(targetName) {
     return { ok: true };
 }
 
-async function sendTemplateNowAction(targetName, message) {
+async function sendTemplateNowAction(targetName, message, traceId) {
     const name = String(targetName || "").trim();
     const msg = String(message || "").trim();
+    const RT = globalThis.IranexpediaReplyTrace;
     if (!name || !msg) {
         return { ok: false, error: "مخاطب و متن پیام الزامی است." };
     }
+    if (RT && traceId) {
+        RT.event(traceId, "wa_send_start", { target: name });
+    }
+    rememberOutboundText(msg);
     if (taskRunnerBusy || busy) {
         return { ok: false, error: "سیستم مشغول است. کمی بعد دوباره تلاش کنید." };
     }
@@ -858,7 +983,14 @@ async function sendTemplateNowAction(targetName, message) {
         await sleep(800);
         resetMessageCache();
         const ok = await sendTextNow(msg);
-        if (!ok) return { ok: false, error: "ارسال پیام انجام نشد." };
+        if (!ok) {
+            if (RT && traceId) RT.event(traceId, "wa_send_fail", { target: name });
+            return { ok: false, error: "ارسال پیام انجام نشد." };
+        }
+        if (RT && traceId) {
+            RT.event(traceId, "wa_send_done", { target: name });
+            RT.finish(traceId, "pipeline_complete", { target: name });
+        }
         if (globalThis.IranexpediaCrm) {
             await IranexpediaCrm.upsertContact({
                 name: name,
@@ -920,7 +1052,7 @@ async function runScheduledTask(task) {
         const sent = sendWhatsAppMessage();
         if (!sent) return { ok: false, error: "دکمه ارسال پیدا نشد." };
 
-        lastBotReply = task.message;
+        rememberOutboundText(task.message);
         if (globalThis.IranexpediaCrm) {
             await IranexpediaCrm.upsertContact({
                 name: task.targetName,
@@ -946,6 +1078,11 @@ window.__iranexpediaSendNow = function (text) {
 
 chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (!message || !message.type) return;
+    if (message.type === "replyTraceRelay") {
+        const RT = globalThis.IranexpediaReplyTrace;
+        if (RT) RT.debug(String(message.stage || "relay"), message.extra || {});
+        return false;
+    }
     if (message.type === "runScheduledTask") {
         runScheduledTask(message.task || {}).then(sendResponse);
         return true;
@@ -955,7 +1092,9 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
         return true;
     }
     if (message.type === "sendTemplateNow") {
-        sendTemplateNowAction(message.targetName, message.message).then(sendResponse);
+        sendTemplateNowAction(message.targetName, message.message, message.traceId).then(
+            sendResponse
+        );
         return true;
     }
     if (message.type === "cloudScanSidebarChats") {
@@ -1432,6 +1571,7 @@ function findUnreadSidebarChats() {
 
         const preview = getCellPreview(cell, chatName);
         if (!preview) continue;
+        if (isOurOutboundText(preview)) continue;
 
         const key = chatName + "||" + preview;
         if (handledSidebarKeys[key]) continue;
@@ -1448,6 +1588,15 @@ function findUnreadSidebarChats() {
 }
 
 async function processSidebarUnreadForCloud(match) {
+    const cmd = parseBotCommand(match.preview);
+    const paused = await isChatBotPaused(match.chatName);
+
+    // After «توقف», still allow «شروع» through — otherwise resume never reaches the server.
+    if (paused && cmd !== "start" && cmd !== "stop") {
+        log("ربات برای این چت متوقف است (سایدبار رد شد):", match.chatName, "|", match.preview);
+        return;
+    }
+
     handledSidebarKeys[match.key] = Date.now();
 
     const keys = Object.keys(handledSidebarKeys);
@@ -1458,11 +1607,6 @@ async function processSidebarUnreadForCloud(match) {
         keys.slice(0, keys.length - 40).forEach(function (k) {
             delete handledSidebarKeys[k];
         });
-    }
-
-    if (await isChatBotPaused(match.chatName)) {
-        log("ربات برای این چت متوقف است:", match.chatName);
-        return;
     }
 
     log("چت خوانده‌نشده برای AI ابری:", match.chatName, "|", match.preview);
@@ -1477,10 +1621,9 @@ async function processSidebarUnreadForCloud(match) {
     }
 
     await sleep(1200);
-    resetMessageCache();
 
     const text = getLastIncomingText() || match.preview;
-    if (!text) {
+    if (!text || isOurOutboundText(text)) {
         delete handledSidebarKeys[match.key];
         return;
     }
@@ -1488,9 +1631,25 @@ async function processSidebarUnreadForCloud(match) {
     lastHandledText = text;
     const chatInfo = getChatIdentity();
     await saveContactFromIncoming(chatInfo, "incoming");
-    const ing = await ingestCloudInbound(chatInfo, text);
+    const RT = globalThis.IranexpediaReplyTrace;
+    let traceId = "";
+    if (RT) {
+        traceId = RT.start({
+            chat: match.chatName,
+            source: "sidebar",
+            text: String(text).slice(0, 80)
+        });
+    }
+    const ing = await ingestCloudInbound(chatInfo, text, {
+        source: "sidebar",
+        traceId: traceId
+    });
     if (ing && ing.ok) {
         log("ingest ابر از سایدبار OK ←", match.chatName);
+    } else if (paused && cmd === "start") {
+        // Local unpause even if cloud ingest failed — avoid permanent stuck pause
+        await applyBotCommandFromMessage(chatInfo, text);
+        log("ربات محلی فعال شد (شروع) ←", match.chatName);
     }
 }
 
@@ -1555,30 +1714,59 @@ function collectMessageNodes() {
     return nodes;
 }
 
-function getLastIncomingText() {
-    const nodes = collectMessageNodes();
-    if (!nodes.length) return "";
+function isOutgoingMessageNode(el) {
+    if (!el) return false;
+    let node = el;
+    for (let depth = 0; depth < 8 && node; depth++) {
+        const cls = (node.className || "").toString();
+        if (cls.indexOf("message-out") !== -1) return true;
+        if (cls.indexOf("message-in") !== -1) return false;
+        const testId = node.getAttribute && node.getAttribute("data-testid");
+        if (testId === "msg-out") return true;
+        node = node.parentElement;
+    }
+    return false;
+}
 
-    // Prefer last node inside an incoming container
-    for (let i = nodes.length - 1; i >= 0; i--) {
-        const el = nodes[i];
-        const wrap =
-            el.closest('div[data-testid="msg-container"]') ||
-            el.closest("div.message-in") ||
-            el.closest("div.message-out") ||
-            el.parentElement;
-        const cls = ((wrap && wrap.className) || "").toString();
-        const isOut = cls.indexOf("message-out") !== -1;
-        // Prefer incoming; skip clear outgoing when older messages exist
-        if (isOut && i > 0) continue;
-        const text = (el.innerText || el.textContent || "").trim();
-        if (text) return text.replace(/\s+/g, " ");
+function getLastIncomingText() {
+    const main = document.querySelector("#main");
+    if (!main) return "";
+
+    const selectors = [
+        'div.message-in span[data-testid="selectable-text"]',
+        'div.message-in span.selectable-text',
+        'div[data-testid="msg-container"].message-in span[data-testid="selectable-text"]',
+        'div[data-testid="msg-container"].message-in span.selectable-text'
+    ];
+
+    let incoming = [];
+    for (let s = 0; s < selectors.length; s++) {
+        incoming = main.querySelectorAll(selectors[s]);
+        if (incoming.length) break;
     }
 
-    const last = nodes[nodes.length - 1];
-    return ((last && (last.innerText || last.textContent)) || "")
-        .trim()
-        .replace(/\s+/g, " ");
+    if (incoming.length) {
+        const last = incoming[incoming.length - 1];
+        const text = normalizeMsgText(last.innerText || last.textContent || "");
+        if (text && !isOurOutboundText(text)) return text;
+    }
+
+    const containers = main.querySelectorAll('div[data-testid="msg-container"]');
+    for (let i = containers.length - 1; i >= 0; i--) {
+        const c = containers[i];
+        const cls = (c.className || "").toString();
+        if (cls.indexOf("message-out") !== -1) continue;
+        if (cls.indexOf("message-in") === -1 && containers.length > 1) continue;
+        const span =
+            c.querySelector('[data-testid="selectable-text"]') ||
+            c.querySelector("span.selectable-text");
+        if (!span) continue;
+        const text = normalizeMsgText(span.innerText || span.textContent || "");
+        if (!text || isOurOutboundText(text)) continue;
+        return text;
+    }
+
+    return "";
 }
 
 function handleOpenChatMessages() {
@@ -1587,9 +1775,10 @@ function handleOpenChatMessages() {
     const text = getLastIncomingText();
     if (!text) return;
     if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
-    if (text === lastBotReply) return;
+    if (isOurOutboundText(text)) return;
 
     const chatInfo = getChatIdentity();
+    const chatName = cleanChatLabel((chatInfo && chatInfo.name) || "");
 
     // Always try to save contact on new incoming message (Farsi-safe)
     if (text !== lastHandledText) {
@@ -1598,14 +1787,20 @@ function handleOpenChatMessages() {
 
     if (busy || taskRunnerBusy) return;
     if (text === lastHandledText) return;
+    if (isOurOutboundText(text)) return;
 
     lastHandledText = text;
-    log("پیام در چت باز (AI ابری):", text);
+    const cmd = parseBotCommand(text);
 
     (async function () {
+        // When paused, still process start/stop; skip normal messages locally
+        if (chatName && (await isChatBotPaused(chatName)) && cmd !== "start" && cmd !== "stop") {
+            log("ربات متوقف — پیام رد شد:", chatName, "|", text.slice(0, 60));
+            return;
+        }
+        log("پیام در چت باز (AI ابری):", text);
         await saveContactFromIncoming(chatInfo, "incoming");
-        // Replies are cloud-only — extension only ingests inbound text
-        await ingestCloudInbound(chatInfo, text);
+        await ingestCloudInbound(chatInfo, text, { source: "open_chat" });
     })();
 }
 
@@ -1653,6 +1848,7 @@ async function activateWhatsAppChannel() {
             if (res.error) {
                 log("channel heartbeat:", res.error);
             }
+            await syncBotPausedFromCloud();
         } else {
             log("channel activate failed", res && res.error);
             if (res && res.error && String(res.error).indexOf("نامعتبر") !== -1) {
@@ -1661,6 +1857,33 @@ async function activateWhatsAppChannel() {
         }
     } catch (err) {
         log("channel activate error", err);
+    }
+}
+
+/** Pull server bot_paused → local CRM so «شروع» / panel resume isn't stuck after «توقف». */
+async function syncBotPausedFromCloud() {
+    if (!globalThis.IranexpediaCloudBridge || !globalThis.IranexpediaCrm) return;
+    if (typeof IranexpediaCloudBridge.listLeads !== "function") return;
+    try {
+        const res = await IranexpediaCloudBridge.listLeads();
+        if (!res || !res.ok) return;
+        const leads = Array.isArray(res.data) ? res.data : [];
+        let synced = 0;
+        for (let i = 0; i < leads.length; i++) {
+            const lead = leads[i];
+            const name = cleanChatLabel((lead && lead.name) || "");
+            if (!name) continue;
+            const paused = !!(lead.bot_paused || lead.botPaused);
+            let contact = await IranexpediaCrm.getContactByName(name);
+            if (!contact) continue;
+            if (!!contact.botPaused === paused) continue;
+            await IranexpediaCrm.updateContact(contact.id, { botPaused: paused });
+            synced += 1;
+            log(paused ? "sync pause ← ابر:" : "sync resume ← ابر:", name);
+        }
+        if (synced) log("همگام‌سازی وضعیت ربات از ابر:", synced, "مخاطب");
+    } catch (_e) {
+        // ignore
     }
 }
 

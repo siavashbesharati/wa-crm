@@ -19,21 +19,24 @@ from app.models import (
     SenderType,
 )
 from app.plans import plan_limits
-from app.schemas import MessageIngestIn, MessageOut, OutboundJobOut, SendMessageIn
+from app.schemas import MessageIngestIn, MessageIngestOut, MessageOut, OutboundJobOut, SendMessageIn
 from app.services.bot_commands import BOT_ACK_START, BOT_ACK_STOP, parse_bot_command
+from app.services.reply_trace import get_trace_events, trace_event
 from app.services.queue import enqueue
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 
-def _run_auto_reply_job(payload: dict) -> None:
-    """Process auto_reply in-process so it works even if the worker is down briefly."""
+def _run_auto_reply_job(payload: dict) -> dict:
+    """Process auto_reply in-process so job is queued before ingest response."""
     try:
         from app.workers.runner import handle_auto_reply
 
-        handle_auto_reply(payload)
+        return handle_auto_reply(payload)
     except Exception as e:  # noqa: BLE001
-        print(f"[ingest] auto_reply background error: {e}")
+        trace_event(str(payload.get("trace_id") or ""), "auto_reply_error", error=str(e))
+        print(f"[ingest] auto_reply error: {e}")
+        return {"status": "error", "reason": str(e), "job_id": ""}
 
 
 def _queue_bot_command_ack(
@@ -103,6 +106,23 @@ def _to_out(m: Message) -> MessageOut:
         body=m.body,
         agent_id=m.agent_id,
         created_at=m.created_at,
+    )
+
+
+def _to_ingest_out(
+    m: Message,
+    *,
+    trace_id: str = "",
+    auto_reply: dict | None = None,
+) -> MessageIngestOut:
+    ar = auto_reply or {}
+    base = _to_out(m)
+    return MessageIngestOut(
+        **base.model_dump(),
+        trace_id=trace_id,
+        auto_reply_status=str(ar.get("status") or ""),
+        auto_reply_reason=str(ar.get("reason") or ""),
+        job_id=str(ar.get("job_id") or ""),
     )
 
 
@@ -326,7 +346,42 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
     return lead
 
 
-@router.post("/ingest", response_model=MessageOut)
+def _maybe_auto_reply(
+    *,
+    auth: AuthContext,
+    lead: Lead,
+    msg: Message,
+    body_text: str,
+    direction: str,
+    trace_id: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> dict | None:
+    """Run sync auto-reply for inbound text; returns status dict or None if not applicable."""
+    _ = background_tasks
+    if direction != "inbound" or not body_text or body_text == "(sync)":
+        return None
+    bot_cmd = parse_bot_command(body_text)
+    if bot_cmd:
+        return None
+    payload = {
+        "org_id": auth.org.id,
+        "lead_id": lead.id,
+        "message_id": msg.id,
+        "trace_id": trace_id,
+    }
+    trace_event(trace_id, "auto_reply_scheduled", message_id=msg.id)
+    auto_reply = _run_auto_reply_job(payload)
+    trace_event(
+        trace_id,
+        "auto_reply_finished",
+        status=(auto_reply or {}).get("status"),
+        reason=(auto_reply or {}).get("reason"),
+        job_id=(auto_reply or {}).get("job_id"),
+    )
+    return auto_reply
+
+
+@router.post("/ingest", response_model=MessageIngestOut)
 def ingest(
     body: MessageIngestIn,
     background_tasks: BackgroundTasks,
@@ -341,10 +396,37 @@ def ingest(
     if not acc:
         raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
+    trace_id = (body.trace_id or "").strip()
+    trace_event(
+        trace_id,
+        "ingest_received",
+        chat=body.chat_name,
+        direction=body.direction,
+    )
+
     lead = _upsert_lead_from_ingest(db, auth.org.id, body, acc)
     ext_msg_id = (body.external_message_id or body.wa_message_id or "").strip()
+    body_text = (body.body or "").strip()
 
-    # Deduplicate re-ingests of the same channel message
+    # Extension sometimes mis-reads our own outbound bubble as inbound
+    if body.direction == "inbound" and body_text:
+        echo = (
+            db.query(Message)
+            .filter(
+                Message.org_id == auth.org.id,
+                Message.lead_id == lead.id,
+                Message.direction == MessageDirection.outbound,
+                Message.body == body_text,
+            )
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+        if echo:
+            trace_event(trace_id, "ingest_skipped_echo", lead_id=lead.id)
+            return _to_ingest_out(echo, trace_id=trace_id)
+
+    # Deduplicate re-ingests of the same channel message — but still try auto-reply
+    # if the first attempt crashed / never queued a job.
     if ext_msg_id:
         existing = (
             db.query(Message)
@@ -356,7 +438,17 @@ def ingest(
             .first()
         )
         if existing:
-            return _to_out(existing)
+            trace_event(trace_id, "ingest_deduped", message_id=existing.id)
+            auto_reply = _maybe_auto_reply(
+                auth=auth,
+                lead=lead,
+                msg=existing,
+                body_text=body_text,
+                direction=body.direction,
+                trace_id=trace_id,
+                background_tasks=background_tasks,
+            )
+            return _to_ingest_out(existing, trace_id=trace_id, auto_reply=auto_reply)
 
     msg = Message(
         org_id=auth.org.id,
@@ -369,7 +461,6 @@ def ingest(
     )
     db.add(msg)
 
-    body_text = (body.body or "").strip()
     bot_cmd = (
         parse_bot_command(body_text)
         if body.direction == "inbound" and body_text and body_text != "(sync)"
@@ -391,9 +482,12 @@ def ingest(
 
     db.commit()
     db.refresh(msg)
+    trace_event(trace_id, "message_saved", message_id=msg.id, lead_id=lead.id)
 
     chat_name = (body.chat_name or lead.name or "").strip()
+    auto_reply: dict | None = None
     if bot_cmd and ack_text:
+        trace_event(trace_id, "bot_command_ack", command=bot_cmd)
         background_tasks.add_task(
             _queue_bot_command_ack,
             org_id=auth.org.id,
@@ -402,12 +496,29 @@ def ingest(
             target_name=chat_name,
             body=ack_text,
         )
-    elif not bot_cmd and body.direction == "inbound" and body_text and body_text != "(sync)":
-        payload = {"org_id": auth.org.id, "lead_id": lead.id, "message_id": msg.id}
-        # Run once in-process only (enqueue+background was causing duplicate AI replies)
-        background_tasks.add_task(_run_auto_reply_job, payload)
+    else:
+        auto_reply = _maybe_auto_reply(
+            auth=auth,
+            lead=lead,
+            msg=msg,
+            body_text=body_text,
+            direction=body.direction,
+            trace_id=trace_id,
+            background_tasks=background_tasks,
+        )
 
-    return _to_out(msg)
+    return _to_ingest_out(msg, trace_id=trace_id, auto_reply=auto_reply)
+
+
+@router.get("/trace/{trace_id}")
+def get_reply_trace(
+    trace_id: str,
+    since: int = Query(default=0, ge=0),
+    auth: AuthContext = Depends(get_auth),
+):
+    _ = auth
+    events = get_trace_events(trace_id, since=since)
+    return {"trace_id": trace_id, "since": since, "events": events}
 
 
 @router.get("/inbox", response_model=list[MessageOut])
