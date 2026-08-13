@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.7.0";
+const EXT_VERSION = "7.7.2";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -398,7 +398,14 @@ function looksLikePhone(value) {
 }
 
 function normalizePhone(value) {
-    return String(value || "").replace(/[\s\-()]/g, "").trim();
+    let n = String(value || "").replace(/[\s\-()]/g, "").trim();
+    // Convert 0098… → +98…
+    if (/^00\d{8,}$/.test(n)) n = "+" + n.slice(2);
+    // Iranian local 09xxxxxxxxx → +989xxxxxxxxx
+    if (/^09\d{9}$/.test(n)) n = "+98" + n.slice(1);
+    // Bare 98xxxxxxxxxx (no +) when looks like IR country code
+    if (/^98\d{10}$/.test(n)) n = "+" + n;
+    return n;
 }
 
 /** Only real phone digits — never a contact/group display name. */
@@ -518,7 +525,64 @@ function extractPhoneFromDataId(id) {
     if (m) return normalizePhone(m[1]);
     m = s.match(/(\d{8,15})@c\.us/);
     if (m) return normalizePhone(m[1]);
+    // true_<phone>@c.us_<msgid> / false_<phone>@c.us_…
+    m = s.match(/(?:true|false)_(\d{8,15})@/);
+    if (m) return normalizePhone(m[1]);
     return "";
+}
+
+/**
+ * Pull phone from Contact info drawer.
+ * Real WA DOM (your xpath): …/section/div[1]/div[2]/div[2]/span/div/span
+ * Text: "+98 919 541 0188" — plain span, no title/dir/data-testid.
+ */
+function readPhoneFromInfoPanel(root) {
+    const scope = root || getChatInfoDrawerRoot();
+    if (!scope) return "";
+
+    function pickPhone(raw) {
+        const cleaned = cleanChatLabel(raw);
+        if (!cleaned || isMemberListText(cleaned) || isStatusText(cleaned)) return "";
+        if ((cleaned.match(/,/g) || []).length >= 1) return "";
+        return sanitizePhoneField(cleaned);
+    }
+
+    const tel = scope.querySelector('a[href^="tel:"]');
+    if (tel) {
+        const telPhone = pickPhone((tel.getAttribute("href") || "").replace(/^tel:/i, ""));
+        if (telPhone) return telPhone;
+    }
+
+    // Exact Contact info layout: first section, profile block, phone line under name
+    const profileSections = scope.querySelectorAll("section");
+    for (let si = 0; si < profileSections.length; si++) {
+        const sec = profileSections[si];
+        // div[1]/div[2]/div[2]/span/div/span pattern
+        const blocks = sec.querySelectorAll(":scope > div > div:nth-child(2) span, :scope > div span");
+        for (let bi = 0; bi < blocks.length; bi++) {
+            const phone = pickPhone(blocks[bi].innerText || blocks[bi].textContent || "");
+            if (phone) return phone;
+        }
+    }
+
+    // Any span in drawer whose visible text is a phone (matches your +98 … span)
+    const allSpans = scope.querySelectorAll("span");
+    let best = "";
+    for (let i = 0; i < allSpans.length; i++) {
+        const el = allSpans[i];
+        // Prefer leaf spans (phone is usually innermost)
+        if (el.children && el.children.length > 0) continue;
+        const phone = pickPhone(el.innerText || el.textContent || "");
+        if (phone && phone.length > best.length) best = phone;
+    }
+
+    // Fallback: full drawer text
+    if (!best) {
+        const body = (scope.innerText || scope.textContent || "").replace(/\s+/g, " ");
+        const m = body.match(/\+\d[\d\s\-()]{7,18}\d/);
+        if (m) best = pickPhone(m[0]);
+    }
+    return best || "";
 }
 
 function extractPeerIdsFromOpenChat() {
@@ -567,12 +631,30 @@ function extractPeerIdsFromOpenChat() {
         }
     }
 
-    const nodes = document.querySelectorAll("#main [data-id]");
+    // Message rows — peer phone is in data-id even when header only shows display name
+    const nodes = document.querySelectorAll(
+        '#main [data-id], #main [data-testid="msg-container"], #main div.copyable-text'
+    );
     if (!nodes.length) return result;
 
-    const start = Math.max(0, nodes.length - 120);
+    const start = Math.max(0, nodes.length - 150);
     for (let i = nodes.length - 1; i >= start; i--) {
-        if (scanId(nodes[i].getAttribute("data-id") || "")) return result;
+        const el = nodes[i];
+        if (scanId(el.getAttribute("data-id") || "")) return result;
+        // Some builds put id on nested attrs
+        const nested = el.querySelector("[data-id]");
+        if (nested && scanId(nested.getAttribute("data-id") || "")) return result;
+        const pre = el.getAttribute("data-pre-plain-text") || "";
+        if (pre) {
+            const pm = pre.match(/\+?\d[\d\s\-()]{7,}\d/);
+            if (pm && !result.phone) {
+                const p = sanitizePhoneField(pm[0]);
+                if (p) {
+                    result.phone = p;
+                    if (!result.chatType) result.chatType = "pv";
+                }
+            }
+        }
     }
     return result;
 }
@@ -675,8 +757,21 @@ function getChatInfoDrawerRoot() {
         const root =
             h.closest('[data-testid="drawer-right"]') ||
             h.closest('div[role="dialog"]') ||
+            h.closest("section")?.parentElement ||
             h.closest("div");
         if (root && isVisiblePanel(root)) return root;
+    }
+    // Contact info body: …/section/div[1]/div[2]/…/span (phone under name)
+    const sections = document.querySelectorAll("section");
+    for (let s = 0; s < sections.length; s++) {
+        const sec = sections[s];
+        if (!isVisiblePanel(sec)) continue;
+        const parent = sec.parentElement;
+        if (!parent) continue;
+        const headerText = (parent.querySelector("header")?.innerText || "").replace(/\s+/g, " ");
+        if (/group info|contact info|اطلاعات گروه|اطلاعات مخاطب/i.test(headerText)) {
+            return parent;
+        }
     }
     return null;
 }
@@ -773,7 +868,7 @@ async function closeChatInfoSidebar() {
 }
 
 /**
- * Open WA info panel briefly and read Group info vs Contact info.
+ * Open WA info panel briefly and read Group info vs Contact info (+ phone for PV).
  * Cached per chat name to avoid reopening on every message.
  */
 async function detectChatTypeFromInfoPanel(chatName) {
@@ -781,14 +876,35 @@ async function detectChatTypeFromInfoPanel(chatName) {
     if (key && chatInfoPanelCache[key]) {
         const cached = chatInfoPanelCache[key];
         if (Date.now() - cached.ts < INFO_PANEL_CACHE_MS) {
-            return { chatType: cached.chatType, source: "info_panel_cache" };
+            return {
+                chatType: cached.chatType,
+                phone: cached.phone || "",
+                source: "info_panel_cache"
+            };
         }
     }
 
-    const already = readOpenInfoPanelChatType();
-    if (already) {
-        if (key) chatInfoPanelCache[key] = { chatType: already, ts: Date.now() };
-        return { chatType: already, source: "info_panel_open" };
+    function snapshotPanel() {
+        const chatType = readOpenInfoPanelChatType();
+        const phone =
+            chatType === "pv" ? readPhoneFromInfoPanel(getChatInfoDrawerRoot()) : "";
+        return { chatType: chatType, phone: phone };
+    }
+
+    const already = snapshotPanel();
+    if (already.chatType) {
+        if (key) {
+            chatInfoPanelCache[key] = {
+                chatType: already.chatType,
+                phone: already.phone || "",
+                ts: Date.now()
+            };
+        }
+        return {
+            chatType: already.chatType,
+            phone: already.phone || "",
+            source: "info_panel_open"
+        };
     }
 
     while (infoPanelDetectBusy) {
@@ -798,20 +914,39 @@ async function detectChatTypeFromInfoPanel(chatName) {
     try {
         const wasOpen = isChatInfoPanelOpen();
         await openChatInfoSidebar();
-        let chatType = null;
+        let hit = { chatType: null, phone: "" };
         for (let i = 0; i < 12; i++) {
-            chatType = readOpenInfoPanelChatType();
-            if (chatType) break;
+            hit = snapshotPanel();
+            if (hit.chatType) {
+                // Give Contact info a moment to render the number line
+                if (hit.chatType === "pv" && !hit.phone) {
+                    await sleep(350);
+                    hit = snapshotPanel();
+                }
+                break;
+            }
             await sleep(250);
         }
-        if (!wasOpen && chatType) {
+        if (!wasOpen && hit.chatType) {
             await closeChatInfoSidebar();
         }
-        if (chatType && key) {
-            chatInfoPanelCache[key] = { chatType: chatType, ts: Date.now() };
-            log("نوع چت از پنل WA:", key, "→", chatType === "group" ? "گروه" : "خصوصی");
+        if (hit.chatType && key) {
+            chatInfoPanelCache[key] = {
+                chatType: hit.chatType,
+                phone: hit.phone || "",
+                ts: Date.now()
+            };
+            log(
+                "نوع چت از پنل WA:",
+                key,
+                "→",
+                hit.chatType === "group" ? "گروه" : "خصوصی",
+                hit.phone ? "(" + hit.phone + ")" : ""
+            );
         }
-        return chatType ? { chatType: chatType, source: "info_panel" } : null;
+        return hit.chatType
+            ? { chatType: hit.chatType, phone: hit.phone || "", source: "info_panel" }
+            : null;
     } catch (err) {
         log("تشخیص پنل اطلاعات چت:", err && err.message ? err.message : err);
         return null;
@@ -820,30 +955,82 @@ async function detectChatTypeFromInfoPanel(chatName) {
     }
 }
 
+/** Wait briefly for MAIN-world inject to report @c.us phone. */
+async function waitForInjectPhone(maxMs) {
+    requestWaInjectIdentity();
+    const deadline = Date.now() + (maxMs || 1200);
+    while (Date.now() < deadline) {
+        const inj = waInjectIdentity;
+        if (inj && sanitizePhoneField(inj.phone) && inj.chatType !== "group") {
+            return sanitizePhoneField(inj.phone);
+        }
+        if (inj && (inj.groupId || inj.chatType === "group")) return "";
+        await sleep(150);
+        requestWaInjectIdentity();
+    }
+    const inj = waInjectIdentity;
+    return inj && inj.chatType !== "group" ? sanitizePhoneField(inj.phone || "") : "";
+}
+
 /** Merge DOM/inject identity with reliable WA info-panel group/contact detection. */
 async function resolveChatIdentity(baseInfo) {
     const base = baseInfo || getChatIdentity();
     const name = cleanChatLabel((base && base.name) || "");
+    let phone = sanitizePhoneField((base && base.phone) || "");
+
+    if (!phone) {
+        const injPhone = await waitForInjectPhone(900);
+        if (injPhone) phone = injPhone;
+    }
+    if (!phone) {
+        const peer = extractPeerIdsFromOpenChat();
+        if (peer.phone) phone = sanitizePhoneField(peer.phone);
+    }
 
     if (name && chatInfoPanelCache[name]) {
         const cached = chatInfoPanelCache[name];
         if (Date.now() - cached.ts < INFO_PANEL_CACHE_MS) {
-            return {
-                name: name,
-                phone: cached.chatType === "group" ? "" : sanitizePhoneField(base.phone || ""),
-                groupId: cached.chatType === "group" ? base.groupId || "" : "",
-                chatType: cached.chatType
-            };
+            const ct = cached.chatType;
+            const cachedPhone = sanitizePhoneField(cached.phone || "");
+            // If PV but phone still missing, reopen panel once to scrape number
+            if (ct === "pv" && !phone && !cachedPhone) {
+                delete chatInfoPanelCache[name];
+            } else {
+                return {
+                    name: name,
+                    phone: ct === "group" ? "" : phone || cachedPhone || "",
+                    groupId: ct === "group" ? (base.groupId || "") : "",
+                    chatType: ct
+                };
+            }
         }
     }
 
     if (base.chatType === "group" && base.groupId) {
-        if (name) chatInfoPanelCache[name] = { chatType: "group", ts: Date.now() };
-        return base;
+        if (name) {
+            chatInfoPanelCache[name] = {
+                chatType: "group",
+                phone: "",
+                ts: Date.now()
+            };
+        }
+        return {
+            name: name || base.name || "",
+            phone: "",
+            groupId: base.groupId || "",
+            chatType: "group"
+        };
     }
 
     const panel = await detectChatTypeFromInfoPanel(name);
-    if (!panel || !panel.chatType) return base;
+    if (!panel || !panel.chatType) {
+        return {
+            name: name || base.name || "",
+            phone: phone || "",
+            groupId: "",
+            chatType: base.chatType || "pv"
+        };
+    }
 
     if (panel.chatType === "group") {
         return {
@@ -853,9 +1040,18 @@ async function resolveChatIdentity(baseInfo) {
             chatType: "group"
         };
     }
+
+    const panelPhone = sanitizePhoneField(panel.phone || "");
+    const finalPhone = phone || panelPhone || "";
+    if (name && finalPhone && chatInfoPanelCache[name]) {
+        chatInfoPanelCache[name].phone = finalPhone;
+    }
+    if (finalPhone) {
+        log("تلفن مخاطب:", name || "(بدون نام)", "→", finalPhone);
+    }
     return {
         name: name || base.name || "",
-        phone: sanitizePhoneField(base.phone || ""),
+        phone: finalPhone,
         groupId: "",
         chatType: "pv"
     };

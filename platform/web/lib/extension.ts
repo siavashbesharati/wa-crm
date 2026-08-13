@@ -6,7 +6,7 @@ export const EXTENSION_DOWNLOAD_URL = "/downloads/iranexpedia-extension.zip";
 export const EXTENSION_DOWNLOAD_NAME = "iranexpedia-extension.zip";
 
 /** Fallback if API / meta are unreachable. Synced from config/extension.json */
-export const EXTENSION_VERSION_FALLBACK = "7.7.0";
+export const EXTENSION_VERSION_FALLBACK = "7.7.2";
 
 export type ExtensionMeta = {
   version: string;
