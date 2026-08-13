@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.6.0";
+const EXT_VERSION = "7.6.8";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -24,11 +24,60 @@ let lastBotReply = "";
 let lastStableChat = "";
 let lastCapturedMsgKey = "";
 let lastCloudIngestKey = "";
+/** Latest active-chat id from MAIN-world wa-inject.js (@c.us / @g.us). */
+let waInjectIdentity = null;
 const recentOutboundTexts = {};
 const recentIngestKeys = {};
 const OUTBOUND_TTL_MS = 20 * 60 * 1000;
 const INGEST_DEDUPE_MS = 10 * 60 * 1000;
 const sidebarContactSaved = {};
+/** Cache chatType from WA info panel (Group info / Contact info). */
+const chatInfoPanelCache = {};
+const INFO_PANEL_CACHE_MS = 45 * 60 * 1000;
+let infoPanelDetectBusy = false;
+
+function injectWaMainWorld() {
+    try {
+        if (document.documentElement.getAttribute("data-iranexpedia-wa-inject") === "1") {
+            return;
+        }
+        const s = document.createElement("script");
+        s.src = chrome.runtime.getURL("wa-inject.js");
+        s.onload = function () {
+            try {
+                s.remove();
+            } catch (_e) {}
+        };
+        s.onerror = function () {
+            log("wa-inject.js load failed — check web_accessible_resources");
+        };
+        (document.documentElement || document.head).appendChild(s);
+        document.documentElement.setAttribute("data-iranexpedia-wa-inject", "1");
+        log("wa-inject MAIN world hooked");
+    } catch (err) {
+        log("wa-inject error", err);
+    }
+}
+
+function requestWaInjectIdentity() {
+    try {
+        window.postMessage(
+            { source: "iranexpedia-wa-content", type: "IRANEXPEDIA_WA_ACTIVE_CHAT_REQ" },
+            "*"
+        );
+    } catch (_e) {}
+}
+
+window.addEventListener("message", function (ev) {
+    const d = ev && ev.data;
+    if (!d || d.source !== "iranexpedia-wa-inject") return;
+    if (d.type === "IRANEXPEDIA_WA_ACTIVE_CHAT" && d.data) {
+        const hit = d.data;
+        if (hit.groupId || hit.phone || hit.wid) {
+            waInjectIdentity = hit;
+        }
+    }
+});
 
 function normalizeMsgText(text) {
     return String(text || "")
@@ -207,7 +256,8 @@ async function applyBotCommandFromMessage(chatInfo, text) {
     if (!name || !globalThis.IranexpediaCrm) return true;
 
     const chatType = (chatInfo && chatInfo.chatType) || "pv";
-    const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
+    const phone =
+        chatType === "group" ? "" : sanitizePhoneField((chatInfo && chatInfo.phone) || "");
     const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
     const pause = cmd === "stop" || cmd === "handoff";
 
@@ -351,21 +401,104 @@ function normalizePhone(value) {
     return String(value || "").replace(/[\s\-()]/g, "").trim();
 }
 
+/** Only real phone digits — never a contact/group display name. */
+function sanitizePhoneField(value) {
+    const n = normalizePhone(value);
+    return looksLikePhone(n) ? n : "";
+}
+
+/**
+ * Open conversation header — WA layouts vary; #main is not always present.
+ * Matches paths like: …/div[4]/div/header/…/span (subtitle member list).
+ */
+function getConversationHeader() {
+    return (
+        document.querySelector("#main header") ||
+        document.querySelector('[data-testid="conversation-header"]') ||
+        document.querySelector("#main [data-testid='conversation-panel-wrapper'] header") ||
+        document.querySelector("#app header") ||
+        (function () {
+            const headers = document.querySelectorAll("header");
+            for (let i = 0; i < headers.length; i++) {
+                const h = headers[i];
+                if (!h || !h.querySelector) continue;
+                // Prefer header that has a long member-list title (open group)
+                const titled = h.querySelectorAll("span[title]");
+                for (let j = 0; j < titled.length; j++) {
+                    const t = titled[j].getAttribute("title") || "";
+                    if (isMemberListText(t)) return h;
+                }
+                if (h.querySelector('[data-testid="conversation-info-header"]')) return h;
+            }
+            return null;
+        })()
+    );
+}
+
+function headerLooksLikeGroup() {
+    const header = getConversationHeader();
+    if (!header) return false;
+    if (
+        header.querySelector(
+            '[data-testid="default-group"], [data-icon="default-group"], span[data-icon="default-group"]'
+        )
+    ) {
+        return true;
+    }
+    // Group info drawer / subtitle cues
+    if (document.querySelector('[data-testid="group-info-drawer-subject-input"]')) return true;
+    if (getHeaderMemberListText()) return true;
+    // Subtitle: selectable-text with comma list / "N more"
+    const subs = header.querySelectorAll(
+        'span[data-testid="selectable-text"][title], span[title]'
+    );
+    for (let i = 0; i < subs.length; i++) {
+        if (isMemberListText(subs[i].getAttribute("title") || "")) return true;
+        if (isMemberListText(subs[i].textContent || "")) return true;
+    }
+    return false;
+}
+
+/**
+ * Stable external id for cloud matching.
+ * Never fall back to a bare display name (that polluted lead.phone).
+ */
+function buildExternalChatId(chatType, groupId, phone, name) {
+    if (chatType === "group") {
+        if (groupId) return groupId;
+        const n = cleanChatLabel(name);
+        return n ? "gname:" + n : "";
+    }
+    const p = sanitizePhoneField(phone);
+    if (p) return p;
+    return "";
+}
+
 function isMemberListText(value) {
     const t = String(value || "").trim();
     if (!t) return false;
+    // Explicit WA group subtitle: "…, 521 more" / "۵۲۱ نفر دیگر"
+    if (/\d+\s*more\b/i.test(t)) return true;
+    if (/\d+\s*(نفر\s*دیگر|عضو\s*دیگر|دیگه)/.test(t)) return true;
+    if (/\d+\s*(participants?|members?|اعضا|عضو)\b/i.test(t)) return true;
+    if (/participant|اعضا|عضو|members?/i.test(t)) return true;
     const phones = t.match(/\+\d[\d\s\-()]{6,}\d/g);
     if (phones && phones.length >= 2) return true;
-    if ((t.match(/,/g) || []).length >= 3) return true;
-    if (t.length > 120) return true;
+    // Mixed list: phones + @handles + names separated by commas
+    const commas = (t.match(/,/g) || []).length;
+    if (commas >= 2 && (phones || /@[\w.]+/.test(t) || t.length > 60)) return true;
+    if (commas >= 2) return true;
+    if (t.length > 80) return true;
     return false;
 }
 
 function getHeaderTitleSpans() {
-    const header = document.querySelector("#main header");
+    const header = getConversationHeader();
     if (!header) return [];
     return Array.from(
-        header.querySelectorAll("span[title], span[dir='auto'], span[dir='rtl']")
+        header.querySelectorAll(
+            "span[title], span[data-testid='selectable-text'], span[dir='auto'], span[dir='rtl'], span[dir='ltr']"
+        )
     );
 }
 
@@ -391,30 +524,45 @@ function extractPhoneFromDataId(id) {
 function extractPeerIdsFromOpenChat() {
     const result = { phone: "", groupId: "", chatType: "" };
 
-    // Header first — often has the peer id without needing scrolled messages.
-    const header = document.querySelector("#main header") || document.querySelector("#main");
-    if (header) {
-        const headerNodes = header.querySelectorAll("[data-id]");
-        for (let i = 0; i < headerNodes.length; i++) {
-            const id = headerNodes[i].getAttribute("data-id") || "";
-            const groupMatch = id.match(/(\d{10,24})@g\.us/);
-            if (groupMatch) {
-                result.groupId = groupMatch[1] + "@g.us";
+    function scanId(id) {
+        const s = String(id || "");
+        const groupMatch = s.match(/(\d{5,24})@g\.us/i);
+        if (groupMatch) {
+            result.groupId = groupMatch[1] + "@g.us";
+            result.chatType = "group";
+            return true;
+        }
+        // Some WA builds encode group as …-…@g.us inside a longer data-id
+        if (/@g\.us\b/i.test(s)) {
+            const m2 = s.match(/([\w.-]+)@g\.us/i);
+            if (m2) {
+                result.groupId = m2[1] + "@g.us";
                 result.chatType = "group";
-                return result;
+                return true;
             }
-            const phone = extractPhoneFromDataId(id);
-            if (phone && !result.phone) {
-                result.phone = phone;
-                result.chatType = "pv";
-            }
+        }
+        const phone = extractPhoneFromDataId(s);
+        if (phone && !result.phone) {
+            result.phone = phone;
+            if (!result.chatType) result.chatType = "pv";
+        }
+        return false;
+    }
+
+    // Header first — often has the peer id without needing scrolled messages.
+    const header = getConversationHeader() || document.querySelector("#main");
+    if (header) {
+        const headerNodes = header.querySelectorAll("[data-id], [data-testid]");
+        for (let i = 0; i < headerNodes.length; i++) {
+            const el = headerNodes[i];
+            if (scanId(el.getAttribute("data-id") || "")) return result;
         }
         const tel = header.querySelector('a[href^="tel:"]');
         if (tel && !result.phone) {
             const telPhone = normalizePhone((tel.getAttribute("href") || "").replace(/^tel:/i, ""));
             if (looksLikePhone(telPhone)) {
                 result.phone = telPhone;
-                result.chatType = "pv";
+                if (!result.chatType) result.chatType = "pv";
             }
         }
     }
@@ -424,28 +572,19 @@ function extractPeerIdsFromOpenChat() {
 
     const start = Math.max(0, nodes.length - 120);
     for (let i = nodes.length - 1; i >= start; i--) {
-        const id = nodes[i].getAttribute("data-id") || "";
-        const groupMatch = id.match(/(\d{10,24})@g\.us/);
-        if (groupMatch) {
-            result.groupId = groupMatch[1] + "@g.us";
-            result.chatType = "group";
-            return result;
-        }
-        const phone = extractPhoneFromDataId(id);
-        if (phone && !result.phone) {
-            result.phone = phone;
-            result.chatType = "pv";
-        }
+        if (scanId(nodes[i].getAttribute("data-id") || "")) return result;
     }
     return result;
 }
 
 function getChatIdentity() {
+    requestWaInjectIdentity();
     const spans = getHeaderTitleSpans();
     let name = "";
     let phone = "";
     const memberList = getHeaderMemberListText();
     const peer = extractPeerIdsFromOpenChat();
+    const inj = waInjectIdentity;
 
     for (let i = 0; i < spans.length; i++) {
         const raw = cleanChatLabel(
@@ -460,20 +599,41 @@ function getChatIdentity() {
         if (!name) name = raw;
     }
 
+    // MAIN-world inject has real @c.us / @g.us when DOM only shows display names.
+    if (inj) {
+        if (inj.name && !name) name = cleanChatLabel(inj.name);
+        if (inj.chatType === "group" || inj.groupId) {
+            return {
+                name: name || cleanChatLabel(inj.name) || "",
+                phone: "",
+                groupId: inj.groupId || peer.groupId || "",
+                chatType: "group"
+            };
+        }
+        if (sanitizePhoneField(inj.phone)) {
+            phone = sanitizePhoneField(inj.phone);
+        }
+    }
+
     // Always prefer peer id phone when available (saved contacts rarely show number in title).
-    if (!phone && peer.phone) phone = peer.phone;
+    if (!sanitizePhoneField(phone) && peer.phone) phone = peer.phone;
+    phone = sanitizePhoneField(phone);
 
     // Unsaved chat: title is the number — keep both fields (name editable later).
     if (!name && phone) name = phone;
-    // If title was a display name and phone still empty, last try: any phone-looking title already handled;
-    // leave phone blank so user can edit manually.
 
-    const isGroup = !!(memberList || peer.groupId || peer.chatType === "group");
+    const isGroup = !!(
+        memberList ||
+        peer.groupId ||
+        peer.chatType === "group" ||
+        headerLooksLikeGroup() ||
+        (inj && inj.chatType === "group")
+    );
     if (isGroup) {
         return {
             name: name || "",
             phone: "",
-            groupId: peer.groupId || "",
+            groupId: (inj && inj.groupId) || peer.groupId || "",
             chatType: "group"
         };
     }
@@ -490,6 +650,217 @@ function getChatName() {
     return getChatIdentity().name || null;
 }
 
+function isVisiblePanel(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 60 && r.height > 60 && r.bottom > 0 && r.right > 0;
+}
+
+/** Right-hand WA drawer: Group info / Contact info panel. */
+function getChatInfoDrawerRoot() {
+    const candidates = [
+        document.querySelector('[data-testid="drawer-right"]'),
+        document.querySelector('[data-testid="contact-info-drawer"]'),
+        document.querySelector('[data-testid="group-info-drawer"]')
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+        if (isVisiblePanel(candidates[i])) return candidates[i];
+    }
+    // WA builds without data-testid — panel with h2 "Group info" / "Contact info"
+    const headers = document.querySelectorAll("header");
+    for (let j = 0; j < headers.length; j++) {
+        const h = headers[j];
+        const t = (h.innerText || h.textContent || "").replace(/\s+/g, " ").trim();
+        if (!/group info|contact info|اطلاعات گروه|اطلاعات مخاطب/i.test(t)) continue;
+        const root =
+            h.closest('[data-testid="drawer-right"]') ||
+            h.closest('div[role="dialog"]') ||
+            h.closest("div");
+        if (root && isVisiblePanel(root)) return root;
+    }
+    return null;
+}
+
+/**
+ * Read chat type from open WA info sidebar header.
+ * Returns "group" | "pv" | null.
+ */
+function readOpenInfoPanelChatType() {
+    const drawer = getChatInfoDrawerRoot();
+    const roots = drawer ? [drawer] : [];
+
+    if (!roots.length) {
+        const headers = document.querySelectorAll("header h2, header h2 span, header span");
+        for (let i = 0; i < headers.length; i++) {
+            const el = headers[i];
+            if (!isVisiblePanel(el)) continue;
+            const t = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+            if (/^group info$/i.test(t) || /^اطلاعات گروه$/i.test(t)) return "group";
+            if (/^contact info$/i.test(t) || /^اطلاعات مخاطب$/i.test(t)) return "pv";
+        }
+        return null;
+    }
+
+    for (let r = 0; r < roots.length; r++) {
+        const root = roots[r];
+        const headerSpans = root.querySelectorAll(
+            "header h2 span, header h2, header span, header div span"
+        );
+        for (let i = 0; i < headerSpans.length; i++) {
+            const t = (headerSpans[i].innerText || headerSpans[i].textContent || "")
+                .replace(/\s+/g, " ")
+                .trim();
+            if (/^group info$/i.test(t) || /^اطلاعات گروه$/i.test(t)) return "group";
+            if (/^contact info$/i.test(t) || /^اطلاعات مخاطب$/i.test(t)) return "pv";
+        }
+        const body = (root.innerText || root.textContent || "").replace(/\s+/g, " ");
+        if (/\bgroup\b\s*·\s*\d+\s*members?\b/i.test(body)) return "group";
+        if (/\bگروه\b\s*·\s*[\d۰-۹]+\s*عضو/.test(body)) return "group";
+        if (/\bcontact\b\s*·/i.test(body) && !/\bgroup\b/i.test(body.slice(0, 120))) return "pv";
+    }
+    return null;
+}
+
+function isChatInfoPanelOpen() {
+    return !!readOpenInfoPanelChatType();
+}
+
+/** Click chat header → open Group info / Contact info sidebar (same as member download). */
+async function openChatInfoSidebar() {
+    const header =
+        getConversationHeader() ||
+        document.querySelector('#main [data-testid="conversation-info-header"]');
+    if (!header) {
+        throw new Error("ابتدا یک چت را در واتساپ باز کنید.");
+    }
+    const clickTarget =
+        header.querySelector("span[title]") ||
+        header.querySelector('[data-testid="conversation-info-header"]') ||
+        header;
+    clickEl(clickTarget);
+    await sleep(900);
+
+    let tries = 0;
+    while (tries < 10) {
+        if (readOpenInfoPanelChatType()) return getChatInfoDrawerRoot();
+        await sleep(250);
+        tries += 1;
+    }
+    return getChatInfoDrawerRoot();
+}
+
+async function closeChatInfoSidebar() {
+    const drawer = getChatInfoDrawerRoot();
+    const scope = drawer || document.body;
+    const closeBtn =
+        (drawer &&
+            (drawer.querySelector('[data-testid="x"]') ||
+                drawer.querySelector('[data-icon="x"]') ||
+                drawer.querySelector('span[data-icon="x"]'))) ||
+        findByText(scope, [/^close$/i, /^بستن$/i, /^×$/]) ||
+        scope.querySelector('[aria-label="Close"]') ||
+        scope.querySelector('[aria-label="بستن"]');
+    if (closeBtn) {
+        clickEl(closeBtn);
+    } else {
+        try {
+            document.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true })
+            );
+        } catch (_e) {}
+    }
+    await sleep(450);
+}
+
+/**
+ * Open WA info panel briefly and read Group info vs Contact info.
+ * Cached per chat name to avoid reopening on every message.
+ */
+async function detectChatTypeFromInfoPanel(chatName) {
+    const key = cleanChatLabel(chatName || "");
+    if (key && chatInfoPanelCache[key]) {
+        const cached = chatInfoPanelCache[key];
+        if (Date.now() - cached.ts < INFO_PANEL_CACHE_MS) {
+            return { chatType: cached.chatType, source: "info_panel_cache" };
+        }
+    }
+
+    const already = readOpenInfoPanelChatType();
+    if (already) {
+        if (key) chatInfoPanelCache[key] = { chatType: already, ts: Date.now() };
+        return { chatType: already, source: "info_panel_open" };
+    }
+
+    while (infoPanelDetectBusy) {
+        await sleep(200);
+    }
+    infoPanelDetectBusy = true;
+    try {
+        const wasOpen = isChatInfoPanelOpen();
+        await openChatInfoSidebar();
+        let chatType = null;
+        for (let i = 0; i < 12; i++) {
+            chatType = readOpenInfoPanelChatType();
+            if (chatType) break;
+            await sleep(250);
+        }
+        if (!wasOpen && chatType) {
+            await closeChatInfoSidebar();
+        }
+        if (chatType && key) {
+            chatInfoPanelCache[key] = { chatType: chatType, ts: Date.now() };
+            log("نوع چت از پنل WA:", key, "→", chatType === "group" ? "گروه" : "خصوصی");
+        }
+        return chatType ? { chatType: chatType, source: "info_panel" } : null;
+    } catch (err) {
+        log("تشخیص پنل اطلاعات چت:", err && err.message ? err.message : err);
+        return null;
+    } finally {
+        infoPanelDetectBusy = false;
+    }
+}
+
+/** Merge DOM/inject identity with reliable WA info-panel group/contact detection. */
+async function resolveChatIdentity(baseInfo) {
+    const base = baseInfo || getChatIdentity();
+    const name = cleanChatLabel((base && base.name) || "");
+
+    if (name && chatInfoPanelCache[name]) {
+        const cached = chatInfoPanelCache[name];
+        if (Date.now() - cached.ts < INFO_PANEL_CACHE_MS) {
+            return {
+                name: name,
+                phone: cached.chatType === "group" ? "" : sanitizePhoneField(base.phone || ""),
+                groupId: cached.chatType === "group" ? base.groupId || "" : "",
+                chatType: cached.chatType
+            };
+        }
+    }
+
+    if (base.chatType === "group" && base.groupId) {
+        if (name) chatInfoPanelCache[name] = { chatType: "group", ts: Date.now() };
+        return base;
+    }
+
+    const panel = await detectChatTypeFromInfoPanel(name);
+    if (!panel || !panel.chatType) return base;
+
+    if (panel.chatType === "group") {
+        return {
+            name: name || base.name || "",
+            phone: "",
+            groupId: base.groupId || "",
+            chatType: "group"
+        };
+    }
+    return {
+        name: name || base.name || "",
+        phone: sanitizePhoneField(base.phone || ""),
+        groupId: "",
+        chatType: "pv"
+    };
+}
+
 async function saveContactFromIncoming(chatInfo, source) {
     if (!globalThis.IranexpediaCrm) return null;
     if (!isCloudAuthorized()) return null;
@@ -497,7 +868,8 @@ async function saveContactFromIncoming(chatInfo, source) {
     if (!name) return null;
 
     const chatType = (chatInfo && chatInfo.chatType) || "pv";
-    const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
+    const phone =
+        chatType === "group" ? "" : sanitizePhoneField((chatInfo && chatInfo.phone) || "");
     const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
 
     let existing = null;
@@ -508,15 +880,22 @@ async function saveContactFromIncoming(chatInfo, source) {
         existing = await IranexpediaCrm.getContactByName(name);
     }
     if (existing) {
+        const mergedType =
+            chatType === "group" || existing.chatType === "group" ? "group" : chatType || existing.chatType || "pv";
+        const mergedGroupId =
+            mergedType === "group"
+                ? groupId || existing.groupId || ""
+                : "";
+        const existingPhone = sanitizePhoneField(existing.phone || "");
         const updated = await IranexpediaCrm.upsertContact({
             id: existing.id,
             name:
                 looksLikePhone(existing.name) && name && !looksLikePhone(name)
                     ? name
                     : existing.name || name,
-            phone: phone || existing.phone || "",
-            groupId: groupId || existing.groupId || "",
-            chatType: chatType || existing.chatType || "pv",
+            phone: mergedType === "group" ? "" : phone || existingPhone || "",
+            groupId: mergedGroupId,
+            chatType: mergedType,
             lastMessageAt: Date.now()
         });
         const contact = updated || existing;
@@ -555,7 +934,7 @@ async function syncContactToCloud(contact, source) {
     try {
         const res = await IranexpediaCloudBridge.upsertLead({
             name: contact.name,
-            phone: contact.phone || "",
+            phone: sanitizePhoneField(contact.phone || ""),
             groupId: contact.groupId || "",
             chatType: contact.chatType || "pv",
             stage: contact.stage || "جدید",
@@ -605,9 +984,10 @@ async function ingestCloudInbound(chatInfo, text, opts) {
     }
 
     const chatType = (chatInfo && chatInfo.chatType) || "pv";
-    const phone = chatType === "group" ? "" : (chatInfo && chatInfo.phone) || "";
+    const phone =
+        chatType === "group" ? "" : sanitizePhoneField((chatInfo && chatInfo.phone) || "");
     const groupId = chatType === "group" ? (chatInfo && chatInfo.groupId) || "" : "";
-    const externalChatId = groupId || phone || name;
+    const externalChatId = buildExternalChatId(chatType, groupId, phone, name);
     const msgKey = [name, phone, groupId, body].join("||");
     if (shouldSkipIngest(msgKey)) return null;
 
@@ -753,7 +1133,7 @@ async function syncAllLocalContactsToCloud() {
 }
 
 /** Capture contacts on new messages even when auto-reply is OFF */
-function captureContactsFromOpenChat() {
+async function captureContactsFromOpenChat() {
     if (!isCloudAuthorized()) return;
     if (!document.querySelector("#main")) return;
 
@@ -762,7 +1142,7 @@ function captureContactsFromOpenChat() {
     if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
     if (isOurOutboundText(text)) return;
 
-    const info = getChatIdentity();
+    const info = await resolveChatIdentity(getChatIdentity());
     if (!info.name) return;
 
     const key = info.name + "||" + text;
@@ -770,19 +1150,35 @@ function captureContactsFromOpenChat() {
     lastCapturedMsgKey = key;
 
     if (globalThis.IranexpediaCrm) {
-        saveContactFromIncoming(info, "incoming");
+        await saveContactFromIncoming(info, "incoming");
     }
-    // Cloud AI path: always ingest real message text
-    ingestCloudInbound(info, text);
+    await ingestCloudInbound(info, text);
 }
 
 function getHeaderMemberListText() {
-    const spans = getHeaderTitleSpans();
+    const header = getConversationHeader();
+    if (!header) return "";
     let best = "";
-    for (let i = 0; i < spans.length; i++) {
-        const t = (spans[i].getAttribute("title") || "").trim();
-        if (!isMemberListText(t)) continue;
+
+    function consider(raw) {
+        const t = String(raw || "").trim();
+        if (!isMemberListText(t)) return;
         if (t.length > best.length) best = t;
+    }
+
+    // Prefer subtitle selectable-text (user's DOM: header/…/div[2]/span title=member list)
+    const selectable = header.querySelectorAll(
+        'span[data-testid="selectable-text"][title], span[title]'
+    );
+    for (let i = 0; i < selectable.length; i++) {
+        consider(selectable[i].getAttribute("title") || "");
+        consider(selectable[i].innerText || selectable[i].textContent || "");
+    }
+
+    const spans = getHeaderTitleSpans();
+    for (let i = 0; i < spans.length; i++) {
+        consider(spans[i].getAttribute("title") || "");
+        consider(spans[i].innerText || spans[i].textContent || "");
     }
     return best;
 }
@@ -1108,6 +1504,7 @@ async function runScheduledTask(task) {
 
 window.__iranexpediaGetChatName = getChatName;
 window.__iranexpediaGetChatIdentity = getChatIdentity;
+window.__iranexpediaResolveChatIdentity = resolveChatIdentity;
 window.__iranexpediaSendNow = function (text) {
     sendTextNow(text).then(function (ok) {
         if (!ok) alert("ارسال انجام نشد. چت را باز کنید و دوباره تلاش کنید.");
@@ -1283,17 +1680,11 @@ function collectMemberRows(root) {
 }
 
 async function openGroupInfoPanel() {
-    const header =
-        document.querySelector("#main header") ||
-        document.querySelector('#main [data-testid="conversation-info-header"]');
-    if (!header) {
-        throw new Error("ابتدا یک گروه را در واتساپ باز کنید.");
-    }
-
-    clickEl(header.querySelector("span[title]") || header);
-    await sleep(1000);
+    await openChatInfoSidebar();
+    await sleep(300);
 
     const drawer =
+        getChatInfoDrawerRoot() ||
         document.querySelector('[data-testid="drawer-right"]') ||
         document.querySelector("#app .two > div:last-child") ||
         document.body;
@@ -1504,6 +1895,34 @@ function getCellChatName(cell) {
     return phone || null;
 }
 
+function cellLooksLikeGroup(cell) {
+    if (!cell) return false;
+    if (
+        cell.querySelector(
+            '[data-testid="default-group"], [data-icon="default-group"], span[data-icon="default-group"]'
+        )
+    ) {
+        return true;
+    }
+    // Sidebar sometimes shows truncated member list / "N more" in secondary line
+    const titled = cell.querySelectorAll("span[title], span[data-testid='selectable-text']");
+    for (let i = 0; i < titled.length; i++) {
+        const t =
+            titled[i].getAttribute("title") ||
+            titled[i].innerText ||
+            titled[i].textContent ||
+            "";
+        if (isMemberListText(t)) return true;
+    }
+    const secondary =
+        cell.querySelector('[data-testid="cell-frame-secondary"]') ||
+        cell.querySelector('[data-testid="cell-frame-secondary-subtitle"]');
+    if (secondary && isMemberListText(secondary.innerText || secondary.textContent || "")) {
+        return true;
+    }
+    return false;
+}
+
 async function captureContactsFromSidebarUnread() {
     if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return;
     const cells = getSidebarCells();
@@ -1515,9 +1934,15 @@ async function captureContactsFromSidebarUnread() {
         const key = cleanChatLabel(chatName);
         if (!key || sidebarContactSaved[key]) continue;
         sidebarContactSaved[key] = Date.now();
-        const phone = looksLikePhone(key) ? normalizePhone(key) : "";
+        const isGroup = cellLooksLikeGroup(cell);
+        const phone = !isGroup && looksLikePhone(key) ? normalizePhone(key) : "";
         await saveContactFromIncoming(
-            { name: key, phone: phone, chatType: "pv" },
+            {
+                name: key,
+                phone: phone,
+                groupId: "",
+                chatType: isGroup ? "group" : "pv"
+            },
             "sidebar-unread"
         );
     }
@@ -1542,14 +1967,21 @@ async function captureContactsFromSidebarVisible() {
     const cells = getSidebarCells();
     let saved = 0;
     for (let i = 0; i < cells.length; i++) {
-        const chatName = getCellChatName(cells[i]);
+        const cell = cells[i];
+        const chatName = getCellChatName(cell);
         if (!chatName) continue;
         const key = cleanChatLabel(chatName);
         if (!key) continue;
-        const phone = looksLikePhone(key) ? normalizePhone(key) : "";
+        const isGroup = cellLooksLikeGroup(cell);
+        const phone = !isGroup && looksLikePhone(key) ? normalizePhone(key) : "";
         const before = await IranexpediaCrm.getContactByName(key);
         await saveContactFromIncoming(
-            { name: key, phone: phone, chatType: "pv" },
+            {
+                name: key,
+                phone: phone,
+                groupId: "",
+                chatType: isGroup ? "group" : "pv"
+            },
             "sidebar-visible"
         );
         if (!before) saved += 1;
@@ -1667,7 +2099,7 @@ async function processSidebarUnreadForCloud(match) {
     }
 
     lastHandledText = text;
-    const chatInfo = getChatIdentity();
+    const chatInfo = await resolveChatIdentity(getChatIdentity());
     await saveContactFromIncoming(chatInfo, "incoming");
     const RT = globalThis.IranexpediaReplyTrace;
     let traceId = "";
@@ -1814,30 +2246,38 @@ function handleOpenChatMessages() {
     if (!text) return;
     if (/^\d{1,2}:\d{2}\s?(am|pm)?$/i.test(text)) return;
     if (isOurOutboundText(text)) return;
+    if (text === lastHandledText) return;
 
     const chatInfo = getChatIdentity();
     const chatName = cleanChatLabel((chatInfo && chatInfo.name) || "");
-
-    // Always try to save contact on new incoming message (Farsi-safe)
-    if (text !== lastHandledText) {
-        captureContactsFromOpenChat();
-    }
-
-    if (busy || taskRunnerBusy) return;
-    if (text === lastHandledText) return;
-    if (isOurOutboundText(text)) return;
-
-    lastHandledText = text;
     const cmd = parseBotCommand(text);
 
     (async function () {
-        // Always ingest — server skips AI when bot_paused; start/handoff still applied
-        if (chatName && (await isChatBotPaused(chatName)) && !cmd) {
-            log("ربات متوقف — ذخیره پیام بدون AI:", chatName, "|", text.slice(0, 60));
+        try {
+            const resolved = await resolveChatIdentity(chatInfo);
+            const captureKey = resolved.name + "||" + text;
+            if (captureKey !== lastCapturedMsgKey) {
+                lastCapturedMsgKey = captureKey;
+                if (globalThis.IranexpediaCrm) {
+                    await saveContactFromIncoming(resolved, "incoming");
+                }
+            }
+
+            if (busy || taskRunnerBusy) return;
+
+            if (isEnabled) {
+                if (chatName && (await isChatBotPaused(chatName)) && !cmd) {
+                    log("ربات متوقف — ذخیره پیام بدون AI:", chatName, "|", text.slice(0, 60));
+                }
+                log("پیام در چت باز (AI ابری):", text);
+                await ingestCloudInbound(resolved, text, { source: "open_chat" });
+            } else if (isCloudAuthorized()) {
+                await ingestCloudInbound(resolved, text);
+            }
+            lastHandledText = text;
+        } catch (err) {
+            log("handleOpenChatMessages:", err && err.message ? err.message : err);
         }
-        log("پیام در چت باز (AI ابری):", text);
-        await saveContactFromIncoming(chatInfo, "incoming");
-        await ingestCloudInbound(chatInfo, text, { source: "open_chat" });
     })();
 }
 
@@ -1852,8 +2292,7 @@ setInterval(function () {
         lastCapturedMsgKey = "";
         if (!busy) resetMessageCache();
         if (isEnabled) log("چت فعال:", chat);
-        // Save when user opens a chat (Farsi names / phone titles supported)
-        saveContactFromIncoming(info, "open-chat");
+        saveContactFromIncoming(info, "open-chat").catch(function () {});
     }
 }, 600);
 
@@ -1925,6 +2364,7 @@ async function syncBotPausedFromCloud() {
 }
 
 refreshCrmSettings();
+injectWaMainWorld();
 activateWhatsAppChannel().then(function () {
     return refreshLicenseStatus();
 }).then(function () {

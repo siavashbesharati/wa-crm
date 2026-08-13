@@ -53,7 +53,9 @@ function start(name, command, cmdArgs, cwd) {
     shell: true,
     env: {
       ...process.env,
-      FORCE_COLOR: process.env.FORCE_COLOR || "1"
+      FORCE_COLOR: process.env.FORCE_COLOR || "1",
+      PYTHONUTF8: "1",
+      PYTHONIOENCODING: "utf-8"
     }
   });
   child.on("exit", (code, signal) => {

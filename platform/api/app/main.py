@@ -1,5 +1,9 @@
 ﻿from __future__ import annotations
 
+from app.services.stdio_utf8 import configure_stdio
+
+configure_stdio()
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -108,6 +112,12 @@ def _ensure_sqlite_columns() -> None:
                         "ALTER TABLE ai_policies ADD COLUMN group_auto_send_enabled BOOLEAN DEFAULT 0"
                     )
                 )
+            if "group_reply_mode" not in cols:
+                conn.execute(
+                    text("ALTER TABLE ai_policies ADD COLUMN group_reply_mode VARCHAR(32) DEFAULT 'off'")
+                )
+            if "group_keywords" not in cols:
+                conn.execute(text("ALTER TABLE ai_policies ADD COLUMN group_keywords JSON"))
     if "payments" in tables:
         cols = {c["name"] for c in insp.get_columns("payments")}
         if "raw_callback" not in cols:

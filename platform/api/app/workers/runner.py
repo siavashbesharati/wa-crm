@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.services.stdio_utf8 import configure_stdio, safe_print
+
+configure_stdio()
+
 import os
 import time
 from datetime import datetime
@@ -96,7 +100,7 @@ def handle_auto_reply(payload: dict) -> dict:
     trace_event(trace_id, "auto_reply_start", message_id=message_id)
     if not _try_lock_message(message_id):
         trace_event(trace_id, "auto_reply_skip", reason="already_processing")
-        print(f"[worker] auto_reply skip: already processing message={message_id}")
+        safe_print(f"[worker] auto_reply skip: already processing message={message_id}")
         return _auto_reply_result("skipped", "already_processing")
     db = SessionLocal()
     try:
@@ -107,7 +111,7 @@ def handle_auto_reply(payload: dict) -> dict:
         policy = db.query(AiPolicy).filter(AiPolicy.org_id == org.id).first()
         if not policy or not policy.auto_send_enabled:
             trace_event(trace_id, "auto_reply_skip", reason="auto_send_disabled")
-            print(f"[worker] auto_reply skip: auto_send disabled org={payload.get('org_id')}")
+            safe_print(f"[worker] auto_reply skip: auto_send disabled org={payload.get('org_id')}")
             return _auto_reply_result("skipped", "auto_send_disabled")
         # Soft-migrate stock defaults only (0.55 from platform / 0.72 legacy)
         mc = round(float(policy.min_confidence or 0), 2)
@@ -120,7 +124,7 @@ def handle_auto_reply(payload: dict) -> dict:
         if not lead or not msg or lead.bot_paused:
             if lead and lead.bot_paused:
                 trace_event(trace_id, "auto_reply_skip", reason="bot_paused")
-                print(f"[worker] auto_reply skip: bot_paused lead={lead.id}")
+                safe_print(f"[worker] auto_reply skip: bot_paused lead={lead.id}")
                 return _auto_reply_result("skipped", "bot_paused")
             trace_event(trace_id, "auto_reply_skip", reason="lead_or_msg_missing")
             return _auto_reply_result("skipped", "lead_or_msg_missing")
@@ -134,17 +138,30 @@ def handle_auto_reply(payload: dict) -> dict:
                 reason="stage_not_allowed",
                 stage=lead.stage,
             )
-            print(
+            safe_print(
                 f"[worker] auto_reply skip: stage={lead.stage!r} "
                 f"allowed={policy.allowed_stages} lead={lead.id}"
             )
             return _auto_reply_result("skipped", "stage_not_allowed")
-        chat_type = (lead.chat_type or "pv").strip().lower()
-        is_group = chat_type == "group" or bool((lead.group_id or "").strip())
-        if is_group and not getattr(policy, "group_auto_send_enabled", False):
-            trace_event(trace_id, "auto_reply_skip", reason="group_reply_disabled")
-            print(f"[worker] auto_reply skip: group_reply_disabled lead={lead.id}")
-            return _auto_reply_result("skipped", "group_reply_disabled")
+        from app.services.group_reply import evaluate_group_auto_reply, lead_looks_like_group
+
+        is_group = lead_looks_like_group(
+            lead,
+            chat_type=str(payload.get("chat_type") or lead.chat_type or ""),
+            group_id=str(payload.get("group_id") or lead.group_id or ""),
+            external_chat_id=str(
+                payload.get("external_chat_id") or lead.external_chat_id or ""
+            ),
+        )
+        if is_group:
+            allow_group, group_reason = evaluate_group_auto_reply(policy, msg.body or "")
+            if not allow_group:
+                trace_event(trace_id, "auto_reply_skip", reason=group_reason)
+                safe_print(
+                    f"[worker] auto_reply skip: {group_reason} lead={lead.id}"
+                )
+                return _auto_reply_result("skipped", group_reason)
+            trace_event(trace_id, "group_keyword_matched", reason=group_reason)
 
         # Idempotent: already queued an AI reply for THIS inbound message (short window).
         # Do not use open-ended created_at >= msg.created_at — later replies to other
@@ -186,7 +203,7 @@ def handle_auto_reply(payload: dict) -> dict:
                 reason="low_confidence",
                 confidence=result["confidence"],
             )
-            print(
+            safe_print(
                 f"[worker] auto_reply skip low_confidence={result['confidence']} "
                 f"min={min_conf} lead={lead.id}"
             )
@@ -210,13 +227,12 @@ def handle_auto_reply(payload: dict) -> dict:
             )
         if not link:
             trace_event(trace_id, "auto_reply_skip", reason="no_account_link")
-            print(f"[worker] auto_reply skip: no LeadAccountLink lead={lead.id}")
+            safe_print(f"[worker] auto_reply skip: no LeadAccountLink lead={lead.id}")
             return _auto_reply_result("skipped", "no_account_link")
 
-        # Keep external_chat_id fresh from inbound account when possible
-        if not (link.external_chat_id or "").strip() and (lead.external_chat_id or "").strip():
-            link.external_chat_id = lead.external_chat_id
-            db.add(link)
+        # Do NOT mutate lead_account_links here — filling external_chat_id can hit
+        # UNIQUE(org, account, external_chat_id) and abort the whole reply commit.
+        # _outbound_target already falls back to lead.external_chat_id / phone / name.
 
         account_id = msg.account_id or link.account_id
         target = _outbound_target(lead, link)
@@ -241,7 +257,13 @@ def handle_auto_reply(payload: dict) -> dict:
                 body=reply,
             )
         )
-        db.commit()
+        try:
+            db.commit()
+        except Exception as commit_err:  # noqa: BLE001
+            db.rollback()
+            trace_event(trace_id, "auto_reply_error", error=str(commit_err))
+            safe_print(f"[worker] auto_reply commit error: {commit_err}")
+            return _auto_reply_result("error", str(commit_err))
         link_job_trace(job.id, trace_id)
         try:
             from app.services.sse_hub import publish_job_ready
@@ -258,7 +280,7 @@ def handle_auto_reply(payload: dict) -> dict:
             target=target,
             provider=result.get("provider"),
         )
-        print(
+        safe_print(
             f"[worker] auto_reply queued job={job.id} lead={lead.id} "
             f"target={target!r} provider={result.get('provider')} "
             f"confidence={result.get('confidence')}"
@@ -270,7 +292,7 @@ def handle_auto_reply(payload: dict) -> dict:
         )
     except Exception as e:
         trace_event(trace_id, "auto_reply_error", error=str(e))
-        print(f"[worker] auto_reply error: {e}")
+        safe_print(f"[worker] auto_reply error: {e}")
         return _auto_reply_result("error", str(e))
     finally:
         db.close()
@@ -293,13 +315,13 @@ def handle_kpi(payload: dict) -> None:
             return
         auth = AuthContext(user=user, org=org, membership=membership)
         rollup(auth, db)
-        print(f"[worker] kpi rollup org={org.id} at {datetime.utcnow().isoformat()}")
+        safe_print(f"[worker] kpi rollup org={org.id} at {datetime.utcnow().isoformat()}")
     finally:
         db.close()
 
 
 def main() -> None:
-    print("[worker] started")
+    safe_print("[worker] started")
     while True:
         job = dequeue("auto_reply")
         if job:
@@ -312,7 +334,7 @@ def main() -> None:
         # drain embed (no-op — embeddings computed at upload)
         embed_job = dequeue("embed")
         if embed_job:
-            print(f"[worker] embed ack doc={embed_job.get('doc_id')}")
+            safe_print(f"[worker] embed ack doc={embed_job.get('doc_id')}")
             continue
         time.sleep(1)
 

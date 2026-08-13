@@ -9,7 +9,35 @@ from app.models import AiPolicy, KnowledgeDoc, Lead, MemberRole, Message
 from app.schemas import AiPolicyIn, KnowledgeIn, SuggestIn, SuggestOut
 from app.services.ai_reply import generate_reply, retrieve_knowledge
 from app.services.embeddings import chunk_text, embed_text
+from app.services.group_reply import (
+    GROUP_REPLY_KEYWORDS,
+    normalize_group_keywords,
+    normalize_group_reply_mode,
+    resolve_group_reply_mode,
+)
 from app.services.queue import enqueue
+
+
+def _policy_out(policy: AiPolicy) -> dict:
+    mode = resolve_group_reply_mode(policy)
+    keywords = normalize_group_keywords(getattr(policy, "group_keywords", None))
+    return {
+        "auto_send_enabled": policy.auto_send_enabled,
+        "group_auto_send_enabled": mode == GROUP_REPLY_KEYWORDS,
+        "group_reply_mode": mode,
+        "group_keywords": keywords,
+        "min_confidence": policy.min_confidence,
+        "allowed_stages": policy.allowed_stages or [],
+        "business_hours_only": policy.business_hours_only,
+        "hours_start": policy.hours_start,
+        "hours_end": policy.hours_end,
+        "agent_role": getattr(policy, "agent_role", "") or "",
+        "system_prompt": getattr(policy, "system_prompt", "") or "",
+        "fallback_message": getattr(policy, "fallback_message", "") or "",
+        "plan_allows_auto": True,
+        "plan_allows_suggest": True,
+    }
+
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -29,20 +57,7 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         db.add(policy)
         db.commit()
         db.refresh(policy)
-    return {
-        "auto_send_enabled": policy.auto_send_enabled,
-        "group_auto_send_enabled": getattr(policy, "group_auto_send_enabled", False),
-        "min_confidence": policy.min_confidence,
-        "allowed_stages": policy.allowed_stages or [],
-        "business_hours_only": policy.business_hours_only,
-        "hours_start": policy.hours_start,
-        "hours_end": policy.hours_end,
-        "agent_role": getattr(policy, "agent_role", "") or "",
-        "system_prompt": getattr(policy, "system_prompt", "") or "",
-        "fallback_message": getattr(policy, "fallback_message", "") or "",
-        "plan_allows_auto": True,
-        "plan_allows_suggest": True,
-    }
+    return _policy_out(policy)
 
 
 @router.put("/policy")
@@ -55,7 +70,19 @@ def put_policy(
     if not policy:
         policy = AiPolicy(org_id=auth.org.id)
     policy.auto_send_enabled = body.auto_send_enabled
-    policy.group_auto_send_enabled = body.group_auto_send_enabled
+    mode = normalize_group_reply_mode(
+        body.group_reply_mode,
+        legacy_enabled=bool(body.group_auto_send_enabled),
+    )
+    if not body.auto_send_enabled:
+        mode = "off"
+    keywords = normalize_group_keywords(body.group_keywords)
+    if mode == GROUP_REPLY_KEYWORDS and not keywords:
+        # Keywords mode without keywords → treat as off (safe default)
+        mode = "off"
+    policy.group_reply_mode = mode
+    policy.group_keywords = keywords
+    policy.group_auto_send_enabled = mode == GROUP_REPLY_KEYWORDS
     policy.min_confidence = body.min_confidence
     policy.allowed_stages = body.allowed_stages
     policy.business_hours_only = body.business_hours_only
@@ -66,7 +93,7 @@ def put_policy(
     policy.fallback_message = (body.fallback_message or "").strip()
     db.add(policy)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, **_policy_out(policy)}
 
 
 @router.get("/knowledge")
@@ -144,10 +171,12 @@ def run_auto_reply_for_lead(
         return {"sent": False, "reason": "lead_paused_or_missing"}
     if lead.stage not in (policy.allowed_stages or []):
         return {"sent": False, "reason": "stage_not_allowed"}
-    chat_type = (lead.chat_type or "pv").strip().lower()
-    is_group = chat_type == "group" or bool((lead.group_id or "").strip())
-    if is_group and not getattr(policy, "group_auto_send_enabled", False):
-        return {"sent": False, "reason": "group_reply_disabled"}
+    from app.services.group_reply import evaluate_group_auto_reply, lead_looks_like_group
+
+    if lead_looks_like_group(lead):
+        allow_group, group_reason = evaluate_group_auto_reply(policy, message)
+        if not allow_group:
+            return {"sent": False, "reason": group_reason}
 
     result = generate_reply(db, org_id=auth.org.id, lead=lead, message=message)
     if float(result["confidence"]) < policy.min_confidence:

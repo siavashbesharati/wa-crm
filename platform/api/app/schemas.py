@@ -161,6 +161,8 @@ class LeadPatchIn(BaseModel):
     group_id: str | None = None
     external_chat_id: str | None = None
     post_token: str | None = None
+    source_channel: str | None = None
+    chat_type: str | None = None
     stage: str | None = None
     tags: list[str] | None = None
     notes: str | None = None
@@ -262,6 +264,9 @@ class SuggestOut(BaseModel):
 class AiPolicyIn(BaseModel):
     auto_send_enabled: bool = False
     group_auto_send_enabled: bool = False
+    # off = no group AI (default); keywords = reply only when a keyword matches
+    group_reply_mode: str = "off"
+    group_keywords: list[str] = Field(default_factory=list)
     min_confidence: float = 0.45
     allowed_stages: list[str] = Field(default_factory=lambda: ["جدید"])
     business_hours_only: bool = False

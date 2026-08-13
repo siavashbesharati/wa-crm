@@ -1,6 +1,6 @@
 {
   "name": "iranexpedia-whatsapp-extension-build",
-  "version": "7.6.0",
+  "version": "7.6.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "release:ext:bump": "node scripts/release-extension.mjs --bump",
     "start:all": "node scripts/start-all.mjs",
     "start:all:bump": "node scripts/start-all.mjs --bump",
+    "stop:all": "node scripts/stop-all.mjs",
     "obfuscate": "npm run build:ext",
     "license:gen": "node scripts/generate-license-key.mjs",
     "api:dev": "cd platform/api && python -m uvicorn app.main:app --reload --port 8000",

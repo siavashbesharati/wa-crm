@@ -377,7 +377,9 @@ def generate_reply(
     try:
         out = generate_llm_text(platform, system_prompt=system_prompt, user_prompt=user_prompt)
     except Exception as e:  # noqa: BLE001
-        print(f"[ai_reply] LLM failed, using fallback: {e}")
+        from app.services.stdio_utf8 import safe_print
+
+        safe_print(f"[ai_reply] LLM failed, using fallback: {e}")
         return _fallback_result(fallback_text)
 
     reply = (out.get("reply") or "").strip()

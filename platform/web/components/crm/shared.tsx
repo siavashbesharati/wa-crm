@@ -10,10 +10,12 @@ export type Lead = {
   external_chat_id?: string | null;
   post_token?: string;
   source_channel?: string;
+  chat_type?: string;
   stage: string;
   tags: string[];
   notes: string;
   assignee_id: string | null;
+  bot_paused?: boolean;
 };
 
 export const CHANNEL_LABELS: Record<string, string> = {

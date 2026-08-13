@@ -11,9 +11,13 @@ import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 import { STAGES } from "@/components/crm/shared";
 
+type GroupReplyMode = "off" | "keywords";
+
 type Policy = {
   auto_send_enabled: boolean;
   group_auto_send_enabled: boolean;
+  group_reply_mode: GroupReplyMode;
+  group_keywords: string[];
   min_confidence: number;
   allowed_stages: string[];
   business_hours_only: boolean;
@@ -24,8 +28,27 @@ type Policy = {
   fallback_message: string;
 };
 
+function keywordsToText(list: string[] | undefined): string {
+  return (list || []).join("\n");
+}
+
+function textToKeywords(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of text.replace(/\n/g, ",").split(",")) {
+    const kw = part.trim();
+    if (!kw) continue;
+    const key = kw.toLocaleLowerCase("fa");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(kw);
+  }
+  return out;
+}
+
 export default function AiSettingsPage() {
   const [policy, setPolicy] = useState<Policy | null>(null);
+  const [keywordsText, setKeywordsText] = useState("");
   const [loading, setLoading] = useState(true);
   const { busy, run } = useMutation();
   const toast = useToast();
@@ -34,7 +57,13 @@ export default function AiSettingsPage() {
     (async () => {
       setLoading(true);
       try {
-        setPolicy(await api<Policy>("/ai/policy"));
+        const p = await api<Policy>("/ai/policy");
+        const mode: GroupReplyMode =
+          p.group_reply_mode === "keywords" || p.group_auto_send_enabled
+            ? "keywords"
+            : "off";
+        setPolicy({ ...p, group_reply_mode: mode });
+        setKeywordsText(keywordsToText(p.group_keywords));
       } catch (e) {
         toast.push(e instanceof Error ? e.message : "خطا", "err");
       } finally {
@@ -45,10 +74,24 @@ export default function AiSettingsPage() {
 
   async function save() {
     if (!policy) return;
-    await run(
-      () => api("/ai/policy", { method: "PUT", body: JSON.stringify(policy) }),
-      { success: "تنظیمات پاسخ خودکار ذخیره شد" }
-    );
+    const keywords = textToKeywords(keywordsText);
+    let mode: GroupReplyMode = policy.group_reply_mode === "keywords" ? "keywords" : "off";
+    if (!policy.auto_send_enabled) mode = "off";
+    if (mode === "keywords" && keywords.length === 0) {
+      toast.push("برای پاسخ گروهی حداقل یک کلمه کلیدی وارد کنید", "err");
+      return;
+    }
+    const body = {
+      ...policy,
+      group_reply_mode: mode,
+      group_keywords: keywords,
+      group_auto_send_enabled: mode === "keywords"
+    };
+    await run(() => api("/ai/policy", { method: "PUT", body: JSON.stringify(body) }), {
+      success: "تنظیمات پاسخ خودکار ذخیره شد"
+    });
+    setPolicy({ ...policy, ...body });
+    setKeywordsText(keywordsToText(keywords));
   }
 
   function toggleStage(stage: string) {
@@ -60,6 +103,7 @@ export default function AiSettingsPage() {
   }
 
   const confidencePct = Math.round((policy?.min_confidence ?? 0) * 100);
+  const groupMode = policy?.group_reply_mode === "keywords" ? "keywords" : "off";
 
   return (
     <Shell title="تنظیمات AI" sub="پاسخ خودکار و مراحل مجاز">
@@ -92,36 +136,78 @@ export default function AiSettingsPage() {
               tips: [
                 "حداقل اطمینان را بالاتر بگذارید اگر پاسخ‌های ضعیف می‌بینید.",
                 "معمولاً فقط مرحله «جدید» را مجاز کنید.",
-                "در واتساپ مشتری می‌تواند با «توقف» یا «stop» ربات را برای همان چت خاموش کند و با «شروع» یا «start» روشن کند."
+                "در واتساپ مشتری می‌تواند با «توقف» یا «stop» ربات را برای همان چت خاموش کند و با «شروع» یا «start» روشن کند.",
+                "پیام‌های گروه همیشه ذخیره می‌شوند؛ پاسخ گروهی فقط طبق حالت انتخاب‌شده انجام می‌شود."
               ]
             }}
           >
             <div className="ai-settings-stack">
               <Switch
                 label="فعال‌سازی پاسخ خودکار"
-                hint="وقتی روشن باشد، به پیام‌های ورودی خودکار جواب داده می‌شود."
+                hint="وقتی روشن باشد، به پیام‌های خصوصی (و در صورت تنظیم، گروه‌ها) خودکار جواب داده می‌شود."
                 checked={policy.auto_send_enabled}
                 onChange={(v) =>
                   setPolicy({
                     ...policy,
                     auto_send_enabled: v,
+                    group_reply_mode: v ? policy.group_reply_mode : "off",
                     group_auto_send_enabled: v ? policy.group_auto_send_enabled : false
                   })
                 }
               />
 
-              <Switch
-                label="پاسخ خودکار در گروه‌های واتساپ"
-                hint="وقتی خاموش باشد، فقط چت خصوصی (PV) پاسخ می‌گیرد — گروه‌ها فقط در inbox ذخیره می‌شوند."
-                checked={policy.group_auto_send_enabled}
-                disabled={!policy.auto_send_enabled}
-                onChange={(v) =>
-                  setPolicy({
-                    ...policy,
-                    group_auto_send_enabled: v
-                  })
-                }
-              />
+              <div className="ai-stages-block">
+                <strong>پاسخ در گروه‌های واتساپ</strong>
+                <div className="hint" style={{ marginTop: 4 }}>
+                  همه پیام‌های گروه در سرور ذخیره می‌شوند. فقط حالت پاسخ را انتخاب کنید.
+                </div>
+                <div className="ai-stage-chips" style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className={`ai-stage-chip${groupMode === "off" ? " active" : ""}`}
+                    disabled={!policy.auto_send_enabled}
+                    onClick={() =>
+                      setPolicy({
+                        ...policy,
+                        group_reply_mode: "off",
+                        group_auto_send_enabled: false
+                      })
+                    }
+                  >
+                    عدم پاسخ (پیش‌فرض)
+                  </button>
+                  <button
+                    type="button"
+                    className={`ai-stage-chip${groupMode === "keywords" ? " active" : ""}`}
+                    disabled={!policy.auto_send_enabled}
+                    onClick={() =>
+                      setPolicy({
+                        ...policy,
+                        group_reply_mode: "keywords",
+                        group_auto_send_enabled: true
+                      })
+                    }
+                  >
+                    پاسخ با کلمات کلیدی
+                  </button>
+                </div>
+                {groupMode === "keywords" && policy.auto_send_enabled ? (
+                  <label className="full" style={{ display: "block", marginTop: 12 }}>
+                    <strong>کلمات کلیدی گروه</strong>
+                    <div className="hint" style={{ margin: "4px 0 8px" }}>
+                      اگر پیام گروه یکی از این کلمات را داشته باشد، AI پاسخ می‌دهد؛ وگرنه فقط
+                      ذخیره می‌شود. هر خط یا با ویرگول جدا کنید.
+                    </div>
+                    <textarea
+                      rows={4}
+                      value={keywordsText}
+                      onChange={(e) => setKeywordsText(e.target.value)}
+                      placeholder={"قیمت\nخرید\n@bot"}
+                      style={{ width: "100%" }}
+                    />
+                  </label>
+                ) : null}
+              </div>
 
               <div className="ai-slider-block">
                 <div className="ai-slider-head">

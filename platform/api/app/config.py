@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Gemini defaults (platform key/model preferably set in super-admin UI)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
-    cors_origins: str = "http://localhost:3000,http://127.6.0.1:3000"
+    cors_origins: str = "http://localhost:3000,http://127.6.4.1:3000"
     # Payments: mock | zibal
     payment_provider: str = "zibal"
     zibal_merchant_id: str = "zibal"
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     sms_ir_api_key: str = "pkHIVpf02aAHthp4eP3DYGdWtw5bc6tL4C9EcvXbjisVPo8g"
     sms_ir_template_id: int = 846743
     sms_ir_otp_param: str = "OTP"
-    # Optional HTTPS proxy for sms.ir (e.g. http://127.6.0.1:10809) when VPN blocks Iranian APIs
+    # Optional HTTPS proxy for sms.ir (e.g. http://127.6.4.1:10809) when VPN blocks Iranian APIs
     sms_ir_https_proxy: str = ""
     # If True and sms.ir is unreachable, log OTP to API console (local only)
     sms_ir_dev_fallback: bool = True

@@ -1,18 +1,52 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import AuthContext, get_auth
-from app.models import Lead, LeadAccountLink, MemberRole
+from app.deps import AuthContext, get_auth, require_roles
+from app.models import Lead, LeadAccountLink, MemberRole, Message, OutboundJob, Task
 from app.schemas import LeadIn, LeadOut, LeadPatchIn
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
 STAGES = ["جدید", "پیگیری", "پیشنهاد", "خرید", "بسته"]
+_PHONE_RE = re.compile(r"^\+?\d{8,15}$")
+
+
+def _sanitize_phone(value: str | None, *, chat_type: str = "pv") -> str:
+    if (chat_type or "").strip().lower() == "group":
+        return ""
+    t = re.sub(r"[\s\-()]", "", str(value or "").strip())
+    if not t:
+        return ""
+    if _PHONE_RE.match(t):
+        return t
+    # Allow opaque Divar ids; reject WA display names (letters / Persian, no digit-only)
+    if re.search(r"[\u0600-\u06FF]", t) or (re.search(r"[A-Za-z]", t) and not re.search(r"\d", t)):
+        return ""
+    if not any(ch.isdigit() for ch in t) and len(t) < 20:
+        return ""
+    return str(value or "").strip()
+
+
+def _delete_lead_related(db: Session, *, org_id: str, lead_id: str) -> None:
+    """Remove dependent rows before deleting the lead (SQLite has no ON DELETE CASCADE)."""
+    db.query(OutboundJob).filter(
+        OutboundJob.org_id == org_id, OutboundJob.lead_id == lead_id
+    ).delete(synchronize_session=False)
+    db.query(Message).filter(Message.org_id == org_id, Message.lead_id == lead_id).delete(
+        synchronize_session=False
+    )
+    db.query(LeadAccountLink).filter(
+        LeadAccountLink.org_id == org_id, LeadAccountLink.lead_id == lead_id
+    ).delete(synchronize_session=False)
+    db.query(Task).filter(Task.org_id == org_id, Task.lead_id == lead_id).update(
+        {Task.lead_id: None}, synchronize_session=False
+    )
 
 
 def _to_out(lead: Lead) -> LeadOut:
@@ -70,6 +104,10 @@ def list_leads(
 def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
     name = body.name.strip()
     external_chat_id = (body.external_chat_id or "").strip() or None
+    chat_type = (body.chat_type or "pv").strip().lower() or "pv"
+    if chat_type != "group":
+        chat_type = "pv"
+    phone = _sanitize_phone(body.phone, chat_type=chat_type)
     lead = None
     if external_chat_id:
         lead = (
@@ -77,10 +115,10 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             .filter(Lead.org_id == auth.org.id, Lead.external_chat_id == external_chat_id)
             .first()
         )
-    if not lead and body.phone:
+    if not lead and phone:
         lead = (
             db.query(Lead)
-            .filter(Lead.org_id == auth.org.id, Lead.phone == body.phone)
+            .filter(Lead.org_id == auth.org.id, Lead.phone == phone)
             .first()
         )
     if not lead and body.group_id:
@@ -98,8 +136,10 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
 
     if lead:
         lead.name = name or lead.name
-        if body.phone:
-            lead.phone = body.phone
+        if phone:
+            lead.phone = phone
+        elif chat_type == "group":
+            lead.phone = ""
         if body.group_id:
             lead.group_id = body.group_id
         if external_chat_id:
@@ -108,7 +148,7 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             lead.post_token = body.post_token
         if body.source_channel:
             lead.source_channel = body.source_channel
-        lead.chat_type = body.chat_type or lead.chat_type
+        lead.chat_type = chat_type or lead.chat_type
         if body.stage:
             lead.stage = body.stage
         if body.tags is not None:
@@ -126,12 +166,12 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
         lead = Lead(
             org_id=auth.org.id,
             name=name,
-            phone=body.phone,
+            phone=phone,
             group_id=body.group_id,
             external_chat_id=external_chat_id,
             post_token=body.post_token or "",
             source_channel=body.source_channel or "",
-            chat_type=body.chat_type,
+            chat_type=chat_type,
             stage=body.stage or STAGES[0],
             tags=body.tags,
             notes=body.notes,
@@ -166,15 +206,52 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
                 .first()
             )
         if not exists:
-            db.add(
-                LeadAccountLink(
-                    org_id=auth.org.id,
-                    lead_id=lead.id,
-                    account_id=body.account_id,
-                    chat_name=chat_name,
-                    external_chat_id=external_chat_id,
+            safe_ext = external_chat_id
+            safe_name = chat_name or ""
+            if safe_ext:
+                clash = (
+                    db.query(LeadAccountLink)
+                    .filter(
+                        LeadAccountLink.org_id == auth.org.id,
+                        LeadAccountLink.account_id == body.account_id,
+                        LeadAccountLink.external_chat_id == safe_ext,
+                    )
+                    .first()
                 )
-            )
+                if clash:
+                    clash.lead_id = lead.id
+                    if safe_name and not clash.chat_name:
+                        clash.chat_name = safe_name
+                    db.add(clash)
+                    safe_ext = None
+                    exists = clash
+            if not exists:
+                name_clash = (
+                    db.query(LeadAccountLink)
+                    .filter(
+                        LeadAccountLink.org_id == auth.org.id,
+                        LeadAccountLink.account_id == body.account_id,
+                        LeadAccountLink.chat_name == safe_name,
+                    )
+                    .first()
+                    if safe_name
+                    else None
+                )
+                if name_clash:
+                    name_clash.lead_id = lead.id
+                    if safe_ext and not name_clash.external_chat_id:
+                        name_clash.external_chat_id = safe_ext
+                    db.add(name_clash)
+                else:
+                    db.add(
+                        LeadAccountLink(
+                            org_id=auth.org.id,
+                            lead_id=lead.id,
+                            account_id=body.account_id,
+                            chat_name=safe_name,
+                            external_chat_id=safe_ext,
+                        )
+                    )
     db.commit()
     db.refresh(lead)
     return _to_out(lead)
@@ -184,13 +261,23 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
 def patch_lead(
     lead_id: str,
     body: LeadPatchIn,
-    auth: AuthContext = Depends(get_auth),
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
     db: Session = Depends(get_db),
 ):
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.org_id == auth.org.id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="لید یافت نشد")
     data = body.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        data["name"] = str(data["name"]).strip() or lead.name
+    if "chat_type" in data and data["chat_type"] is not None:
+        ct = str(data["chat_type"]).strip().lower() or "pv"
+        data["chat_type"] = "group" if ct == "group" else "pv"
+    if "phone" in data and data["phone"] is not None:
+        ct = data.get("chat_type") or lead.chat_type or "pv"
+        data["phone"] = _sanitize_phone(str(data["phone"]).strip(), chat_type=str(ct))
+    if "notes" in data and data["notes"] is not None:
+        data["notes"] = str(data["notes"])
     for key, value in data.items():
         setattr(lead, key, value)
     lead.updated_at = datetime.utcnow()
@@ -198,6 +285,37 @@ def patch_lead(
     db.commit()
     db.refresh(lead)
     return _to_out(lead)
+
+
+@router.delete("/clear-all")
+def clear_all_leads(
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    """Delete every lead in the org (and related messages / jobs / links)."""
+    leads = db.query(Lead).filter(Lead.org_id == auth.org.id).all()
+    deleted = 0
+    for lead in leads:
+        _delete_lead_related(db, org_id=auth.org.id, lead_id=lead.id)
+        db.delete(lead)
+        deleted += 1
+    db.commit()
+    return {"ok": True, "deleted": deleted}
+
+
+@router.delete("/{lead_id}")
+def delete_lead(
+    lead_id: str,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
+    db: Session = Depends(get_db),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.org_id == auth.org.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="لید یافت نشد")
+    _delete_lead_related(db, org_id=auth.org.id, lead_id=lead.id)
+    db.delete(lead)
+    db.commit()
+    return {"ok": True, "id": lead_id}
 
 
 @router.post("/{lead_id}/assign", response_model=LeadOut)
