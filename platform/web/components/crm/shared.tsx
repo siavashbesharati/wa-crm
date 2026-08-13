@@ -53,12 +53,23 @@ export type CrmTask = {
   lead_id: string | null;
   assignee_id: string | null;
   due_at: string | null;
+  board_order?: number;
 };
+
+export const TASK_STATUSES = ["open", "in_progress", "done", "cancelled"] as const;
 
 export const TASK_STATUS_LABELS: Record<string, string> = {
   open: "باز",
+  in_progress: "در حال انجام",
   done: "انجام‌شده",
   cancelled: "لغو شده"
+};
+
+export const TASK_STATUS_DOT: Record<string, string> = {
+  open: "new",
+  in_progress: "follow",
+  done: "buy",
+  cancelled: "closed"
 };
 
 export function leadBoardHref(leadId: string) {
@@ -91,6 +102,19 @@ export function CrmViewToggle({ mode }: { mode: "list" | "board" }) {
         لیست
       </Link>
       <Link href="/pipeline" className={mode === "board" ? "active" : ""}>
+        برد کانبان
+      </Link>
+    </div>
+  );
+}
+
+export function TaskViewToggle({ mode }: { mode: "list" | "board" }) {
+  return (
+    <div className="view-toggle">
+      <Link href="/tasks" className={mode === "list" ? "active" : ""}>
+        لیست
+      </Link>
+      <Link href="/tasks/board" className={mode === "board" ? "active" : ""}>
         برد کانبان
       </Link>
     </div>

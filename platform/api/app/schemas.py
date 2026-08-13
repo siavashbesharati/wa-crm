@@ -192,6 +192,7 @@ class TaskIn(BaseModel):
     lead_id: str | None = None
     assignee_id: str | None = None
     due_at: datetime | None = None
+    status: str | None = None
 
 
 class TaskOut(BaseModel):
@@ -203,7 +204,18 @@ class TaskOut(BaseModel):
     created_by_id: str | None
     due_at: datetime | None
     status: str
+    board_order: int = 0
     created_at: datetime
+
+
+class TaskBoardOrderItem(BaseModel):
+    id: str
+    status: str
+    board_order: int
+
+
+class TaskBoardReorderIn(BaseModel):
+    updates: list[TaskBoardOrderItem]
 
 
 class MessageIngestIn(BaseModel):

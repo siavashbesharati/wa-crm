@@ -128,6 +128,11 @@ def _ensure_sqlite_columns() -> None:
         if "board_order" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE leads ADD COLUMN board_order INTEGER DEFAULT 0"))
+    if "tasks" in tables:
+        cols = {c["name"] for c in insp.get_columns("tasks")}
+        if "board_order" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN board_order INTEGER DEFAULT 0"))
 
 
 _mount_routers()

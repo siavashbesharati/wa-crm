@@ -48,6 +48,7 @@ class ChannelType(str, enum.Enum):
 
 class TaskStatus(str, enum.Enum):
     open = "open"
+    in_progress = "in_progress"
     done = "done"
     cancelled = "cancelled"
 
@@ -341,6 +342,7 @@ class Task(Base):
     created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.open)
+    board_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 

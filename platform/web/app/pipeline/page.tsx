@@ -50,7 +50,7 @@ export default function PipelinePage() {
       const [l, m, t] = await Promise.all([
         api<Lead[]>("/leads"),
         api<Member[]>("/orgs/members"),
-        api<CrmTask[]>("/tasks?status=open")
+        api<CrmTask[]>("/tasks")
       ]);
       setLeads(l);
       setMembers(m);
@@ -84,6 +84,7 @@ export default function PipelinePage() {
     const map = new Map<string, number>();
     for (const t of openTasks) {
       if (!t.lead_id) continue;
+      if (t.status !== "open" && t.status !== "in_progress") continue;
       map.set(t.lead_id, (map.get(t.lead_id) || 0) + 1);
     }
     return map;

@@ -149,7 +149,7 @@ function LeadTasksSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
 
-  const openTasks = tasks.filter((t) => t.status === "open");
+  const openTasks = tasks.filter((t) => t.status === "open" || t.status === "in_progress");
   const doneTasks = tasks.filter((t) => t.status !== "open");
 
   async function createTask() {

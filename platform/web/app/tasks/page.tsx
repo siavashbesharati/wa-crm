@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 import {
+  TaskViewToggle,
   TASK_STATUS_LABELS,
   leadBoardHref,
   memberLabel,
@@ -98,7 +99,11 @@ export default function TasksPage() {
   }
 
   return (
-    <Shell title="وظایف تیمی" sub="کارهای پیگیری — می‌توانید هر وظیفه را به یک لید وصل کنید">
+    <Shell
+      title="وظایف تیمی"
+      sub="کارهای پیگیری — می‌توانید هر وظیفه را به یک لید وصل کنید"
+      actions={<TaskViewToggle mode="list" />}
+    >
       {loading ? (
         <PageLoading />
       ) : (
@@ -151,8 +156,13 @@ export default function TasksPage() {
             title="فهرست وظایف"
             help={{
               title: "فهرست وظایف",
-              body: "روی نام لید کلیک کنید تا کارت همان مخاطب در برد کانبان باز شود."
+              body: "روی نام لید کلیک کنید تا کارت همان مخاطب در برد کانبان باز شود. برای جابه‌جایی وضعیت و اولویت از برد استفاده کنید."
             }}
+            actions={
+              <Link className="btn secondary sm" href="/tasks/board">
+                نمایش برد
+              </Link>
+            }
           >
             {tasks.length === 0 ? (
               <EmptyState title="وظیفه‌ای نیست" text="از فرم بالا یک وظیفه بسازید." />
@@ -201,7 +211,7 @@ export default function TasksPage() {
                           </Badge>
                         </td>
                         <td className="row-actions">
-                          {t.status === "open" && (
+                          {t.status === "open" || t.status === "in_progress" ? (
                             <Button
                               variant="secondary"
                               size="sm"
@@ -210,7 +220,7 @@ export default function TasksPage() {
                             >
                               انجام شد
                             </Button>
-                          )}
+                          ) : null}
                         </td>
                       </tr>
                     );
