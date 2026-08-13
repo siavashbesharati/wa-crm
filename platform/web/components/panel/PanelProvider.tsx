@@ -100,7 +100,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
         const labels: Record<string, string> = {
           "/home": "میز کار",
           "/leads": "لیدها",
-          "/pipeline": "پایپلاین",
+          "/pipeline": "برد کانبان",
           "/inbox": "اینباکس",
           "/tasks": "وظایف",
           "/channels": "کانال‌ها",

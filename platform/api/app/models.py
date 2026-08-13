@@ -288,6 +288,7 @@ class Lead(Base):
     source_channel: Mapped[str] = mapped_column(String(40), default="")
     chat_type: Mapped[str] = mapped_column(String(20), default="pv")
     stage: Mapped[str] = mapped_column(String(40), default="جدید", index=True)
+    board_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     assignee_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)

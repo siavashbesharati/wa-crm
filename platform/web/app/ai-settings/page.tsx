@@ -237,7 +237,7 @@ export default function AiSettingsPage() {
               </div>
 
               <div className="ai-stages-block">
-                <strong>مراحل پایپلاین مجاز برای پاسخ خودکار</strong>
+                <strong>مراحل برد مجاز برای پاسخ خودکار</strong>
                 <div className="hint" style={{ marginTop: 4 }}>
                   ربات فقط روی لیدهایی که در این مراحل هستند جواب می‌دهد (مثلاً فقط «جدید»).
                 </div>

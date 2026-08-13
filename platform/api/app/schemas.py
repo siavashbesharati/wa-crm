@@ -146,6 +146,7 @@ class LeadOut(BaseModel):
     source_channel: str = ""
     chat_type: str
     stage: str
+    board_order: int = 0
     tags: list[str]
     notes: str
     assignee_id: str | None
@@ -168,9 +169,17 @@ class LeadPatchIn(BaseModel):
     notes: str | None = None
     assignee_id: str | None = None
     bot_paused: bool | None = None
+    board_order: int | None = None
 
 
-class TaskIn(BaseModel):
+class LeadBoardOrderItem(BaseModel):
+    id: str
+    stage: str
+    board_order: int
+
+
+class LeadBoardReorderIn(BaseModel):
+    updates: list[LeadBoardOrderItem]
     title: str = ""
     message: str = ""
     lead_id: str | None = None

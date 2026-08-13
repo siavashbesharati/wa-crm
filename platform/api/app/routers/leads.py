@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import Lead, LeadAccountLink, MemberRole, Message, OutboundJob, Task
-from app.schemas import LeadIn, LeadOut, LeadPatchIn
+from app.schemas import LeadBoardReorderIn, LeadIn, LeadOut, LeadPatchIn
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -60,6 +60,7 @@ def _to_out(lead: Lead) -> LeadOut:
         source_channel=lead.source_channel or "",
         chat_type=lead.chat_type,
         stage=lead.stage,
+        board_order=int(getattr(lead, "board_order", 0) or 0),
         tags=lead.tags or [],
         notes=lead.notes or "",
         assignee_id=lead.assignee_id,
@@ -80,14 +81,31 @@ def list_leads(
     stage: str | None = None,
     q: str | None = None,
     assignee_id: str | None = None,
+    chat_type: str | None = None,
+    source_channel: str | None = None,
+    unassigned: bool | None = None,
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
     query = db.query(Lead).filter(Lead.org_id == auth.org.id)
     if stage:
         query = query.filter(Lead.stage == stage)
-    if assignee_id:
+    if unassigned:
+        query = query.filter(Lead.assignee_id.is_(None))
+    elif assignee_id:
         query = query.filter(Lead.assignee_id == assignee_id)
+    if chat_type:
+        ct = chat_type.strip().lower()
+        if ct == "group":
+            query = query.filter(Lead.chat_type == "group")
+        elif ct in ("pv", "contact"):
+            query = query.filter(Lead.chat_type != "group")
+    if source_channel:
+        sc = source_channel.strip().lower()
+        if sc == "__none__":
+            query = query.filter((Lead.source_channel.is_(None)) | (Lead.source_channel == ""))
+        else:
+            query = query.filter(Lead.source_channel == sc)
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -96,7 +114,17 @@ def list_leads(
             | (Lead.notes.ilike(like))
             | (Lead.external_chat_id.ilike(like))
         )
-    rows = query.order_by(Lead.updated_at.desc()).limit(500).all()
+    rows = query.limit(500).all()
+    stage_rank = {s: i for i, s in enumerate(STAGES)}
+
+    def sort_key(lead: Lead) -> tuple:
+        return (
+            stage_rank.get(lead.stage, len(STAGES)),
+            int(getattr(lead, "board_order", 0) or 0),
+            -(lead.updated_at.timestamp() if lead.updated_at else 0),
+        )
+
+    rows.sort(key=sort_key)
     return [_to_out(r) for r in rows]
 
 
@@ -285,6 +313,31 @@ def patch_lead(
     db.commit()
     db.refresh(lead)
     return _to_out(lead)
+
+
+@router.post("/board-order")
+def update_board_order(
+    body: LeadBoardReorderIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
+    db: Session = Depends(get_db),
+):
+    if not body.updates:
+        return {"ok": True}
+    ids = [u.id for u in body.updates]
+    rows = db.query(Lead).filter(Lead.org_id == auth.org.id, Lead.id.in_(ids)).all()
+    by_id = {r.id: r for r in rows}
+    now = datetime.utcnow()
+    for item in body.updates:
+        lead = by_id.get(item.id)
+        if not lead:
+            continue
+        if item.stage in STAGES:
+            lead.stage = item.stage
+        lead.board_order = int(item.board_order)
+        lead.updated_at = now
+        db.add(lead)
+    db.commit()
+    return {"ok": True, "updated": len(body.updates)}
 
 
 @router.delete("/clear-all")

@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Shell from "@/components/Shell";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
+import { LeadModal } from "@/components/crm/LeadModal";
+import {
+  buildBoardReorder,
+  leadsInStage,
+  type BoardOrderUpdate
+} from "@/components/crm/lead-form";
 import {
   CrmViewToggle,
   STAGES,
   STAGE_DOT,
+  LtrText,
   type Lead,
   type Member,
   memberLabel,
@@ -25,6 +32,10 @@ export default function PipelinePage() {
   const [q, setQ] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<string | null>(null);
+  const [overCardId, setOverCardId] = useState<string | null>(null);
+  const [dropBefore, setDropBefore] = useState(true);
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
+  const dragMovedRef = useRef(false);
   const { busy, run } = useMutation();
   const toast = useToast();
 
@@ -59,27 +70,68 @@ export default function PipelinePage() {
     );
   }, [leads, q]);
 
-  async function move(id: string, stage: string) {
-    const prev = leads;
-    setLeads((list) => list.map((l) => (l.id === id ? { ...l, stage } : l)));
+  async function persistBoardOrder(updates: BoardOrderUpdate[], prev: Lead[]) {
+    if (updates.length === 0) return;
     const ok = await run(
       () =>
-        api(`/leads/${id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ stage })
+        api("/leads/board-order", {
+          method: "POST",
+          body: JSON.stringify({ updates })
         }),
       { silent: true }
     );
     if (!ok) {
       setLeads(prev);
-      toast.push("جابه‌جایی ذخیره نشد", "err");
+      toast.push("ترتیب کارت‌ها ذخیره نشد", "err");
     }
+  }
+
+  async function applyBoardDrop(
+    dragLeadId: string,
+    targetStage: string,
+    targetId: string | null,
+    insertBefore: boolean
+  ) {
+    const prev = leads;
+    const { next, updates } = buildBoardReorder(
+      leads,
+      dragLeadId,
+      targetStage,
+      targetId,
+      insertBefore
+    );
+    if (updates.length === 0) return;
+
+    const merged = leads.map((l) => next.find((n) => n.id === l.id) || l);
+    setLeads(merged);
+    await persistBoardOrder(updates, prev);
+  }
+
+  function resetDragState() {
+    setDragId(null);
+    setOverStage(null);
+    setOverCardId(null);
+    setDropBefore(true);
+  }
+
+  function handleCardDragOver(
+    e: React.DragEvent<HTMLDivElement>,
+    stage: string,
+    cardId: string
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    setOverStage(stage);
+    setOverCardId(cardId);
+    setDropBefore(before);
   }
 
   return (
     <Shell
-      title="پایپلاین فروش"
-      sub="کارت‌ها را بین مراحل بکشید — تغییرات فوری ذخیره می‌شود"
+      title="برد کانبان"
+      sub="کارت‌ها را بکشید برای تغییر مرحله یا اولویت — روی کارت کلیک کنید برای جزئیات"
       search={q}
       onSearch={setQ}
       actions={<CrmViewToggle mode="board" />}
@@ -89,8 +141,8 @@ export default function PipelinePage() {
       ) : filtered.length === 0 ? (
         <Card
           help={{
-            title: "پایپلاین",
-            body: "برد کانبان مراحل فروش. کارت‌ها را بکشید تا مرحله لید عوض شود — ذخیره فوری است."
+            title: "برد کانبان",
+            body: "نمای کانبان مراحل فروش. کارت‌ها را بکشید تا مرحله یا اولویت لید عوض شود."
           }}
         >
           <EmptyState
@@ -106,22 +158,30 @@ export default function PipelinePage() {
       ) : (
         <div className="pipeline">
           {STAGES.map((stage) => {
-            const items = filtered.filter((l) => l.stage === stage);
+            const items = leadsInStage(filtered, stage);
             return (
               <div
                 key={stage}
-                className={`pipeline-col ${overStage === stage ? "drag-over" : ""}`}
+                className={`pipeline-col ${overStage === stage && !overCardId ? "drag-over" : ""}`}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setOverStage(stage);
+                  setOverCardId(null);
                 }}
-                onDragLeave={() => setOverStage((s) => (s === stage ? null : s))}
-                onDrop={(e) => {
+                onDragLeave={() => {
+                  setOverStage((s) => (s === stage ? null : s));
+                  setOverCardId(null);
+                }}
+                onDrop={async (e) => {
                   e.preventDefault();
                   const id = e.dataTransfer.getData("text/lead-id") || dragId;
-                  setOverStage(null);
-                  setDragId(null);
-                  if (id) move(id, stage);
+                  const targetStage = stage;
+                  const targetId = overCardId;
+                  const insertBefore = dropBefore;
+                  resetDragState();
+                  if (id) {
+                    await applyBoardDrop(id, targetStage, targetId, insertBefore);
+                  }
                 }}
               >
                 <div className="pipeline-col-head">
@@ -133,25 +193,55 @@ export default function PipelinePage() {
                 </div>
                 {items.map((l) => {
                   const assignee = members.find((m) => m.user_id === l.assignee_id);
+                  const isDropTarget = overCardId === l.id;
                   return (
                     <div
                       key={l.id}
-                      className={`pipeline-card ${dragId === l.id ? "dragging" : ""}`}
+                      className={`pipeline-card ${dragId === l.id ? "dragging" : ""}${
+                        isDropTarget ? (dropBefore ? " drop-before" : " drop-after") : ""
+                      }`}
                       draggable={!busy}
                       onDragStart={(e) => {
+                        dragMovedRef.current = false;
                         setDragId(l.id);
                         e.dataTransfer.setData("text/lead-id", l.id);
                         e.dataTransfer.effectAllowed = "move";
                       }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setOverStage(null);
+                      onDrag={(e) => {
+                        if (e.clientX !== 0 || e.clientY !== 0) {
+                          dragMovedRef.current = true;
+                        }
+                      }}
+                      onDragOver={(e) => handleCardDragOver(e, stage, l.id)}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const id = e.dataTransfer.getData("text/lead-id") || dragId;
+                        resetDragState();
+                        if (id && id !== l.id) {
+                          await applyBoardDrop(id, stage, l.id, dropBefore);
+                        }
+                      }}
+                      onDragEnd={resetDragState}
+                      onClick={() => {
+                        if (dragMovedRef.current) return;
+                        setDetailLead(l);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setDetailLead(l);
+                        }
                       }}
                     >
                       <p className="card-title">{l.name}</p>
                       <div className="card-meta">
                         {(l.phone || l.group_id) && (
-                          <Badge>{l.phone || l.group_id}</Badge>
+                          <Badge>
+                            <LtrText>{l.phone || l.group_id}</LtrText>
+                          </Badge>
                         )}
                         {(l.tags || []).slice(0, 2).map((t) => (
                           <Badge key={t} tone="accent">
@@ -173,7 +263,9 @@ export default function PipelinePage() {
                           className="sm"
                           style={{ width: "auto", maxWidth: 110, padding: "4px 6px", fontSize: 11 }}
                           value={l.stage}
-                          onChange={(e) => move(l.id, e.target.value)}
+                          onChange={(e) => {
+                            void applyBoardDrop(l.id, e.target.value, null, true);
+                          }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           {STAGES.map((s) => (
@@ -191,6 +283,14 @@ export default function PipelinePage() {
           })}
         </div>
       )}
+
+      <LeadModal
+        open={!!detailLead}
+        lead={detailLead}
+        members={members}
+        onClose={() => setDetailLead(null)}
+        onChanged={load}
+      />
     </Shell>
   );
 }

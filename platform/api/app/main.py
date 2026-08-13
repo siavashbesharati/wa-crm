@@ -123,6 +123,11 @@ def _ensure_sqlite_columns() -> None:
         if "raw_callback" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE payments ADD COLUMN raw_callback TEXT DEFAULT ''"))
+    if "leads" in tables:
+        cols = {c["name"] for c in insp.get_columns("leads")}
+        if "board_order" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN board_order INTEGER DEFAULT 0"))
 
 
 _mount_routers()

@@ -348,11 +348,11 @@ export default function HomePage() {
               title="فانل فروش"
               help={{
                 title: "فانل",
-                body: "توزیع لیدها در مراحل پایپلاین. میله‌های بلندتر یعنی انباشت در آن مرحله."
+                body: "توزیع لیدها در مراحل برد کانبان. میله‌های بلندتر یعنی انباشت در آن مرحله."
               }}
             >
               {funnelTotal === 0 ? (
-                <EmptyState title="لیدی در پایپلاین نیست" />
+                <EmptyState title="لیدی در برد نیست" />
               ) : (
                 <BarChart
                   items={funnel.map((f) => ({
@@ -464,14 +464,14 @@ export default function HomePage() {
                   </strong>
                 </Link>
                 <Link href="/pipeline" className="checklist-item">
-                  <strong>○ پایپلاین</strong>
+                  <strong>○ برد کانبان</strong>
                 </Link>
               </div>
             </Card>
           )}
 
           <div className="dash-quick-links">
-            <Link href="/pipeline">پایپلاین</Link>
+            <Link href="/pipeline">برد کانبان</Link>
             <Link href="/leads">لیدها</Link>
             <Link href="/tasks">وظایف</Link>
             <Link href="/ai-settings">تنظیمات AI</Link>

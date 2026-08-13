@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
+import { Switch } from "@/components/ui/Switch";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
@@ -15,11 +17,11 @@ import {
   STAGE_DOT,
   CHANNEL_LABELS,
   leadIdentity,
+  LtrText,
   type Lead,
   type Member,
   memberLabel
 } from "@/components/crm/shared";
-
 type EditForm = {
   name: string;
   phone: string;
@@ -31,6 +33,20 @@ type EditForm = {
   bot_paused: boolean;
   assignee_id: string;
 };
+
+function emptyForm(): EditForm {
+  return {
+    name: "",
+    phone: "",
+    group_id: "",
+    chat_type: "pv",
+    stage: STAGES[0],
+    notes: "",
+    tags: "",
+    bot_paused: false,
+    assignee_id: ""
+  };
+}
 
 function toEditForm(l: Lead): EditForm {
   return {
@@ -50,13 +66,17 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [q, setQ] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [identityFilter, setIdentityFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
-  const [editing, setEditing] = useState<Lead | null>(null);
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const { busy, run } = useMutation();
+  const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");  const { busy, run } = useMutation();
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -79,38 +99,129 @@ export default function LeadsPage() {
     load();
   }, [load]);
 
+  const channelOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of leads) {
+      if (l.source_channel) set.add(l.source_channel);
+    }
+    return Array.from(set).sort();
+  }, [leads]);
+
+  const hasActiveFilters = !!(
+    nameFilter.trim() ||
+    typeFilter ||
+    stageFilter ||
+    assigneeFilter ||
+    channelFilter ||
+    identityFilter.trim()
+  );
+
   const filtered = useMemo(() => {
     return leads.filter((l) => {
+      if (typeFilter === "group" && l.chat_type !== "group") return false;
+      if (typeFilter === "pv" && l.chat_type === "group") return false;
       if (stageFilter && l.stage !== stageFilter) return false;
-      const needle = q.trim().toLowerCase();
-      if (!needle) return true;
-      return (
-        l.name.toLowerCase().includes(needle) ||
-        (l.phone || "").includes(needle) ||
-        (l.external_chat_id || "").toLowerCase().includes(needle) ||
-        (l.source_channel || "").toLowerCase().includes(needle) ||
-        (l.tags || []).some((t) => t.toLowerCase().includes(needle))
-      );
+      if (assigneeFilter === "__none__" && l.assignee_id) return false;
+      if (
+        assigneeFilter &&
+        assigneeFilter !== "__none__" &&
+        l.assignee_id !== assigneeFilter
+      ) {
+        return false;
+      }
+      if (channelFilter === "__none__" && l.source_channel) return false;
+      if (
+        channelFilter &&
+        channelFilter !== "__none__" &&
+        l.source_channel !== channelFilter
+      ) {
+        return false;
+      }
+      const idNeedle = identityFilter.trim().toLowerCase().replace(/[\s\-()]/g, "");
+      if (idNeedle) {
+        const idHay = [l.phone, l.external_chat_id, l.group_id]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .replace(/[\s\-()]/g, "");
+        if (!idHay.includes(idNeedle)) return false;
+      }
+      const nameNeedle = nameFilter.trim().toLowerCase();
+      if (nameNeedle && !l.name.toLowerCase().includes(nameNeedle)) return false;
+      return true;
     });
-  }, [leads, q, stageFilter]);
+  }, [leads, nameFilter, typeFilter, stageFilter, assigneeFilter, channelFilter, identityFilter]);
 
-  async function createLead() {
-    if (!name.trim()) return;
-    const ok = await run(
-      () =>
-        api("/leads", {
-          method: "POST",
-          body: JSON.stringify({ name, phone, tags: [] })
-        }),
-      { success: "لید افزوده شد" }
-    );
+  function clearFilters() {
+    setNameFilter("");
+    setTypeFilter("");
+    setStageFilter("");
+    setAssigneeFilter("");
+    setChannelFilter("");
+    setIdentityFilter("");
+  }
+
+  function openCreate() {
+    setEditingLead(null);
+    setEditForm(emptyForm());
+    setFormOpen(true);
+  }
+
+  function openEdit(l: Lead) {
+    setEditingLead(l);
+    setEditForm(toEditForm(l));
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setEditingLead(null);
+    setEditForm(null);
+  }
+
+  async function saveForm() {
+    if (!editForm) return;
+    if (!editForm.name.trim()) {
+      toast.push("نام لید لازم است", "err");
+      return;
+    }
+    const tags = editForm.tags
+      .split(/[,،]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const payload = {
+      name: editForm.name.trim(),
+      phone: editForm.chat_type === "group" ? "" : editForm.phone.trim(),
+      group_id: editForm.chat_type === "group" ? editForm.group_id.trim() : "",
+      chat_type: editForm.chat_type,
+      stage: editForm.stage,
+      notes: editForm.notes,
+      tags,
+      bot_paused: editForm.bot_paused,
+      assignee_id: editForm.assignee_id || null
+    };
+    const ok = editingLead
+      ? await run(
+          () =>
+            api(`/leads/${editingLead.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(payload)
+            }),
+          { success: "لید ویرایش شد" }
+        )
+      : await run(
+          () =>
+            api("/leads", {
+              method: "POST",
+              body: JSON.stringify(payload)
+            }),
+          { success: "لید افزوده شد" }
+        );
     if (ok) {
-      setName("");
-      setPhone("");
+      closeForm();
       await load();
     }
   }
-
   async function assign(leadId: string, assigneeId: string) {
     await run(
       () =>
@@ -134,64 +245,32 @@ export default function LeadsPage() {
     await load();
   }
 
-  function openEdit(l: Lead) {
-    setEditing(l);
-    setEditForm(toEditForm(l));
+  function openDeleteConfirm(l: Lead) {
+    setDeleteTarget(l);
+    setDeleteConfirmName("");
   }
 
-  function closeEdit() {
-    setEditing(null);
-    setEditForm(null);
+  function closeDeleteConfirm() {
+    setDeleteTarget(null);
+    setDeleteConfirmName("");
   }
 
-  async function saveEdit() {
-    if (!editing || !editForm) return;
-    if (!editForm.name.trim()) {
-      toast.push("نام لید لازم است", "err");
-      return;
-    }
-    const tags = editForm.tags
-      .split(/[,،]/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-    const ok = await run(
-      () =>
-        api(`/leads/${editing.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            name: editForm.name.trim(),
-            phone: editForm.chat_type === "group" ? "" : editForm.phone.trim(),
-            group_id: editForm.chat_type === "group" ? editForm.group_id.trim() : "",
-            chat_type: editForm.chat_type,
-            stage: editForm.stage,
-            notes: editForm.notes,
-            tags,
-            bot_paused: editForm.bot_paused,
-            assignee_id: editForm.assignee_id || null
-          })
-        }),
-      { success: "لید ویرایش شد" }
-    );
-    if (ok) {
-      closeEdit();
-      await load();
-    }
-  }
+  const deleteNameMatches =
+    !!deleteTarget && deleteConfirmName.trim() === deleteTarget.name.trim();
 
-  async function removeLead(l: Lead) {
-    if (!window.confirm(`حذف لید «${l.name}»؟ پیام‌ها و جاب‌های مرتبط هم پاک می‌شوند.`)) {
-      return;
-    }
+  async function confirmDeleteLead() {
+    if (!deleteTarget || !deleteNameMatches) return;
+    const l = deleteTarget;
     const ok = await run(
       () => api(`/leads/${l.id}`, { method: "DELETE" }),
       { success: "لید حذف شد" }
     );
     if (ok) {
-      if (editing?.id === l.id) closeEdit();
+      closeDeleteConfirm();
+      if (editingLead?.id === l.id) closeForm();
       await load();
     }
   }
-
   async function clearAllLeads() {
     if (leads.length === 0) return;
     if (
@@ -211,17 +290,18 @@ export default function LeadsPage() {
       { success: "همه لیدها پاک شدند" }
     );
     if (ok) {
-      closeEdit();
+      closeForm();
       await load();
     }
   }
 
+  const isEditing = !!editingLead;
   return (
     <Shell
       title="لیدها"
       sub="لیست مشترک لیدها بین اپراتورها"
-      search={q}
-      onSearch={setQ}
+      search={nameFilter}
+      onSearch={setNameFilter}
       actions={<CrmViewToggle mode="list" />}
     >
       {loading ? (
@@ -229,48 +309,271 @@ export default function LeadsPage() {
       ) : (
         <>
           <Card
-            title="افزودن لید"
+            title={`فهرست (${filtered.length}${filtered.length !== leads.length ? ` از ${leads.length}` : ""})`}
             help={{
-              title: "افزودن لید",
-              body: "لید دستی بسازید یا صبر کنید افزونه از واتساپ/دیوار همگام کند.",
-              tips: ["نام لازم است؛ تلفن اختیاری ولی برای پیگیری مفید است."]
+              title: "فهرست لیدها",
+              body: "همه سرنخ‌های مشترک تیم. روی نام کلیک کنید برای ویرایش، یا لید جدید اضافه کنید.",
+              tips: [
+                "از فیلترهای سرستون برای محدود کردن لیست استفاده کنید.",
+                "پاک‌سازی همه فقط برای مدیر/مالک است و برگشت‌پذیر نیست."
+              ]
             }}
-          >
-            <div className="form-grid">
-              <label>
-                نام
-                <input value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              <label>
-                تلفن
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </label>
+            actions={
               <div className="row-actions">
-                <Button loading={busy} onClick={createLead}>
+                <Link className="btn secondary sm" href="/pipeline">
+                  نمایش برد
+                </Link>
+                <Button size="sm" onClick={openCreate}>
                   افزودن لید
                 </Button>
-                <Link className="btn secondary" href="/pipeline">
-                  مشاهده برد
-                </Link>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  loading={busy}
+                  disabled={leads.length === 0}
+                  onClick={clearAllLeads}
+                >
+                  پاک‌سازی همه
+                </Button>
               </div>
-            </div>
+            }
+          >
+            {leads.length === 0 ? (
+              <EmptyState
+                title="هنوز لیدی نیست"
+                text="افزونه را Reload کنید، تب واتساپ یا دیوار را باز بگذارید، یا با دکمه «افزودن لید» یک مخاطب بسازید."
+              />
+            ) : (              <div style={{ overflow: "auto" }}>
+                <table className="leads-table">
+                  <thead>
+                    <tr>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">نام</span>
+                          <input
+                            className="th-filter"
+                            type="text"
+                            value={nameFilter}
+                            onChange={(e) => setNameFilter(e.target.value)}
+                            placeholder="جستجو…"
+                            aria-label="فیلتر نام"
+                          />
+                        </div>
+                      </th>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">نوع</span>
+                          <select
+                            className="th-filter"
+                            value={typeFilter}
+                            onChange={(e) => setTypeFilter(e.target.value)}
+                            aria-label="فیلتر نوع"
+                          >
+                            <option value="">همه</option>
+                            <option value="pv">مخاطب</option>
+                            <option value="group">گروه</option>
+                          </select>
+                        </div>
+                      </th>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">شناسه / تلفن</span>
+                          <input
+                            className="th-filter ltr-text"
+                            dir="ltr"
+                            type="text"
+                            value={identityFilter}
+                            onChange={(e) => setIdentityFilter(e.target.value)}
+                            placeholder="جستجو…"
+                            aria-label="فیلتر شناسه یا تلفن"
+                          />
+                        </div>
+                      </th>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">کانال</span>
+                          <select
+                            className="th-filter"
+                            value={channelFilter}
+                            onChange={(e) => setChannelFilter(e.target.value)}
+                            aria-label="فیلتر کانال"
+                          >
+                            <option value="">همه</option>
+                            <option value="__none__">بدون کانال</option>
+                            {channelOptions.map((ch) => (
+                              <option key={ch} value={ch}>
+                                {CHANNEL_LABELS[ch] || ch}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </th>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">مرحله</span>
+                          <select
+                            className="th-filter"
+                            value={stageFilter}
+                            onChange={(e) => setStageFilter(e.target.value)}
+                            aria-label="فیلتر مرحله"
+                          >
+                            <option value="">همه</option>
+                            {STAGES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </th>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">ارجاع</span>
+                          <select
+                            className="th-filter"
+                            value={assigneeFilter}
+                            onChange={(e) => setAssigneeFilter(e.target.value)}
+                            aria-label="فیلتر ارجاع"
+                          >
+                            <option value="">همه</option>
+                            <option value="__none__">بدون ارجاع</option>
+                            {members.map((m) => (
+                              <option key={m.user_id} value={m.user_id}>
+                                {memberLabel(m)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </th>
+                      <th>
+                        <div className="th-head">
+                          <span className="th-head-label">عملیات</span>
+                          {hasActiveFilters ? (
+                            <Button variant="secondary" size="sm" onClick={clearFilters}>
+                              پاک فیلتر
+                            </Button>
+                          ) : null}
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: "center", padding: "28px 12px" }}>
+                          <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+                            نتیجه‌ای با این فیلتر نیست — فیلترها را تغییر دهید.
+                          </span>
+                        </td>
+                      </tr>
+                    ) : (
+                      filtered.map((l) => (
+                        <tr key={l.id}>
+                          <td>
+                            <button type="button" className="lead-name-link" onClick={() => openEdit(l)}>
+                              <strong>{l.name}</strong>
+                            </button>
+                            <div className="card-meta" style={{ marginTop: 4 }}>
+                              {l.bot_paused ? <Badge tone="danger">ربات متوقف</Badge> : null}
+                              {(l.tags || []).map((t) => (
+                                <Badge key={t} tone="accent">
+                                  {t}
+                                </Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td>
+                            {l.chat_type === "group" ? (
+                              <Badge tone="accent">گروه</Badge>
+                            ) : (
+                              <Badge tone="accent">مخاطب</Badge>
+                            )}
+                          </td>
+                          <td>
+                            <LtrText>{leadIdentity(l)}</LtrText>
+                          </td>                          <td>
+                            {l.source_channel ? (
+                              <Badge tone="accent">
+                                {CHANNEL_LABELS[l.source_channel] || l.source_channel}
+                              </Badge>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td>
+                            <div className="row-actions">
+                              <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />
+                              <select
+                                value={l.stage}
+                                onChange={(e) => setStage(l.id, e.target.value)}
+                                style={{ width: "auto" }}
+                              >
+                                {STAGES.map((s) => (
+                                  <option key={s} value={s}>
+                                    {s}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </td>
+                          <td>
+                            <select
+                              value={l.assignee_id || ""}
+                              onChange={(e) => assign(l.id, e.target.value)}
+                            >
+                              <option value="">بدون ارجاع</option>
+                              {members.map((m) => (
+                                <option key={m.user_id} value={m.user_id}>
+                                  {memberLabel(m)}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => openDeleteConfirm(l)}
+                            >
+                              حذف
+                            </Button>
+                          </td>                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
 
-          {editing && editForm ? (
-            <Card
-              title={`ویرایش: ${editing.name}`}
-              actions={
-                <Button variant="ghost" size="sm" onClick={closeEdit}>
-                  بستن
+          <Modal
+            open={formOpen && !!editForm}
+            title={isEditing ? `ویرایش: ${editingLead?.name}` : "افزودن لید"}
+            onClose={closeForm}
+            footer={
+              <>
+                <Button loading={busy} onClick={saveForm}>
+                  {isEditing ? "ذخیره" : "افزودن"}
                 </Button>
-              }
-            >
+                <Button variant="secondary" onClick={closeForm}>
+                  انصراف
+                </Button>
+                {isEditing && editingLead ? (
+                  <Button variant="danger" onClick={() => openDeleteConfirm(editingLead)}>
+                    حذف لید
+                  </Button>
+                ) : null}
+              </>
+            }
+          >
+            {editForm ? (
               <div className="form-grid">
                 <label>
                   نام
                   <input
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    autoFocus
                   />
                 </label>
                 <label>
@@ -289,6 +592,8 @@ export default function LeadsPage() {
                   <label>
                     شناسه گروه
                     <input
+                      className="ltr-text"
+                      dir="ltr"
                       value={editForm.group_id}
                       onChange={(e) =>
                         setEditForm({ ...editForm, group_id: e.target.value })
@@ -299,10 +604,13 @@ export default function LeadsPage() {
                   <label>
                     تلفن
                     <input
+                      className="ltr-text"
+                      dir="ltr"
                       value={editForm.phone}
                       onChange={(e) =>
                         setEditForm({ ...editForm, phone: e.target.value })
                       }
+                      placeholder="+989..."
                     />
                   </label>
                 )}
@@ -350,169 +658,58 @@ export default function LeadsPage() {
                     onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
                   />
                 </label>
-                <label className="row-actions" style={{ alignItems: "center", gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.bot_paused}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, bot_paused: e.target.checked })
-                    }
-                  />
-                  ربات این چت متوقف باشد
-                </label>
-                <div className="row-actions">
-                  <Button loading={busy} onClick={saveEdit}>
-                    ذخیره ویرایش
-                  </Button>
-                  <Button variant="secondary" onClick={closeEdit}>
-                    انصراف
-                  </Button>
-                  <Button variant="danger" loading={busy} onClick={() => removeLead(editing)}>
-                    حذف لید
-                  </Button>
-                </div>
+                <Switch
+                  full
+                  label="ربات فعال برای این چت"
+                  hint="وقتی خاموش باشد، پاسخ خودکار برای این مخاطب/گروه متوقف می‌شود."
+                  checked={!editForm.bot_paused}
+                  onChange={(active) =>
+                    setEditForm({ ...editForm, bot_paused: !active })
+                  }
+                />
               </div>
-            </Card>
-          ) : null}
+            ) : null}
+          </Modal>
 
-          <Card
-            title={`فهرست (${filtered.length})`}
-            help={{
-              title: "فهرست لیدها",
-              body: "همه سرنخ‌های مشترک تیم. می‌توانید ویرایش، حذف، مرحله و ارجاع را همین‌جا مدیریت کنید.",
-              tips: [
-                "پاک‌سازی همه فقط برای مدیر/مالک است و برگشت‌پذیر نیست.",
-                "حذف یک لید، پیام‌ها و جاب‌های همان لید را هم پاک می‌کند."
-              ]
-            }}
-            actions={
-              <div className="row-actions">
-                <select
-                  value={stageFilter}
-                  onChange={(e) => setStageFilter(e.target.value)}
-                  style={{ width: "auto", minWidth: 120 }}
-                >
-                  <option value="">همه مراحل</option>
-                  {STAGES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+          <Modal
+            open={!!deleteTarget}
+            title="تأیید حذف لید"
+            onClose={closeDeleteConfirm}
+            footer={
+              <>
                 <Button
                   variant="danger"
-                  size="sm"
                   loading={busy}
-                  disabled={leads.length === 0}
-                  onClick={clearAllLeads}
+                  disabled={!deleteNameMatches}
+                  onClick={confirmDeleteLead}
                 >
-                  پاک‌سازی همه
+                  حذف قطعی
                 </Button>
-              </div>
+                <Button variant="secondary" onClick={closeDeleteConfirm}>
+                  انصراف
+                </Button>
+              </>
             }
           >
-            {filtered.length === 0 ? (
-              <EmptyState
-                title="هنوز لیدی نیست"
-                text="افزونه را Reload کنید، تب واتساپ یا دیوار را باز بگذارید، یا از فرم بالا لید بسازید."
-              />
-            ) : (
-              <div style={{ overflow: "auto" }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>نام</th>
-                      <th>شناسه / تلفن</th>
-                      <th>کانال</th>
-                      <th>مرحله</th>
-                      <th>ارجاع</th>
-                      <th>عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((l) => (
-                      <tr key={l.id}>
-                        <td>
-                          <strong>{l.name}</strong>
-                          <div className="card-meta" style={{ marginTop: 4 }}>
-                            {l.chat_type === "group" ? (
-                              <Badge tone="accent">گروه</Badge>
-                            ) : null}
-                            {l.bot_paused ? <Badge tone="danger">ربات متوقف</Badge> : null}
-                            {(l.tags || []).map((t) => (
-                              <Badge key={t} tone="accent">
-                                {t}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td>{leadIdentity(l)}</td>
-                        <td>
-                          {l.source_channel ? (
-                            <Badge tone="accent">
-                              {CHANNEL_LABELS[l.source_channel] || l.source_channel}
-                            </Badge>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        <td>
-                          <div className="row-actions">
-                            <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />
-                            <select
-                              value={l.stage}
-                              onChange={(e) => setStage(l.id, e.target.value)}
-                              style={{ width: "auto" }}
-                            >
-                              {STAGES.map((s) => (
-                                <option key={s} value={s}>
-                                  {s}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </td>
-                        <td>
-                          <select
-                            value={l.assignee_id || ""}
-                            onChange={(e) => assign(l.id, e.target.value)}
-                          >
-                            <option value="">بدون ارجاع</option>
-                            {members.map((m) => (
-                              <option key={m.user_id} value={m.user_id}>
-                                {memberLabel(m)}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          <div className="row-actions">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openEdit(l)}
-                            >
-                              ویرایش
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              loading={busy}
-                              onClick={() => removeLead(l)}
-                            >
-                              حذف
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {deleteTarget ? (
+              <div className="delete-confirm-body">
+                <p className="delete-confirm-text">
+                  حذف «<strong>{deleteTarget.name}</strong>» برگشت‌پذیر نیست. پیام‌ها و
+                  جاب‌های مرتبط هم پاک می‌شوند.
+                </p>
+                <label>
+                  برای تأیید، نام مخاطب را دقیقاً بنویسید
+                  <input
+                    value={deleteConfirmName}
+                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    placeholder={deleteTarget.name}
+                    autoFocus
+                  />
+                </label>
               </div>
-            )}
-          </Card>
-        </>
-      )}
+            ) : null}
+          </Modal>
+        </>      )}
     </Shell>
   );
 }

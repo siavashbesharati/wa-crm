@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 export type Lead = {
   id: string;
@@ -12,6 +13,7 @@ export type Lead = {
   source_channel?: string;
   chat_type?: string;
   stage: string;
+  board_order?: number;
   tags: string[];
   notes: string;
   assignee_id: string | null;
@@ -25,6 +27,20 @@ export const CHANNEL_LABELS: Record<string, string> = {
 
 export function leadIdentity(l: Lead) {
   return l.phone || l.external_chat_id || l.group_id || "-";
+}
+
+export function LtrText({
+  children,
+  className = ""
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span dir="ltr" className={`ltr-text ${className}`.trim()}>
+      {children}
+    </span>
+  );
 }
 
 export type Member = { user_id: string; display_name: string; phone: string };
@@ -55,7 +71,7 @@ export function CrmViewToggle({ mode }: { mode: "list" | "board" }) {
         لیست
       </Link>
       <Link href="/pipeline" className={mode === "board" ? "active" : ""}>
-        برد
+        برد کانبان
       </Link>
     </div>
   );
