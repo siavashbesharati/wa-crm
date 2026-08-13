@@ -11,6 +11,7 @@ import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
+import { LeadModal } from "@/components/crm/LeadModal";
 import {
   CrmViewToggle,
   STAGES,
@@ -76,7 +77,10 @@ export default function LeadsPage() {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState("");  const { busy, run } = useMutation();
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
+  const [openTaskComposer, setOpenTaskComposer] = useState(false);
+  const { busy, run } = useMutation();
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -167,10 +171,9 @@ export default function LeadsPage() {
     setFormOpen(true);
   }
 
-  function openEdit(l: Lead) {
-    setEditingLead(l);
-    setEditForm(toEditForm(l));
-    setFormOpen(true);
+  function openContact(l: Lead, withTask = true) {
+    setDetailLead(l);
+    setOpenTaskComposer(withTask);
   }
 
   function closeForm() {
@@ -222,6 +225,14 @@ export default function LeadsPage() {
       await load();
     }
   }
+
+  useEffect(() => {
+    setDetailLead((prev) => {
+      if (!prev) return prev;
+      return leads.find((x) => x.id === prev.id) || null;
+    });
+  }, [leads]);
+
   async function assign(leadId: string, assigneeId: string) {
     await run(
       () =>
@@ -298,8 +309,8 @@ export default function LeadsPage() {
   const isEditing = !!editingLead;
   return (
     <Shell
-      title="لیدها"
-      sub="لیست مشترک لیدها بین اپراتورها"
+      title="مخاطبین"
+      sub="فهرست مخاطبین — روی نام کلیک کنید تا جزئیات باز شود و برایش وظیفه بسازید"
       search={nameFilter}
       onSearch={setNameFilter}
       actions={<CrmViewToggle mode="list" />}
@@ -470,7 +481,7 @@ export default function LeadsPage() {
                       filtered.map((l) => (
                         <tr key={l.id}>
                           <td>
-                            <button type="button" className="lead-name-link" onClick={() => openEdit(l)}>
+                            <button type="button" className="lead-name-link" onClick={() => openContact(l)}>
                               <strong>{l.name}</strong>
                             </button>
                             <div className="card-meta" style={{ marginTop: 4 }}>
@@ -530,13 +541,22 @@ export default function LeadsPage() {
                             </select>
                           </td>
                           <td>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => openDeleteConfirm(l)}
-                            >
-                              حذف
-                            </Button>
+                            <div className="row-actions">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => openContact(l, true)}
+                              >
+                                وظیفه
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => openDeleteConfirm(l)}
+                              >
+                                حذف
+                              </Button>
+                            </div>
                           </td>                        </tr>
                       ))
                     )}
@@ -709,6 +729,17 @@ export default function LeadsPage() {
               </div>
             ) : null}
           </Modal>
+          <LeadModal
+            open={!!detailLead}
+            lead={detailLead}
+            members={members}
+            startWithTaskComposer={openTaskComposer}
+            onClose={() => {
+              setDetailLead(null);
+              setOpenTaskComposer(false);
+            }}
+            onChanged={load}
+          />
         </>      )}
     </Shell>
   );

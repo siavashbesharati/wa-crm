@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import Lead, LeadAccountLink, MemberRole, Message, OutboundJob, Task
-from app.schemas import LeadBoardReorderIn, LeadIn, LeadOut, LeadPatchIn
+from app.schemas import ContactTaskIn, LeadBoardReorderIn, LeadIn, LeadOut, LeadPatchIn, TaskOut
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -389,3 +389,50 @@ def assign_lead(
     db.commit()
     db.refresh(lead)
     return _to_out(lead)
+
+
+@router.get("/{lead_id}/tasks", response_model=list[TaskOut])
+def list_contact_tasks(
+    lead_id: str,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    from app.services.contact_tasks import get_org_lead, task_to_out
+
+    get_org_lead(db, auth.org.id, lead_id)
+    rows = (
+        db.query(Task)
+        .filter(Task.org_id == auth.org.id, Task.lead_id == lead_id)
+        .all()
+    )
+    rows.sort(key=lambda t: (int(getattr(t, "board_order", 0) or 0), t.created_at or datetime.min))
+    return [task_to_out(r) for r in rows]
+
+
+@router.post("/{lead_id}/tasks", response_model=TaskOut)
+def create_contact_task(
+    lead_id: str,
+    body: ContactTaskIn,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """Create a follow-up task for this contact. UI and AI agent both use this."""
+    if auth.role == MemberRole.viewer:
+        raise HTTPException(status_code=403, detail="دسترسی کافی نیست")
+    from app.services.contact_tasks import create_task_for_contact, task_to_out
+
+    task = create_task_for_contact(
+        db,
+        org_id=auth.org.id,
+        lead_id=lead_id,
+        title=body.title,
+        message=body.message,
+        assignee_id=body.assignee_id,
+        created_by_id=auth.user.id,
+        due_at=body.due_at,
+        status=body.status,
+        source=body.source or "manual",
+        source_message_id=body.source_message_id,
+        conversation_excerpt=body.conversation_excerpt,
+    )
+    return task_to_out(task)

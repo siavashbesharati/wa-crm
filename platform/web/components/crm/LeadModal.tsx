@@ -30,6 +30,7 @@ type LeadModalProps = {
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   startInEdit?: boolean;
+  startWithTaskComposer?: boolean;
 };
 
 function LeadDetailView({
@@ -116,24 +117,26 @@ function LeadDetailView({
 function LeadTasksSection({
   lead,
   members,
-  onChanged
+  onChanged,
+  startComposer = false
 }: {
   lead: Lead;
   members: Member[];
   onChanged: () => void | Promise<void>;
+  startComposer?: boolean;
 }) {
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [assigneeId, setAssigneeId] = useState(lead.assignee_id || "");
-  const [showComposer, setShowComposer] = useState(false);
+  const [showComposer, setShowComposer] = useState(startComposer);
   const [doneId, setDoneId] = useState<string | null>(null);
   const { busy, run } = useMutation();
   const toast = useToast();
 
   async function loadTasks() {
     try {
-      const rows = await api<CrmTask[]>(`/tasks?lead_id=${encodeURIComponent(lead.id)}`);
+      const rows = await api<CrmTask[]>(`/leads/${encodeURIComponent(lead.id)}/tasks`);
       setTasks(rows);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا در بارگذاری وظایف", "err");
@@ -144,13 +147,13 @@ function LeadTasksSection({
     setAssigneeId(lead.assignee_id || "");
     setTitle("");
     setMessage("");
-    setShowComposer(false);
+    setShowComposer(startComposer);
     void loadTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lead.id]);
+  }, [lead.id, startComposer]);
 
   const openTasks = tasks.filter((t) => t.status === "open" || t.status === "in_progress");
-  const doneTasks = tasks.filter((t) => t.status !== "open");
+  const doneTasks = tasks.filter((t) => t.status !== "open" && t.status !== "in_progress");
 
   async function createTask() {
     if (!title.trim()) {
@@ -159,13 +162,13 @@ function LeadTasksSection({
     }
     const ok = await run(
       () =>
-        api("/tasks", {
+        api(`/leads/${lead.id}/tasks`, {
           method: "POST",
           body: JSON.stringify({
             title: title.trim(),
             message,
             assignee_id: assigneeId || null,
-            lead_id: lead.id
+            source: "manual"
           })
         }),
       { success: "وظیفه ساخته شد" }
@@ -288,7 +291,8 @@ export function LeadModal({
   members,
   onClose,
   onChanged,
-  startInEdit = false
+  startInEdit = false,
+  startWithTaskComposer = false
 }: LeadModalProps) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -402,7 +406,12 @@ export function LeadModal({
         {mode === "view" ? (
           <>
             <LeadDetailView lead={lead} assignee={assignee} />
-            <LeadTasksSection lead={lead} members={members} onChanged={onChanged} />
+            <LeadTasksSection
+              lead={lead}
+              members={members}
+              onChanged={onChanged}
+              startComposer={startWithTaskComposer}
+            />
           </>
         ) : editForm ? (
           <div className="form-grid lead-modal-form">

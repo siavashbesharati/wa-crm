@@ -99,7 +99,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
       if (hit) {
         const labels: Record<string, string> = {
           "/home": "میز کار",
-          "/leads": "لیدها",
+          "/leads": "مخاطبین",
           "/pipeline": "برد کانبان",
           "/inbox": "اینباکس",
           "/tasks": "وظایف",

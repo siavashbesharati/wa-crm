@@ -343,6 +343,8 @@ class Task(Base):
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.open)
     board_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual | ai | system
+    source_message_id: Mapped[str] = mapped_column(String(120), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 

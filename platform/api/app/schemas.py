@@ -193,6 +193,20 @@ class TaskIn(BaseModel):
     assignee_id: str | None = None
     due_at: datetime | None = None
     status: str | None = None
+    source: str = "manual"
+    source_message_id: str = ""
+    conversation_excerpt: str = ""
+
+
+class ContactTaskIn(BaseModel):
+    title: str = ""
+    message: str = ""
+    assignee_id: str | None = None
+    due_at: datetime | None = None
+    status: str | None = None
+    source: str = "manual"
+    source_message_id: str = ""
+    conversation_excerpt: str = ""
 
 
 class TaskOut(BaseModel):
@@ -205,6 +219,8 @@ class TaskOut(BaseModel):
     due_at: datetime | None
     status: str
     board_order: int = 0
+    source: str = "manual"
+    source_message_id: str = ""
     created_at: datetime
 
 
