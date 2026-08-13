@@ -45,6 +45,26 @@ export function LtrText({
 
 export type Member = { user_id: string; display_name: string; phone: string };
 
+export type CrmTask = {
+  id: string;
+  title: string;
+  message: string;
+  status: string;
+  lead_id: string | null;
+  assignee_id: string | null;
+  due_at: string | null;
+};
+
+export const TASK_STATUS_LABELS: Record<string, string> = {
+  open: "باز",
+  done: "انجام‌شده",
+  cancelled: "لغو شده"
+};
+
+export function leadBoardHref(leadId: string) {
+  return `/pipeline?lead=${encodeURIComponent(leadId)}`;
+}
+
 export const STAGES = ["جدید", "پیگیری", "پیشنهاد", "خرید", "بسته"] as const;
 
 export const STAGE_DOT: Record<string, string> = {

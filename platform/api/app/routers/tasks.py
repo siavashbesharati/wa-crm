@@ -30,12 +30,15 @@ def _to_out(t: Task) -> TaskOut:
 @router.get("", response_model=list[TaskOut])
 def list_tasks(
     status: str | None = None,
+    lead_id: str | None = None,
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
     q = db.query(Task).filter(Task.org_id == auth.org.id)
     if status:
         q = q.filter(Task.status == TaskStatus(status))
+    if lead_id:
+        q = q.filter(Task.lead_id == lead_id)
     rows = q.order_by(Task.created_at.desc()).limit(300).all()
     return [_to_out(r) for r in rows]
 

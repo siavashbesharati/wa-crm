@@ -1463,6 +1463,68 @@ a.btn.wizard-btn:hover {
 .lead-modal-panel .modal-footer {
   justify-content: flex-start;
 }
+.lead-tasks-block {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.lead-tasks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lead-task-composer {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.lead-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lead-task-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.lead-task-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lead-task-copy strong {
+  font-size: 13px;
+}
+.lead-task-done-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lead-task-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.lead-task-link {
+  color: var(--accent);
+  font-weight: 800;
+}
+.lead-task-link:hover {
+  text-decoration: underline;
+}
 
 @media (max-width: 520px) {
   .lead-info-tiles {

@@ -16,6 +16,8 @@ import {
   LtrText,
   initials,
   memberLabel,
+  TASK_STATUS_LABELS,
+  type CrmTask,
   type Lead,
   type Member
 } from "./shared";
@@ -105,6 +107,175 @@ function LeadDetailView({
         <div className="lead-modal-section">
           <span className="lead-modal-section-label">یادداشت</span>
           <div className="lead-modal-notes-box">{lead.notes}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LeadTasksSection({
+  lead,
+  members,
+  onChanged
+}: {
+  lead: Lead;
+  members: Member[];
+  onChanged: () => void | Promise<void>;
+}) {
+  const [tasks, setTasks] = useState<CrmTask[]>([]);
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [assigneeId, setAssigneeId] = useState(lead.assignee_id || "");
+  const [showComposer, setShowComposer] = useState(false);
+  const [doneId, setDoneId] = useState<string | null>(null);
+  const { busy, run } = useMutation();
+  const toast = useToast();
+
+  async function loadTasks() {
+    try {
+      const rows = await api<CrmTask[]>(`/tasks?lead_id=${encodeURIComponent(lead.id)}`);
+      setTasks(rows);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در بارگذاری وظایف", "err");
+    }
+  }
+
+  useEffect(() => {
+    setAssigneeId(lead.assignee_id || "");
+    setTitle("");
+    setMessage("");
+    setShowComposer(false);
+    void loadTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.id]);
+
+  const openTasks = tasks.filter((t) => t.status === "open");
+  const doneTasks = tasks.filter((t) => t.status !== "open");
+
+  async function createTask() {
+    if (!title.trim()) {
+      toast.push("عنوان وظیفه لازم است", "err");
+      return;
+    }
+    const ok = await run(
+      () =>
+        api("/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            title: title.trim(),
+            message,
+            assignee_id: assigneeId || null,
+            lead_id: lead.id
+          })
+        }),
+      { success: "وظیفه ساخته شد" }
+    );
+    if (ok) {
+      setTitle("");
+      setMessage("");
+      setShowComposer(false);
+      await loadTasks();
+      await onChanged();
+    }
+  }
+
+  async function markDone(id: string) {
+    setDoneId(id);
+    try {
+      await api(`/tasks/${id}/done`, { method: "POST" });
+      toast.push("انجام شد", "ok");
+      await loadTasks();
+      await onChanged();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setDoneId(null);
+    }
+  }
+
+  return (
+    <div className="lead-modal-section lead-tasks-block">
+      <div className="lead-tasks-head">
+        <span className="lead-modal-section-label">
+          وظایف این مخاطب
+          {openTasks.length > 0 ? ` (${openTasks.length} باز)` : ""}
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setShowComposer((v) => !v)}
+        >
+          {showComposer ? "انصراف" : "وظیفه جدید"}
+        </Button>
+      </div>
+
+      {showComposer ? (
+        <div className="lead-task-composer">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="مثلاً پیگیری پیشنهاد"
+            autoFocus
+          />
+          <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+            <option value="">بدون ارجاع</option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {memberLabel(m)}
+              </option>
+            ))}
+          </select>
+          <textarea
+            rows={2}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="توضیح اختیاری"
+          />
+          <Button loading={busy} size="sm" onClick={createTask}>
+            افزودن وظیفه
+          </Button>
+        </div>
+      ) : null}
+
+      {openTasks.length === 0 && !showComposer ? (
+        <p className="hint" style={{ margin: 0 }}>
+          هنوز وظیفه بازی برای این مخاطب نیست.
+        </p>
+      ) : (
+        <div className="lead-task-list">
+          {openTasks.map((t) => {
+            const who = members.find((m) => m.user_id === t.assignee_id);
+            return (
+              <div key={t.id} className="lead-task-item">
+                <div className="lead-task-copy">
+                  <strong>{t.title}</strong>
+                  {t.message ? <span className="hint">{t.message}</span> : null}
+                  {who ? <span className="hint">ارجاع: {memberLabel(who)}</span> : null}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={doneId === t.id}
+                  onClick={() => markDone(t.id)}
+                >
+                  انجام شد
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {doneTasks.length > 0 ? (
+        <div className="lead-task-done-list">
+          {doneTasks.slice(0, 3).map((t) => (
+            <div key={t.id} className="lead-task-done">
+              <Badge tone={t.status === "done" ? "success" : "accent"}>
+                {TASK_STATUS_LABELS[t.status] || t.status}
+              </Badge>
+              <span>{t.title}</span>
+            </div>
+          ))}
         </div>
       ) : null}
     </div>
@@ -229,7 +400,10 @@ export function LeadModal({
         }
       >
         {mode === "view" ? (
-          <LeadDetailView lead={lead} assignee={assignee} />
+          <>
+            <LeadDetailView lead={lead} assignee={assignee} />
+            <LeadTasksSection lead={lead} members={members} onChanged={onChanged} />
+          </>
         ) : editForm ? (
           <div className="form-grid lead-modal-form">
             <label>

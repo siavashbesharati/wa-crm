@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
@@ -19,6 +20,7 @@ import {
   STAGES,
   STAGE_DOT,
   LtrText,
+  type CrmTask,
   type Lead,
   type Member,
   memberLabel,
@@ -26,8 +28,11 @@ import {
 } from "@/components/crm/shared";
 
 export default function PipelinePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [openTasks, setOpenTasks] = useState<CrmTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
@@ -42,12 +47,14 @@ export default function PipelinePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [l, m] = await Promise.all([
+      const [l, m, t] = await Promise.all([
         api<Lead[]>("/leads"),
-        api<Member[]>("/orgs/members")
+        api<Member[]>("/orgs/members"),
+        api<CrmTask[]>("/tasks?status=open")
       ]);
       setLeads(l);
       setMembers(m);
+      setOpenTasks(t);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -58,6 +65,29 @@ export default function PipelinePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const id = searchParams.get("lead");
+    if (!id || leads.length === 0) return;
+    const found = leads.find((l) => l.id === id);
+    if (found) setDetailLead(found);
+  }, [searchParams, leads]);
+
+  useEffect(() => {
+    setDetailLead((prev) => {
+      if (!prev) return prev;
+      return leads.find((l) => l.id === prev.id) || null;
+    });
+  }, [leads]);
+
+  const taskCountByLead = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of openTasks) {
+      if (!t.lead_id) continue;
+      map.set(t.lead_id, (map.get(t.lead_id) || 0) + 1);
+    }
+    return map;
+  }, [openTasks]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -243,6 +273,11 @@ export default function PipelinePage() {
                             <LtrText>{l.phone || l.group_id}</LtrText>
                           </Badge>
                         )}
+                        {(taskCountByLead.get(l.id) || 0) > 0 ? (
+                          <Badge tone="accent">
+                            {taskCountByLead.get(l.id)} وظیفه
+                          </Badge>
+                        ) : null}
                         {(l.tags || []).slice(0, 2).map((t) => (
                           <Badge key={t} tone="accent">
                             {t}
@@ -288,7 +323,10 @@ export default function PipelinePage() {
         open={!!detailLead}
         lead={detailLead}
         members={members}
-        onClose={() => setDetailLead(null)}
+        onClose={() => {
+          setDetailLead(null);
+          if (searchParams.get("lead")) router.replace("/pipeline");
+        }}
         onChanged={load}
       />
     </Shell>
