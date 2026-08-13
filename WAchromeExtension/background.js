@@ -733,6 +733,15 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     return true;
   }
 
+  if (message.type === "clearLocalCrmContacts") {
+    storageSet({ crmContacts: [] })
+      .then(function () {
+        return { ok: true };
+      })
+      .then(sendResponse);
+    return true;
+  }
+
   if (message.type === "pollCloudBridgeNow") {
     pollCloudBridge().then(function () {
       sendResponse({ ok: true });

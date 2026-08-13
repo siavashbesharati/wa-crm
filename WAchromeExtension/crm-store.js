@@ -102,6 +102,11 @@
     return list || [];
   }
 
+  async function clearAllContacts() {
+    await storageSet({ crmContacts: [] });
+    return { ok: true, deleted: 0 };
+  }
+
   // Farsi/Arabic-compatible key (ي/ی, ك/ک, ZWNJ, NFC)
   function normalizeContactKey(name) {
     return String(name || "")
@@ -494,6 +499,7 @@
     saveSettings: saveSettings,
     getContacts: getContacts,
     saveContacts: saveContacts,
+    clearAllContacts: clearAllContacts,
     upsertContact: upsertContact,
     updateContact: updateContact,
     deleteContact: deleteContact,

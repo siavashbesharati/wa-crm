@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.6.8";
+const EXT_VERSION = "7.7.0";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -1505,6 +1505,35 @@ async function runScheduledTask(task) {
 window.__iranexpediaGetChatName = getChatName;
 window.__iranexpediaGetChatIdentity = getChatIdentity;
 window.__iranexpediaResolveChatIdentity = resolveChatIdentity;
+
+async function clearLocalCrmContacts() {
+    let deleted = 0;
+    if (globalThis.IranexpediaCrm && IranexpediaCrm.getContacts) {
+        const before = await IranexpediaCrm.getContacts();
+        deleted = Array.isArray(before) ? before.length : 0;
+    }
+    if (globalThis.IranexpediaCrm && IranexpediaCrm.clearAllContacts) {
+        await IranexpediaCrm.clearAllContacts();
+    } else {
+        await new Promise(function (resolve) {
+            chrome.storage.local.set({ crmContacts: [] }, resolve);
+        });
+    }
+    cloudBulkSyncDone = false;
+    Object.keys(sidebarContactSaved).forEach(function (k) {
+        delete sidebarContactSaved[k];
+    });
+    Object.keys(chatInfoPanelCache).forEach(function (k) {
+        delete chatInfoPanelCache[k];
+    });
+    lastCapturedMsgKey = "";
+    lastHandledText = "";
+    lastStableChat = "";
+    log("مخاطبین محلی پاک شد:", deleted);
+    return { ok: true, deleted: deleted };
+}
+window.__iranexpediaClearLocalContacts = clearLocalCrmContacts;
+
 window.__iranexpediaSendNow = function (text) {
     sendTextNow(text).then(function (ok) {
         if (!ok) alert("ارسال انجام نشد. چت را باز کنید و دوباره تلاش کنید.");
@@ -1532,24 +1561,18 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
         );
         return true;
     }
+    if (message.type === "clearLocalCrmContacts") {
+        clearLocalCrmContacts().then(sendResponse);
+        return true;
+    }
     if (message.type === "cloudScanSidebarChats") {
-        (async function () {
-            await refreshLicenseStatus();
-            if (!licenseValid || !isCloudAuthorized()) {
-                sendResponse({ ok: false, error: "license_or_cloud_required" });
-                return;
-            }
-            const scan = await captureContactsFromSidebarVisible();
-            // Force push local → API via background (reliable).
-            chrome.runtime.sendMessage({ type: "cloudSyncContacts" }, function (syncRes) {
-                sendResponse({
-                    ok: true,
-                    scanned: (scan && scan.scanned) || 0,
-                    saved: (scan && scan.saved) || 0,
-                    sync: syncRes || null
-                });
-            });
-        })();
+        sendResponse({
+            ok: true,
+            scanned: 0,
+            saved: 0,
+            disabled: true,
+            note: "Bulk sidebar import disabled — contacts save only on incoming messages."
+        });
         return true;
     }
     if (message.type === "pingRunner") {
@@ -1924,70 +1947,13 @@ function cellLooksLikeGroup(cell) {
 }
 
 async function captureContactsFromSidebarUnread() {
-    if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return;
-    const cells = getSidebarCells();
-    for (let i = 0; i < cells.length; i++) {
-        const cell = cells[i];
-        if (!cellHasUnread(cell)) continue;
-        const chatName = getCellChatName(cell);
-        if (!chatName) continue;
-        const key = cleanChatLabel(chatName);
-        if (!key || sidebarContactSaved[key]) continue;
-        sidebarContactSaved[key] = Date.now();
-        const isGroup = cellLooksLikeGroup(cell);
-        const phone = !isGroup && looksLikePhone(key) ? normalizePhone(key) : "";
-        await saveContactFromIncoming(
-            {
-                name: key,
-                phone: phone,
-                groupId: "",
-                chatType: isGroup ? "group" : "pv"
-            },
-            "sidebar-unread"
-        );
-    }
-
-    // keep map small
-    const keys = Object.keys(sidebarContactSaved);
-    if (keys.length > 120) {
-        keys
-            .sort(function (a, b) {
-                return sidebarContactSaved[a] - sidebarContactSaved[b];
-            })
-            .slice(0, keys.length - 60)
-            .forEach(function (k) {
-                delete sidebarContactSaved[k];
-            });
-    }
+    // Disabled: contacts are saved only when an inbound message is processed.
+    return;
 }
 
-/** Capture visible chat list → local CRM → cloud (not only unread). */
+/** @deprecated Bulk sidebar import disabled — use inbound message paths only. */
 async function captureContactsFromSidebarVisible() {
-    if (!isCloudAuthorized() || !globalThis.IranexpediaCrm) return { saved: 0 };
-    const cells = getSidebarCells();
-    let saved = 0;
-    for (let i = 0; i < cells.length; i++) {
-        const cell = cells[i];
-        const chatName = getCellChatName(cell);
-        if (!chatName) continue;
-        const key = cleanChatLabel(chatName);
-        if (!key) continue;
-        const isGroup = cellLooksLikeGroup(cell);
-        const phone = !isGroup && looksLikePhone(key) ? normalizePhone(key) : "";
-        const before = await IranexpediaCrm.getContactByName(key);
-        await saveContactFromIncoming(
-            {
-                name: key,
-                phone: phone,
-                groupId: "",
-                chatType: isGroup ? "group" : "pv"
-            },
-            "sidebar-visible"
-        );
-        if (!before) saved += 1;
-        else saved += 1;
-    }
-    return { saved: saved, scanned: cells.length };
+    return { saved: 0, scanned: 0, disabled: true };
 }
 
 function getCellPreview(cell, chatName) {
@@ -2292,7 +2258,7 @@ setInterval(function () {
         lastCapturedMsgKey = "";
         if (!busy) resetMessageCache();
         if (isEnabled) log("چت فعال:", chat);
-        saveContactFromIncoming(info, "open-chat").catch(function () {});
+        // Do not save contacts on chat switch — incoming messages only.
     }
 }, 600);
 
@@ -2300,18 +2266,10 @@ setInterval(function () {
     handleOpenChatMessages();
 }, 1200);
 
+// Sidebar: process unread for cloud ingest only (no bulk contact import).
 setInterval(function () {
     scanSidebarForCloud();
-    captureContactsFromSidebarUnread();
 }, SIDEBAR_SCAN_MS);
-
-// Every ~45s push visible chat list into CRM → cloud (backend feed).
-setInterval(function () {
-    if (!isCloudAuthorized()) return;
-    captureContactsFromSidebarVisible().then(function () {
-        chrome.runtime.sendMessage({ type: "cloudSyncContacts" });
-    });
-}, 45 * 1000);
 
 async function activateWhatsAppChannel() {
     if (!globalThis.IranexpediaCloudBridge) return;
@@ -2370,7 +2328,7 @@ activateWhatsAppChannel().then(function () {
 }).then(function () {
     ensureButton();
     log("وضعیت فعال‌سازی:", licenseValid ? "فعال" : "غیرفعال", "-", licenseMessage);
-    if (licenseValid) syncAllLocalContactsToCloud();
+    // Contacts sync to server only when an inbound message is ingested (not on startup bulk).
 
     chrome.storage.local.get({ autoReplyEnabled: false }, function (data) {
         if (data.autoReplyEnabled && licenseValid) {
@@ -2391,8 +2349,7 @@ chrome.storage.onChanged.addListener(function (changes, area) {
         cloudBulkSyncDone = false;
         refreshLicenseStatus().then(function () {
             ensureButton();
-            if (licenseValid) syncAllLocalContactsToCloud();
-            else if (isEnabled) applyAutoReplyEnabled(false, "cloud-lost");
+            if (!licenseValid && isEnabled) applyAutoReplyEnabled(false, "cloud-lost");
         });
     }
     if (changes.crmSettings) {

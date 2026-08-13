@@ -611,6 +611,7 @@
         ? ""
         : '<button type="button" class="crm-btn crm-members-btn" id="crm-download-members">دانلود اعضای گروه</button>') +
       '<button type="button" class="crm-btn secondary" id="crm-open-dash">باز کردن داشبورد کامل</button>' +
+      '<button type="button" class="crm-btn secondary" id="crm-clear-local">پاک کردن مخاطبین محلی</button>' +
       '<button type="button" class="crm-btn danger" id="crm-seat-logout">خروج از صندلی</button>' +
       "</div>" +
       '<div class="crm-banner">' +
@@ -726,6 +727,30 @@
 
     var openDashBtn = $("#crm-open-dash", panel);
     if (openDashBtn) openDashBtn.onclick = openDashboard;
+    var clearLocalBtn = $("#crm-clear-local", panel);
+    if (clearLocalBtn) {
+      clearLocalBtn.onclick = async function () {
+        var n = 0;
+        if (globalThis.IranexpediaCrm && IranexpediaCrm.getContacts) {
+          var list = await IranexpediaCrm.getContacts();
+          n = Array.isArray(list) ? list.length : 0;
+        }
+        var msg =
+          "همه مخاطبین ذخیره‌شده در افزونه (chrome.storage) پاک شوند؟\n" +
+          (n ? "تعداد: " + n + "\n" : "") +
+          "لیدهای سرور (/leads) جداگانه پاک می‌شوند.\n" +
+          "چت‌های visible سایدبار تا ~۴۵ ثانیه بعد دوباره اضافه می‌شوند.";
+        if (!confirm(msg)) return;
+        if (typeof window.__iranexpediaClearLocalContacts === "function") {
+          await window.__iranexpediaClearLocalContacts();
+        } else if (globalThis.IranexpediaCrm && IranexpediaCrm.clearAllContacts) {
+          await IranexpediaCrm.clearAllContacts();
+        }
+        alert("مخاطبین محلی پاک شد.");
+        lastRenderKey = "";
+        render();
+      };
+    }
     var logoutBtn = $("#crm-seat-logout", panel);
     if (logoutBtn) {
       logoutBtn.onclick = async function () {
