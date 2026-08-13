@@ -33,7 +33,6 @@ const PanelContext = createContext<PanelContextValue | null>(null);
 const PANEL_PREFIXES = [
   "/home",
   "/leads",
-  "/pipeline",
   "/inbox",
   "/tasks",
   "/channels",
@@ -100,7 +99,6 @@ export function PanelProvider({ children }: { children: ReactNode }) {
         const labels: Record<string, string> = {
           "/home": "میز کار",
           "/leads": "مخاطبین",
-          "/pipeline": "برد کانبان",
           "/inbox": "اینباکس",
           "/tasks": "وظایف",
           "/channels": "کانال‌ها",

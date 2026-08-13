@@ -16,7 +16,6 @@ import { PageLoading } from "@/components/ui/Spinner";
 const NAV = [
   { href: "/home", label: "میز کار", ico: "⌂" },
   { href: "/leads", label: "مخاطبین", ico: "☰" },
-  { href: "/pipeline", label: "برد کانبان", ico: "▦" },
   { href: "/inbox", label: "اینباکس", ico: "✉" },
   { href: "/tasks", label: "وظایف", ico: "☑" },
   { href: "/channels", label: "کانال‌ها", ico: "☎" },

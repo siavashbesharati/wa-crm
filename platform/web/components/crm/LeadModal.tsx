@@ -1,13 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { Switch } from "@/components/ui/Switch";
+import { PersianDateField } from "@/components/ui/PersianDateField";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
+import { formatJalali } from "@/lib/jalali";
 import {
   CHANNEL_LABELS,
   STAGES,
@@ -17,6 +20,7 @@ import {
   initials,
   memberLabel,
   TASK_STATUS_LABELS,
+  tasksBoardHref,
   type CrmTask,
   type Lead,
   type Member
@@ -128,6 +132,7 @@ function LeadTasksSection({
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
+  const [dueAt, setDueAt] = useState("");
   const [assigneeId, setAssigneeId] = useState(lead.assignee_id || "");
   const [showComposer, setShowComposer] = useState(startComposer);
   const [doneId, setDoneId] = useState<string | null>(null);
@@ -147,6 +152,7 @@ function LeadTasksSection({
     setAssigneeId(lead.assignee_id || "");
     setTitle("");
     setMessage("");
+    setDueAt("");
     setShowComposer(startComposer);
     void loadTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,6 +174,7 @@ function LeadTasksSection({
             title: title.trim(),
             message,
             assignee_id: assigneeId || null,
+            due_at: dueAt || null,
             source: "manual"
           })
         }),
@@ -176,6 +183,7 @@ function LeadTasksSection({
     if (ok) {
       setTitle("");
       setMessage("");
+      setDueAt("");
       setShowComposer(false);
       await loadTasks();
       await onChanged();
@@ -203,13 +211,18 @@ function LeadTasksSection({
           وظایف این مخاطب
           {openTasks.length > 0 ? ` (${openTasks.length} باز)` : ""}
         </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setShowComposer((v) => !v)}
-        >
-          {showComposer ? "انصراف" : "وظیفه جدید"}
-        </Button>
+        <div className="lead-tasks-head-actions">
+          <Link className="btn secondary sm" href={tasksBoardHref(lead.id)}>
+            برد وظایف این مخاطب
+          </Link>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowComposer((v) => !v)}
+          >
+            {showComposer ? "انصراف" : "وظیفه جدید"}
+          </Button>
+        </div>
       </div>
 
       {showComposer ? (
@@ -228,6 +241,7 @@ function LeadTasksSection({
               </option>
             ))}
           </select>
+          <PersianDateField value={dueAt} onChange={setDueAt} />
           <textarea
             rows={2}
             value={message}
@@ -253,6 +267,9 @@ function LeadTasksSection({
                 <div className="lead-task-copy">
                   <strong>{t.title}</strong>
                   {t.message ? <span className="hint">{t.message}</span> : null}
+                  {t.due_at ? (
+                    <span className="hint">سررسید: {formatJalali(t.due_at)}</span>
+                  ) : null}
                   {who ? <span className="hint">ارجاع: {memberLabel(who)}</span> : null}
                 </div>
                 <Button

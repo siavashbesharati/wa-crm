@@ -548,6 +548,51 @@ button, input, select, textarea {
   grid-column: 1 / -1;
 }
 
+.persian-date-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.persian-date-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.persian-date-row select {
+  flex: 1;
+  min-width: 0;
+}
+.persian-date-clear {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.persian-date-clear:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.task-lead-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -1250,6 +1295,72 @@ a.btn.wizard-btn:hover {
   background: var(--accent-soft);
   color: var(--accent);
 }
+.task-board {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.task-board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.task-board-filters > label,
+.task-board-filters .persian-date-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 0;
+}
+.task-board-filters > label {
+  flex: 1 1 160px;
+  max-width: 240px;
+}
+.task-board-filters .persian-date-field {
+  flex: 1 1 280px;
+  max-width: 360px;
+}
+.task-board-filters .btn {
+  align-self: flex-end;
+}
+.task-board-filters .task-add-btn {
+  margin-inline-start: auto;
+  align-self: flex-end;
+  width: 40px;
+  height: 40px;
+}
+.task-board .pipeline-col {
+  min-width: 300px;
+  width: 300px;
+}
+.task-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-add-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.task-add-btn:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
 
 .pipeline {
   display: flex;
@@ -1472,6 +1583,12 @@ a.btn.wizard-btn:hover {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+.lead-tasks-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .lead-task-composer {
   display: grid;
@@ -2139,6 +2256,51 @@ a.btn.wizard-btn:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
+.dash-today-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.dash-today-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2, #f8fafc);
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dash-today-card:hover {
+  border-color: #93c5fd;
+  box-shadow: var(--shadow);
+}
+.dash-today-card.overdue {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+.dash-today-title {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.dash-today-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.dash-today-msg {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 .dash-kpi-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2650,6 +2812,10 @@ a.btn.wizard-btn:hover {
     min-width: 220px;
     width: 220px;
     min-height: 360px;
+  }
+  .task-board .pipeline-col {
+    min-width: 300px;
+    width: 300px;
   }
   .card {
     padding: 12px 14px;

@@ -3,10 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Shell from "@/components/Shell";
-import { Card, EmptyState } from "@/components/ui/Card";
+import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { formatJalali } from "@/lib/jalali";
+import {
+  TASK_STATUS_LABELS,
+  tasksBoardHref,
+  type CrmTask,
+  type Lead
+} from "@/components/crm/shared";
 
 type Me = {
   org: {
@@ -52,6 +59,21 @@ const CHANNEL_COLORS = ["#2563eb", "#0ea5e9", "#8b5cf6", "#14b8a6", "#f59e0b"];
 
 function fmt(n: number) {
   return Math.round(n).toLocaleString("fa-IR");
+}
+
+function dayKey(d: Date) {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function isoDayKey(iso: string | null | undefined) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return dayKey(d);
+}
+
+function isOpenTask(status: string) {
+  return status === "open" || status === "in_progress";
 }
 
 function BarChart({
@@ -193,6 +215,8 @@ function Donut({
 export default function HomePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [dash, setDash] = useState<Dash | null>(null);
+  const [tasks, setTasks] = useState<CrmTask[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
 
@@ -203,7 +227,14 @@ export default function HomePage() {
         const m = await api<Me>("/auth/me");
         setMe(m);
         await api("/kpi/rollup", { method: "POST" }).catch(() => null);
-        setDash(await api<Dash>("/kpi/dashboard"));
+        const [d, t, l] = await Promise.all([
+          api<Dash>("/kpi/dashboard"),
+          api<CrmTask[]>("/tasks"),
+          api<Lead[]>("/leads")
+        ]);
+        setDash(d);
+        setTasks(t);
+        setLeads(l);
       } catch (e) {
         toast.push(e instanceof Error ? e.message : "خطا", "err");
       } finally {
@@ -235,6 +266,33 @@ export default function HomePage() {
   const weekOutbound = series.reduce((a, s) => a + s.outbound, 0);
   const weekLeads = series.reduce((a, s) => a + s.leads, 0);
 
+  const leadById = useMemo(() => {
+    const map = new Map<string, Lead>();
+    for (const l of leads) map.set(l.id, l);
+    return map;
+  }, [leads]);
+
+  const todayTasks = useMemo(() => {
+    const today = dayKey(new Date());
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+    return tasks
+      .filter((t) => isOpenTask(t.status) && t.due_at)
+      .map((t) => {
+        const due = new Date(t.due_at as string);
+        const overdue = !Number.isNaN(due.getTime()) && due < startToday;
+        const dueToday = isoDayKey(t.due_at) === today;
+        return { task: t, overdue, dueToday };
+      })
+      .filter((row) => row.dueToday || row.overdue)
+      .sort((a, b) => {
+        if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+        return (a.task.title || "").localeCompare(b.task.title || "", "fa");
+      });
+  }, [tasks]);
+
+  const visibleTodayTasks = todayTasks.slice(0, 8);
+
   return (
     <Shell title="میز کار" sub="گزارش‌ها، تحلیل فروش و وضعیت لحظه‌ای سازمان">
       {loading ? (
@@ -262,6 +320,67 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
+
+          <Card
+            title={`وظایف امروز (${fmt(todayTasks.length)})`}
+            help={{
+              title: "وظایف امروز",
+              body: "کارهای سررسید امروز و موارد عقب‌افتاده. روی کارت کلیک کنید تا برد وظایف باز شود."
+            }}
+            actions={
+              <Link className="btn secondary sm" href="/tasks">
+                برد وظایف
+              </Link>
+            }
+          >
+            {todayTasks.length === 0 ? (
+              <EmptyState
+                title="وظیفه‌ای برای امروز نیست"
+                text="اگر سررسید تعیین کنید، اینجا نمایش داده می‌شود."
+                action={
+                  <Link className="btn secondary sm" href="/tasks">
+                    ایجاد وظیفه
+                  </Link>
+                }
+              />
+            ) : (
+              <>
+                <div className="dash-today-grid">
+                  {visibleTodayTasks.map(({ task: t, overdue }) => {
+                    const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
+                    return (
+                      <Link
+                        key={t.id}
+                        href={tasksBoardHref(t.lead_id)}
+                        className={`dash-today-card ${overdue ? "overdue" : ""}`}
+                      >
+                        <strong className="dash-today-title">{t.title}</strong>
+                        <div className="dash-today-meta">
+                          <Badge tone={overdue ? "danger" : "accent"}>
+                            {overdue ? "عقب‌افتاده" : "امروز"}
+                          </Badge>
+                          <Badge>{TASK_STATUS_LABELS[t.status] || t.status}</Badge>
+                          {lead ? <Badge tone="accent">{lead.name}</Badge> : null}
+                        </div>
+                        {t.due_at ? (
+                          <span className="hint">{formatJalali(t.due_at)}</span>
+                        ) : null}
+                        {t.message ? (
+                          <span className="hint dash-today-msg">{t.message}</span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+                {todayTasks.length > visibleTodayTasks.length ? (
+                  <p className="hint" style={{ margin: "10px 0 0" }}>
+                    و {fmt(todayTasks.length - visibleTodayTasks.length)} مورد دیگر —{" "}
+                    <Link href="/tasks">مشاهده همه</Link>
+                  </p>
+                ) : null}
+              </>
+            )}
+          </Card>
 
           <div className="dash-kpi-grid">
             <div className="dash-kpi accent">
@@ -463,16 +582,15 @@ export default function HomePage() {
                     {Number(m.knowledge_docs) > 0 ? "✓" : "○"} دانش AI
                   </strong>
                 </Link>
-                <Link href="/pipeline" className="checklist-item">
-                  <strong>○ برد کانبان</strong>
+                <Link href="/tasks" className="checklist-item">
+                  <strong>○ برد وظایف</strong>
                 </Link>
               </div>
             </Card>
           )}
 
           <div className="dash-quick-links">
-            <Link href="/pipeline">برد کانبان</Link>
-            <Link href="/leads">لیدها</Link>
+            <Link href="/leads">مخاطبین</Link>
             <Link href="/tasks">وظایف</Link>
             <Link href="/ai-settings">تنظیمات AI</Link>
             <Link href="/billing">اشتراک</Link>

@@ -72,8 +72,18 @@ export const TASK_STATUS_DOT: Record<string, string> = {
   cancelled: "closed"
 };
 
-export function leadBoardHref(leadId: string) {
-  return `/pipeline?lead=${encodeURIComponent(leadId)}`;
+export function leadHref(leadId: string) {
+  return `/leads?lead=${encodeURIComponent(leadId)}`;
+}
+
+export function tasksBoardHref(leadId?: string | null) {
+  if (!leadId) return "/tasks";
+  return `/tasks?lead=${encodeURIComponent(leadId)}`;
+}
+
+export function tasksListHref(leadId?: string | null) {
+  if (!leadId) return "/tasks/list";
+  return `/tasks/list?lead=${encodeURIComponent(leadId)}`;
 }
 
 export const STAGES = ["جدید", "پیگیری", "پیشنهاد", "خرید", "بسته"] as const;
@@ -95,26 +105,19 @@ export function initials(text: string) {
   return (text || "?").trim().slice(0, 1);
 }
 
-export function CrmViewToggle({ mode }: { mode: "list" | "board" }) {
+export function TaskViewToggle({
+  mode,
+  leadId
+}: {
+  mode: "list" | "board";
+  leadId?: string | null;
+}) {
   return (
     <div className="view-toggle">
-      <Link href="/leads" className={mode === "list" ? "active" : ""}>
+      <Link href={tasksListHref(leadId)} className={mode === "list" ? "active" : ""}>
         لیست
       </Link>
-      <Link href="/pipeline" className={mode === "board" ? "active" : ""}>
-        برد کانبان
-      </Link>
-    </div>
-  );
-}
-
-export function TaskViewToggle({ mode }: { mode: "list" | "board" }) {
-  return (
-    <div className="view-toggle">
-      <Link href="/tasks" className={mode === "list" ? "active" : ""}>
-        لیست
-      </Link>
-      <Link href="/tasks/board" className={mode === "board" ? "active" : ""}>
+      <Link href={tasksBoardHref(leadId)} className={mode === "board" ? "active" : ""}>
         برد کانبان
       </Link>
     </div>

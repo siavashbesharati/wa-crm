@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
@@ -13,12 +14,12 @@ import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 import { LeadModal } from "@/components/crm/LeadModal";
 import {
-  CrmViewToggle,
   STAGES,
   STAGE_DOT,
   CHANNEL_LABELS,
   leadIdentity,
   LtrText,
+  tasksBoardHref,
   type Lead,
   type Member,
   memberLabel
@@ -64,6 +65,8 @@ function toEditForm(l: Lead): EditForm {
 }
 
 export default function LeadsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +105,16 @@ export default function LeadsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const id = searchParams.get("lead");
+    if (!id || leads.length === 0) return;
+    const found = leads.find((l) => l.id === id);
+    if (found) {
+      setDetailLead(found);
+      setOpenTaskComposer(false);
+    }
+  }, [searchParams, leads]);
 
   const channelOptions = useMemo(() => {
     const set = new Set<string>();
@@ -174,6 +187,12 @@ export default function LeadsPage() {
   function openContact(l: Lead, withTask = true) {
     setDetailLead(l);
     setOpenTaskComposer(withTask);
+  }
+
+  function closeDetail() {
+    setDetailLead(null);
+    setOpenTaskComposer(false);
+    if (searchParams.get("lead")) router.replace("/leads");
   }
 
   function closeForm() {
@@ -313,7 +332,6 @@ export default function LeadsPage() {
       sub="فهرست مخاطبین — روی نام کلیک کنید تا جزئیات باز شود و برایش وظیفه بسازید"
       search={nameFilter}
       onSearch={setNameFilter}
-      actions={<CrmViewToggle mode="list" />}
     >
       {loading ? (
         <PageLoading variant="list" />
@@ -331,9 +349,6 @@ export default function LeadsPage() {
             }}
             actions={
               <div className="row-actions">
-                <Link className="btn secondary sm" href="/pipeline">
-                  نمایش برد
-                </Link>
                 <Button size="sm" onClick={openCreate}>
                   افزودن لید
                 </Button>
@@ -549,6 +564,9 @@ export default function LeadsPage() {
                               >
                                 وظیفه
                               </Button>
+                              <Link className="btn secondary sm" href={tasksBoardHref(l.id)}>
+                                برد وظایف
+                              </Link>
                               <Button
                                 variant="danger"
                                 size="sm"
@@ -734,10 +752,7 @@ export default function LeadsPage() {
             lead={detailLead}
             members={members}
             startWithTaskComposer={openTaskComposer}
-            onClose={() => {
-              setDetailLead(null);
-              setOpenTaskComposer(false);
-            }}
+            onClose={closeDetail}
             onChanged={load}
           />
         </>      )}
