@@ -124,6 +124,25 @@ export function formatJalali(iso: string | null | undefined): string {
   return `${jd} ${PERSIAN_MONTHS[jm - 1]} ${jy}`;
 }
 
+export function isoToJalaliSlash(iso: string | null | undefined): string {
+  const parts = isoToJalali(iso);
+  if (!parts) return "";
+  const [jy, jm, jd] = parts;
+  return `${jy}/${pad(jm)}/${pad(jd)}`;
+}
+
+function toEnglishDigits(value: string) {
+  return value
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+}
+
+export function jalaliSlashToIso(value: string): string {
+  const m = toEnglishDigits(value.trim()).match(/^(\d{3,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return "";
+  return jalaliToIso(Number(m[1]), Number(m[2]), Number(m[3]));
+}
+
 export function todayJalali(): [number, number, number] {
   const n = new Date();
   return gregorianToJalali(n.getFullYear(), n.getMonth() + 1, n.getDate());

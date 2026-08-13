@@ -554,30 +554,27 @@ button, input, select, textarea {
   font-size: 12px;
   font-weight: 700;
   color: var(--muted);
+  text-align: center;
 }
 .persian-date-row {
   display: flex;
   gap: 6px;
   align-items: center;
 }
-.persian-date-row select {
-  flex: 1;
-  min-width: 0;
-}
-.persian-date-clear {
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 700;
+.persian-date-input {
   cursor: pointer;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 9px 10px 9px 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 4.5L6 8L9.5 4.5' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 14px center;
+  background-size: 12px;
 }
-.persian-date-clear:hover {
-  color: var(--text);
-  border-color: var(--text);
+jdp-container {
+  --jdp-primary: #2563eb;
+  font-family: Vazirmatn, Tahoma, sans-serif;
+  z-index: 4000;
 }
 
 .task-lead-filter-bar {
@@ -1296,20 +1293,40 @@ a.btn.wizard-btn:hover {
   color: var(--accent);
 }
 .task-board {
+  --task-col: 300px;
+  --task-gap: 12px;
+  --task-pad: 12px;
   display: grid;
-  gap: 12px;
+  gap: var(--task-gap);
   min-width: 0;
+  padding: var(--task-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow-x: auto;
 }
 .task-board-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 10px 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  gap: 10px var(--task-gap);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: calc(4 * var(--task-col) + 3 * var(--task-gap));
+}
+.task-board .pipeline {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: calc(4 * var(--task-col) + 3 * var(--task-gap));
+  gap: var(--task-gap);
+  padding: 0;
+  overflow: visible;
 }
 .task-board-filters > label,
 .task-board-filters .persian-date-field {
@@ -1319,6 +1336,7 @@ a.btn.wizard-btn:hover {
   font-weight: 700;
   color: var(--muted);
   min-width: 0;
+  text-align: center;
 }
 .task-board-filters > label {
   flex: 1 1 160px;
@@ -1326,7 +1344,11 @@ a.btn.wizard-btn:hover {
 }
 .task-board-filters .persian-date-field {
   flex: 1 1 280px;
-  max-width: 360px;
+  max-width: 142px;
+}
+.task-board-filters select,
+.task-board-filters .persian-date-input {
+  text-align: center;
 }
 .task-board-filters .btn {
   align-self: flex-end;
@@ -1338,8 +1360,9 @@ a.btn.wizard-btn:hover {
   height: 40px;
 }
 .task-board .pipeline-col {
-  min-width: 300px;
-  width: 300px;
+  flex: 1 1 0;
+  min-width: var(--task-col);
+  width: auto;
 }
 .task-toolbar {
   display: flex;
@@ -2814,8 +2837,8 @@ a.btn.wizard-btn:hover {
     min-height: 360px;
   }
   .task-board .pipeline-col {
-    min-width: 300px;
-    width: 300px;
+    min-width: var(--task-col);
+    width: auto;
   }
   .card {
     padding: 12px 14px;
