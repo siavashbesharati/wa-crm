@@ -184,6 +184,9 @@ class LeadBoardOrderItem(BaseModel):
 
 class LeadBoardReorderIn(BaseModel):
     updates: list[LeadBoardOrderItem]
+
+
+class TaskIn(BaseModel):
     title: str = ""
     message: str = ""
     lead_id: str | None = None

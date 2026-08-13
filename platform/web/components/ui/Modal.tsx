@@ -10,9 +10,18 @@ type ModalProps = {
   children: ReactNode;
   footer?: ReactNode;
   headerActions?: ReactNode;
+  panelClassName?: string;
 };
 
-export function Modal({ open, title, onClose, children, footer, headerActions }: ModalProps) {
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  footer,
+  headerActions,
+  panelClassName = ""
+}: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

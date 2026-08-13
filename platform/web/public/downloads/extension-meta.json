@@ -2,5 +2,8 @@
   "version": "7.7.2",
   "file": "iranexpedia-extension.zip",
   "download_path": "/downloads/iranexpedia-extension.zip",
-  "synced_at": "2026-08-13T13:11:30.678Z"
+  "root_zip": "WAchromeExtension-dist.zip",
+  "dist_folder": "WAchromeExtension-dist",
+  "packed_at": "2026-08-13T13:23:27.342Z",
+  "obfuscated": true
 }

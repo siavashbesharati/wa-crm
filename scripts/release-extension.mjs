@@ -64,34 +64,35 @@ function runNode(scriptRel, extraArgs = []) {
 
 /** Zip a folder so the archive root entry is the folder name. */
 function zipFolderAs(folderPath, zipPath, entryName) {
+  if (!existsSync(folderPath)) {
+    throw new Error(`Missing folder to zip: ${folderPath}`);
+  }
   if (existsSync(zipPath)) rmSync(zipPath);
 
   const isWin = process.platform === "win32";
   if (isWin) {
-    // Stage with the desired entry name, then Compress-Archive that folder
-    const stageParent = join(root, "_ext_zip_stage");
-    const stageFolder = join(stageParent, entryName);
-    rmSync(stageParent, { recursive: true, force: true });
-    mkdirSync(stageParent, { recursive: true });
+    // Compress the dist folder in place — staging copies often hit file locks on Windows
+    // (Chrome unpacked extension, AV, IDE) and leave no ZIP behind.
+    const ps = [
+      "$ErrorActionPreference = 'Stop'",
+      `if (Test-Path '${zipPath.replace(/'/g, "''")}') { Remove-Item '${zipPath.replace(/'/g, "''")}' -Force }`,
+      `Compress-Archive -Path '${folderPath.replace(/'/g, "''")}' -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`,
+      `if (-not (Test-Path '${zipPath.replace(/'/g, "''")}')) { throw 'ZIP was not created' }`
+    ].join("; ");
     execFileSync(
       "powershell.exe",
-      [
-        "-NoProfile",
-        "-Command",
-        [
-          `Copy-Item -Path '${folderPath.replace(/'/g, "''")}' -Destination '${stageFolder.replace(/'/g, "''")}' -Recurse -Force;`,
-          `Compress-Archive -Path '${stageFolder.replace(/'/g, "''")}' -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`
-        ].join(" ")
-      ],
+      ["-NoProfile", "-Command", ps],
       { stdio: "inherit" }
     );
-    rmSync(stageParent, { recursive: true, force: true });
-  // On Windows we stage; on Unix zip the dist folder by name from repo root
   } else {
     execFileSync("zip", ["-r", zipPath, entryName, "-x", "*.DS_Store", "*__pycache__*", "*.zip"], {
       cwd: root,
       stdio: "inherit"
     });
+  }
+
+  if (!existsSync(zipPath)) {
+    throw new Error(`ZIP was not created: ${zipPath}`);
   }
 }
 
