@@ -41,14 +41,14 @@ export function Modal({
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className="modal-panel"
+        className={`modal-panel ${panelClassName}`.trim()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={title ? "modal-title" : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h2 id="modal-title">{title}</h2>
+          {title ? <h2 id="modal-title">{title}</h2> : <div className="modal-header-spacer" />}
           <div className="modal-header-actions">
             {headerActions}
             <Button variant="ghost" size="sm" onClick={onClose} aria-label="بستن">

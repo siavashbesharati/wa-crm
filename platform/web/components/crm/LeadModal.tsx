@@ -11,8 +11,10 @@ import { useToast } from "@/components/ui/Toast";
 import {
   CHANNEL_LABELS,
   STAGES,
+  STAGE_DOT,
   leadIdentity,
   LtrText,
+  initials,
   memberLabel,
   type Lead,
   type Member
@@ -27,6 +29,87 @@ type LeadModalProps = {
   onChanged: () => void | Promise<void>;
   startInEdit?: boolean;
 };
+
+function LeadDetailView({
+  lead,
+  assignee
+}: {
+  lead: Lead;
+  assignee: Member | undefined;
+}) {
+  const identity = leadIdentity(lead);
+  const isGroup = lead.chat_type === "group";
+
+  return (
+    <div className="lead-modal-view">
+      <div className="lead-modal-hero">
+        <div className="lead-modal-avatar" aria-hidden>
+          {initials(lead.name)}
+        </div>
+        <div className="lead-modal-hero-copy">
+          <h3 className="lead-modal-name">{lead.name}</h3>
+          <div className="lead-modal-badges">
+            <Badge tone="accent">{isGroup ? "گروه" : "مخاطب"}</Badge>
+            <span className="lead-stage-pill">
+              <span className={`stage-dot ${STAGE_DOT[lead.stage] || "new"}`} />
+              {lead.stage}
+            </span>
+            <Badge tone={lead.bot_paused ? "danger" : "accent"}>
+              {lead.bot_paused ? "ربات متوقف" : "ربات فعال"}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      <div className="lead-info-tiles">
+        <div className="lead-info-tile">
+          <span className="lead-info-tile-label">شناسه / تلفن</span>
+          <LtrText className="lead-info-tile-value ltr-block">
+            {identity !== "-" ? identity : "—"}
+          </LtrText>
+        </div>
+        <div className="lead-info-tile">
+          <span className="lead-info-tile-label">کانال</span>
+          <span className="lead-info-tile-value">
+            {lead.source_channel
+              ? CHANNEL_LABELS[lead.source_channel] || lead.source_channel
+              : "—"}
+          </span>
+        </div>
+        <div className="lead-info-tile">
+          <span className="lead-info-tile-label">ارجاع</span>
+          <span className="lead-info-tile-value">
+            {assignee ? memberLabel(assignee) : "بدون ارجاع"}
+          </span>
+        </div>
+        <div className="lead-info-tile">
+          <span className="lead-info-tile-label">نوع چت</span>
+          <span className="lead-info-tile-value">{isGroup ? "گروه واتساپ" : "پیام خصوصی"}</span>
+        </div>
+      </div>
+
+      {(lead.tags || []).length > 0 ? (
+        <div className="lead-modal-section">
+          <span className="lead-modal-section-label">برچسب‌ها</span>
+          <div className="card-meta">
+            {(lead.tags || []).map((t) => (
+              <Badge key={t} tone="accent">
+                {t}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {lead.notes ? (
+        <div className="lead-modal-section">
+          <span className="lead-modal-section-label">یادداشت</span>
+          <div className="lead-modal-notes-box">{lead.notes}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function LeadModal({
   open,
@@ -114,20 +197,19 @@ export function LeadModal({
     <>
       <Modal
         open={open && !deleteOpen}
-        title={mode === "edit" ? `ویرایش: ${lead.name}` : lead.name}
+        title={mode === "edit" ? `ویرایش: ${lead.name}` : ""}
+        panelClassName={mode === "view" ? "lead-modal lead-modal-panel" : "lead-modal-panel"}
         onClose={closeAll}
         headerActions={
           mode === "view" ? (
-            <Button variant="ghost" size="sm" onClick={() => setMode("edit")} aria-label="ویرایش">
-              ✎
-            </Button>
+            <span className="lead-modal-header-tag">جزئیات لید</span>
           ) : null
         }
         footer={
           mode === "edit" ? (
             <>
               <Button loading={busy} onClick={saveForm}>
-                ذخیره
+                ذخیره تغییرات
               </Button>
               <Button variant="secondary" onClick={() => setMode("view")}>
                 انصراف
@@ -137,63 +219,19 @@ export function LeadModal({
               </Button>
             </>
           ) : (
-            <Button variant="secondary" onClick={closeAll}>
-              بستن
-            </Button>
+            <>
+              <Button onClick={() => setMode("edit")}>ویرایش لید</Button>
+              <Button variant="secondary" onClick={closeAll}>
+                بستن
+              </Button>
+            </>
           )
         }
       >
         {mode === "view" ? (
-          <div className="lead-detail-grid">
-            <div className="lead-detail-row">
-              <span className="lead-detail-label">نوع</span>
-              <span>{lead.chat_type === "group" ? "گروه" : "مخاطب"}</span>
-            </div>
-            <div className="lead-detail-row">
-              <span className="lead-detail-label">شناسه / تلفن</span>
-              <LtrText>{leadIdentity(lead)}</LtrText>
-            </div>
-            <div className="lead-detail-row">
-              <span className="lead-detail-label">مرحله</span>
-              <span>{lead.stage}</span>
-            </div>
-            <div className="lead-detail-row">
-              <span className="lead-detail-label">کانال</span>
-              <span>
-                {lead.source_channel
-                  ? CHANNEL_LABELS[lead.source_channel] || lead.source_channel
-                  : "—"}
-              </span>
-            </div>
-            <div className="lead-detail-row">
-              <span className="lead-detail-label">ارجاع</span>
-              <span>{assignee ? memberLabel(assignee) : "بدون ارجاع"}</span>
-            </div>
-            <div className="lead-detail-row">
-              <span className="lead-detail-label">ربات</span>
-              <span>{lead.bot_paused ? "متوقف" : "فعال"}</span>
-            </div>
-            {(lead.tags || []).length > 0 ? (
-              <div className="lead-detail-row full">
-                <span className="lead-detail-label">برچسب‌ها</span>
-                <div className="card-meta">
-                  {(lead.tags || []).map((t) => (
-                    <Badge key={t} tone="accent">
-                      {t}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {lead.notes ? (
-              <div className="lead-detail-row full">
-                <span className="lead-detail-label">یادداشت</span>
-                <p className="lead-detail-notes">{lead.notes}</p>
-              </div>
-            ) : null}
-          </div>
+          <LeadDetailView lead={lead} assignee={assignee} />
         ) : editForm ? (
-          <div className="form-grid">
+          <div className="form-grid lead-modal-form">
             <label>
               نام
               <input
@@ -290,6 +328,7 @@ export function LeadModal({
       <Modal
         open={deleteOpen}
         title="تأیید حذف لید"
+        panelClassName="lead-modal-panel"
         onClose={() => {
           setDeleteOpen(false);
           setDeleteConfirmName("");
