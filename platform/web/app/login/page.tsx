@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, saveSession } from "@/lib/api";
+import { api, clearSession, getSession, saveSession } from "@/lib/api";
+import { loadOrgMe } from "@/lib/me-cache";
 import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
@@ -23,6 +24,27 @@ export default function BusinessLoginPage() {
   const [shake, setShake] = useState(false);
   const autoSubmitRef = useRef("");
   const verifyingRef = useRef(false);
+
+  useEffect(() => {
+    const session = getSession();
+    if (!session) return;
+    let cancelled = false;
+    loadOrgMe(true)
+      .then((me) => {
+        if (cancelled) return;
+        if (me.needs_onboarding || (me.onboarding_step && me.onboarding_step !== "done")) {
+          router.replace("/onboarding");
+          return;
+        }
+        router.replace("/home");
+      })
+      .catch(() => {
+        clearSession();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     if (secondsLeft <= 0) return;

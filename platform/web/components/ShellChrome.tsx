@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearSession, getSession, api } from "@/lib/api";
+import { clearSession, getSession, logoutOrg, ORG_KEY, api } from "@/lib/api";
 import {
   EXTENSION_DOWNLOAD_NAME,
   EXTENSION_DOWNLOAD_URL,
   EXTENSION_VERSION_FALLBACK,
   type ExtensionMeta
 } from "@/lib/extension";
-import { getCachedOrgMe, loadOrgMe, type OrgMe } from "@/lib/me-cache";
+import { getCachedOrgMe, loadOrgMe } from "@/lib/me-cache";
 import { useEffect, useState, type ReactNode } from "react";
 import { PageLoading } from "@/components/ui/Spinner";
 
@@ -28,7 +28,7 @@ const NAV = [
   { href: "/support", label: "پشتیبانی", ico: "?" }
 ];
 
-function profileFromMe(me: OrgMe | null) {
+function profileFromMe(me: Awaited<ReturnType<typeof loadOrgMe>> | null) {
   if (!me) {
     return {
       orgName: "",
@@ -48,8 +48,6 @@ function profileFromMe(me: OrgMe | null) {
       typeof me.org?.days_remaining === "number" ? me.org.days_remaining : null
   };
 }
-
-let orgShellReady = false;
 
 export default function ShellChrome({
   title,
@@ -73,7 +71,7 @@ export default function ShellChrome({
   const cached = getCachedOrgMe();
   const initial = profileFromMe(cached);
 
-  const [ready, setReady] = useState(orgShellReady);
+  const [ready, setReady] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgName, setOrgName] = useState(initial.orgName);
@@ -87,15 +85,12 @@ export default function ShellChrome({
 
   useEffect(() => {
     if (!getSession()) {
-      orgShellReady = false;
       setReady(false);
       router.replace("/login");
       return;
     }
-    orgShellReady = true;
-    setReady(true);
     let cancelled = false;
-    loadOrgMe()
+    loadOrgMe(true)
       .then((me) => {
         if (cancelled) return;
         if (me.needs_onboarding || (me.onboarding_step && me.onboarding_step !== "done")) {
@@ -108,16 +103,29 @@ export default function ShellChrome({
         setPlanId(next.planId);
         setPlanName(next.planName);
         setDaysRemaining(next.daysRemaining);
+        setReady(true);
       })
       .catch(() => {
         if (cancelled) return;
-        orgShellReady = false;
         clearSession();
+        setReady(false);
         router.replace("/login");
       });
     return () => {
       cancelled = true;
     };
+  }, [router]);
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== ORG_KEY && e.key !== null) return;
+      if (!getSession()) {
+        setReady(false);
+        router.replace("/login");
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [router]);
 
   useEffect(() => {
@@ -274,9 +282,10 @@ export default function ShellChrome({
           <button
             className="btn secondary"
             onClick={() => {
-              orgShellReady = false;
-              clearSession();
-              router.replace("/login");
+              void logoutOrg().finally(() => {
+                setReady(false);
+                router.replace("/login");
+              });
             }}
           >
             <span className="label">خروج</span>

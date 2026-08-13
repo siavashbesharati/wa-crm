@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { clearPlatformSession, getPlatformSession } from "@/lib/api";
+import { clearPlatformSession, getPlatformSession, logoutPlatform, PLATFORM_KEY } from "@/lib/api";
 import { getCachedPlatformMe, loadPlatformMe } from "@/lib/me-cache";
 import { PageLoading } from "@/components/ui/Spinner";
 
@@ -19,8 +19,6 @@ const NAV = [
   { href: "/super/system", label: "سیستم", ico: "◉" }
 ];
 
-let platformShellReady = false;
-
 export default function SuperShell({
   title,
   sub,
@@ -35,7 +33,7 @@ export default function SuperShell({
   const pathname = usePathname();
   const router = useRouter();
   const cached = getCachedPlatformMe();
-  const [ready, setReady] = useState(platformShellReady);
+  const [ready, setReady] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userLabel, setUserLabel] = useState(
@@ -44,28 +42,38 @@ export default function SuperShell({
 
   useEffect(() => {
     if (!getPlatformSession()) {
-      platformShellReady = false;
       setReady(false);
       router.replace("/super/login");
       return;
     }
-    platformShellReady = true;
-    setReady(true);
     let cancelled = false;
-    loadPlatformMe()
+    loadPlatformMe(true)
       .then((me) => {
         if (cancelled) return;
         setUserLabel(me.user?.display_name || me.user?.phone || "سوپر ادمین");
+        setReady(true);
       })
       .catch(() => {
         if (cancelled) return;
-        platformShellReady = false;
         clearPlatformSession();
+        setReady(false);
         router.replace("/super/login");
       });
     return () => {
       cancelled = true;
     };
+  }, [router]);
+
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== PLATFORM_KEY && e.key !== null) return;
+      if (!getPlatformSession()) {
+        setReady(false);
+        router.replace("/super/login");
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [router]);
 
   useEffect(() => {
@@ -160,9 +168,10 @@ export default function SuperShell({
           <button
             className="btn secondary"
             onClick={() => {
-              platformShellReady = false;
-              clearPlatformSession();
-              router.replace("/super/login");
+              void logoutPlatform().finally(() => {
+                setReady(false);
+                router.replace("/super/login");
+              });
             }}
           >
             <span className="label">خروج سوپر ادمین</span>

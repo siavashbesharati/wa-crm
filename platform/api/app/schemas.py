@@ -34,6 +34,10 @@ class TokenRefreshIn(BaseModel):
     install_id: str = ""
 
 
+class LogoutIn(BaseModel):
+    refresh_token: str = Field(min_length=16)
+
+
 class OrgOut(BaseModel):
     id: str
     name: str

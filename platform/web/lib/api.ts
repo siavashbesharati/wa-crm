@@ -1,3 +1,5 @@
+import { clearOrgMeCache, clearPlatformMeCache } from "./me-cache";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 export type Session = {
@@ -16,11 +18,14 @@ export type PlatformSession = {
   scope: "platform";
 };
 
-const ORG_KEY = "wa_crm_session";
-const PLATFORM_KEY = "wa_platform_session";
+export const ORG_KEY = "wa_crm_session";
+export const PLATFORM_KEY = "wa_platform_session";
+const ORG_LOGOUT_KEY = "wa_org_logged_out";
+const PLATFORM_LOGOUT_KEY = "wa_platform_logged_out";
 
 function loadSession(): Session | null {
   if (typeof window === "undefined") return null;
+  if (sessionStorage.getItem(ORG_LOGOUT_KEY) === "1") return null;
   const raw = localStorage.getItem(ORG_KEY);
   if (!raw) return null;
   try {
@@ -32,6 +37,7 @@ function loadSession(): Session | null {
 
 function loadPlatformSession(): PlatformSession | null {
   if (typeof window === "undefined") return null;
+  if (sessionStorage.getItem(PLATFORM_LOGOUT_KEY) === "1") return null;
   const raw = localStorage.getItem(PLATFORM_KEY);
   if (!raw) return null;
   try {
@@ -42,14 +48,16 @@ function loadPlatformSession(): PlatformSession | null {
 }
 
 export function saveSession(session: Session) {
+  sessionStorage.removeItem(ORG_LOGOUT_KEY);
   localStorage.setItem(ORG_KEY, JSON.stringify(session));
 }
 
 export function clearSession() {
-  localStorage.removeItem(ORG_KEY);
   if (typeof window !== "undefined") {
-    void import("./me-cache").then((m) => m.clearOrgMeCache());
+    sessionStorage.setItem(ORG_LOGOUT_KEY, "1");
   }
+  localStorage.removeItem(ORG_KEY);
+  clearOrgMeCache();
 }
 
 export function getSession() {
@@ -57,18 +65,66 @@ export function getSession() {
 }
 
 export function savePlatformSession(session: PlatformSession) {
+  sessionStorage.removeItem(PLATFORM_LOGOUT_KEY);
   localStorage.setItem(PLATFORM_KEY, JSON.stringify(session));
 }
 
 export function clearPlatformSession() {
-  localStorage.removeItem(PLATFORM_KEY);
   if (typeof window !== "undefined") {
-    void import("./me-cache").then((m) => m.clearPlatformMeCache());
+    sessionStorage.setItem(PLATFORM_LOGOUT_KEY, "1");
   }
+  localStorage.removeItem(PLATFORM_KEY);
+  clearPlatformMeCache();
 }
 
 export function getPlatformSession() {
   return loadPlatformSession();
+}
+
+function redirectToLogin(platform: boolean) {
+  if (typeof window === "undefined") return;
+  const path = window.location.pathname;
+  if (platform) {
+    if (!path.startsWith("/super/login")) {
+      window.location.href = "/super/login";
+    }
+    return;
+  }
+  if (!path.startsWith("/login") && !path.startsWith("/onboarding")) {
+    window.location.href = "/login";
+  }
+}
+
+export async function logoutOrg() {
+  const session = loadSession();
+  clearSession();
+  if (session?.refresh_token) {
+    try {
+      await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: session.refresh_token })
+      });
+    } catch {
+      /* local session already cleared */
+    }
+  }
+}
+
+export async function logoutPlatform() {
+  const session = loadPlatformSession();
+  clearPlatformSession();
+  if (session?.refresh_token) {
+    try {
+      await fetch(`${API_URL}/admin/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: session.refresh_token })
+      });
+    } catch {
+      /* local session already cleared */
+    }
+  }
 }
 
 export async function api<T = unknown>(
@@ -93,6 +149,17 @@ export async function api<T = unknown>(
   }
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && options.auth !== false) {
+    if (options.platform) {
+      clearPlatformSession();
+      redirectToLogin(true);
+    } else {
+      clearSession();
+      redirectToLogin(false);
+    }
+    const detail = data.detail || data.message || "نشست منقضی شده — دوباره وارد شوید";
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
   if (!res.ok) {
     const detail = data.detail || data.message || "خطای سرور";
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));

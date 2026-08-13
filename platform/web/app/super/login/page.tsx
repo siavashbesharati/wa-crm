@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, savePlatformSession } from "@/lib/api";
+import { api, clearPlatformSession, getPlatformSession, savePlatformSession } from "@/lib/api";
+import { loadPlatformMe } from "@/lib/me-cache";
 import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
@@ -22,6 +23,22 @@ export default function SuperLoginPage() {
   const [shake, setShake] = useState(false);
   const autoSubmitRef = useRef("");
   const verifyingRef = useRef(false);
+
+  useEffect(() => {
+    const session = getPlatformSession();
+    if (!session) return;
+    let cancelled = false;
+    loadPlatformMe(true)
+      .then(() => {
+        if (!cancelled) router.replace("/super");
+      })
+      .catch(() => {
+        clearPlatformSession();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     if (secondsLeft <= 0) return;

@@ -12,13 +12,14 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import SuperAuthContext, get_super_auth
 from app.plans import ensure_default_plans, list_plans_admin, plan_exists, plan_limits, row_to_meta
-from app.schemas import OtpRequestIn, OtpVerifyIn, TokenOut
+from app.schemas import LogoutIn, OtpRequestIn, OtpVerifyIn, TokenOut
 from app.services.otp import consume_otp, issue_otp
 from app.services.sms import normalize_mobile_for_sms_ir
 from app.services.security import (
     create_access_token,
     create_platform_access_token,
     create_refresh_token,
+    revoke_refresh_token,
 )
 from app.models import (
     AiPolicy,
@@ -249,6 +250,13 @@ def super_login(body: SuperLoginIn, db: Session = Depends(get_db)):
         status_code=410,
         detail="ورود با رمز حذف شده است. از کد پیامکی (/admin/otp) استفاده کنید.",
     )
+
+
+@router.post("/logout")
+def super_logout(body: LogoutIn, db: Session = Depends(get_db)):
+    revoke_refresh_token(db, body.refresh_token)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/me")

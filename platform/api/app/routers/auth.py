@@ -18,7 +18,7 @@ from app.models import (
     User,
 )
 from app.plans import plan_limits
-from app.schemas import OtpRequestIn, OtpVerifyIn, TokenOut, TokenRefreshIn
+from app.schemas import LogoutIn, OtpRequestIn, OtpVerifyIn, TokenOut, TokenRefreshIn
 from app.services.otp import consume_otp, issue_otp
 from app.services.security import (
     create_access_token,
@@ -226,6 +226,14 @@ def refresh_session(body: TokenRefreshIn, db: Session = Depends(get_db)):
         is_new=False,
         onboarding_step=_org_step(org),
     )
+
+
+@router.post("/logout")
+def logout(body: LogoutIn, db: Session = Depends(get_db)):
+    """Revoke refresh token so the client session cannot be renewed."""
+    revoke_refresh_token(db, body.refresh_token)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/me")
