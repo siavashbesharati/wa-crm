@@ -14,9 +14,13 @@ from app.models import (
     ChannelType,
     ConnectorRole,
     ConnectorSession,
+    DivarAuthState,
+    LeadAccountLink,
     MemberRole,
+    Message,
     OutboundJob,
     OutboundStatus,
+    WaAuthState,
 )
 from app.plans import plan_limits
 from app.schemas import ChannelAccountIn, ChannelAccountOut, HeartbeatIn
@@ -91,6 +95,47 @@ def list_accounts(
     if dirty:
         db.commit()
     return [_account_out(r, live_online=(r.id in online_ids)) for r in rows]
+
+
+def _purge_account_auth_and_row(db: Session, acc: ChannelAccount) -> None:
+    """Wipe stored session/auth and delete the channel account row."""
+    account_id = acc.id
+    org_id = acc.org_id
+    db.query(WaAuthState).filter(WaAuthState.account_id == account_id).delete(synchronize_session=False)
+    db.query(DivarAuthState).filter(DivarAuthState.account_id == account_id).delete(
+        synchronize_session=False
+    )
+    db.query(ConnectorSession).filter(
+        ConnectorSession.org_id == org_id, ConnectorSession.account_id == account_id
+    ).delete(synchronize_session=False)
+    db.query(OutboundJob).filter(
+        OutboundJob.org_id == org_id, OutboundJob.account_id == account_id
+    ).delete(synchronize_session=False)
+    db.query(LeadAccountLink).filter(
+        LeadAccountLink.org_id == org_id, LeadAccountLink.account_id == account_id
+    ).delete(synchronize_session=False)
+    db.query(Message).filter(Message.org_id == org_id, Message.account_id == account_id).delete(
+        synchronize_session=False
+    )
+    db.delete(acc)
+    db.commit()
+
+
+@router.delete("/accounts/{account_id}")
+def delete_account(
+    account_id: str,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    acc = (
+        db.query(ChannelAccount)
+        .filter(ChannelAccount.id == account_id, ChannelAccount.org_id == auth.org.id)
+        .first()
+    )
+    if not acc:
+        raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
+    _purge_account_auth_and_row(db, acc)
+    return {"ok": True, "deleted": True}
 
 
 @router.post("/accounts", response_model=ChannelAccountOut)

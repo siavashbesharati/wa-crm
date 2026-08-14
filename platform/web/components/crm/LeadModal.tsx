@@ -11,8 +11,8 @@ import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 import { formatJalali } from "@/lib/jalali";
+import { ChannelBadge } from "@/components/channels/brand";
 import {
-  CHANNEL_LABELS,
   STAGES,
   STAGE_DOT,
   leadIdentity,
@@ -78,9 +78,7 @@ function LeadDetailView({
         <div className="lead-info-tile">
           <span className="lead-info-tile-label">کانال</span>
           <span className="lead-info-tile-value">
-            {lead.source_channel
-              ? CHANNEL_LABELS[lead.source_channel] || lead.source_channel
-              : "—"}
+            {lead.source_channel ? <ChannelBadge channel={lead.source_channel} /> : "—"}
           </span>
         </div>
         <div className="lead-info-tile">

@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 import { LeadModal } from "@/components/crm/LeadModal";
+import { ChannelBadge } from "@/components/channels/brand";
 import {
   STAGES,
   STAGE_DOT,
@@ -519,9 +520,7 @@ export default function LeadsPage() {
                             <LtrText>{leadIdentity(l)}</LtrText>
                           </td>                          <td>
                             {l.source_channel ? (
-                              <Badge tone="accent">
-                                {CHANNEL_LABELS[l.source_channel] || l.source_channel}
-                              </Badge>
+                              <ChannelBadge channel={l.source_channel} />
                             ) : (
                               "-"
                             )}

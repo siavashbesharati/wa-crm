@@ -1983,9 +1983,37 @@ a.btn.wizard-btn:hover {
   color: #075e54;
 }
 .ch-badge.divar {
-  background: rgba(166, 25, 46, 0.12);
+  background: rgba(166, 25, 46, 0.1);
   color: #a6192e;
 }
+.channel-brand {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.channel-brand.xs { width: 16px; height: 16px; }
+.channel-brand.sm { width: 40px; height: 40px; }
+.channel-brand.md { width: 44px; height: 44px; }
+.channel-brand.lg { width: 72px; height: 72px; margin-bottom: 8px; }
+.channel-brand svg { width: 62%; height: 62%; display: block; }
+.channel-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.channel-brand.whatsapp {
+  border-radius: 50%;
+  background: rgba(37, 211, 102, 0.16);
+  color: #128c7e;
+}
+.channel-brand.divar {
+  background: #111;
+  border-radius: 10px;
+}
+.channel-brand.xs.divar { border-radius: 4px; }
+.channel-brand.sm.divar { border-radius: 8px; }
 
 .chat-stage {
   display: flex;
@@ -2282,6 +2310,13 @@ a.btn.wizard-btn:hover {
 .channel-account-meta span {
   color: var(--muted);
   font-size: 12px;
+}
+.channel-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .pair-lead {
   margin: 0 0 16px;
