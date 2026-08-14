@@ -904,10 +904,8 @@ input.ltr-text {
   justify-content: center;
 }
 .lead-row-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 80;
   min-width: 148px;
   padding: 6px;
   border-radius: 12px;
@@ -917,6 +915,8 @@ input.ltr-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
 }
 .lead-row-menu button,
 .lead-row-menu-link {

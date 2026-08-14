@@ -86,7 +86,9 @@ export default function LeadsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [openTaskComposer, setOpenTaskComposer] = useState(false);
-  const [menuLeadId, setMenuLeadId] = useState<string | null>(null);
+  const [menuLead, setMenuLead] = useState<{ leadId: string; x: number; y: number } | null>(
+    null
+  );
   const [tagsPop, setTagsPop] = useState<{ leadId: string; x: number; y: number } | null>(
     null
   );
@@ -103,11 +105,21 @@ export default function LeadsPage() {
 
   function openTagsPop(leadId: string, clientX: number, clientY: number) {
     clearTagsPopTimer();
-    setMenuLeadId(null);
+    setMenuLead(null);
     // Fixed above the cursor tip
     const x = Math.min(Math.max(12, clientX), window.innerWidth - 12);
     const y = Math.min(Math.max(12, clientY - 6), window.innerHeight - 12);
     setTagsPop({ leadId, x, y });
+  }
+
+  function openRowMenu(leadId: string, clientX: number, clientY: number) {
+    setTagsPop(null);
+    setMenuLead((cur) => {
+      if (cur?.leadId === leadId) return null;
+      const x = Math.min(Math.max(12, clientX), window.innerWidth - 12);
+      const y = Math.min(Math.max(12, clientY), window.innerHeight - 12);
+      return { leadId, x, y };
+    });
   }
 
   function scheduleCloseTagsPop() {
@@ -139,15 +151,15 @@ export default function LeadsPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!menuLeadId) return;
-    const onDoc = () => setMenuLeadId(null);
+    if (!menuLead) return;
+    const onDoc = () => setMenuLead(null);
     // defer so the opening click doesn't immediately close
     const t = window.setTimeout(() => document.addEventListener("click", onDoc), 0);
     return () => {
       window.clearTimeout(t);
       document.removeEventListener("click", onDoc);
     };
-  }, [menuLeadId]);
+  }, [menuLead]);
 
   useEffect(() => {
     return () => clearTagsPopTimer();
@@ -554,7 +566,7 @@ export default function LeadsPage() {
                           const tags = l.tags || [];
                           const visibleTags = tags.slice(0, 2);
                           const extraTags = tags.length - visibleTags.length;
-                          const menuOpen = menuLeadId === l.id;
+                          const menuOpen = menuLead?.leadId === l.id;
                           return (
                             <tr key={l.id}>
                               <td>
@@ -694,19 +706,28 @@ export default function LeadsPage() {
                                     size="sm"
                                     aria-expanded={menuOpen}
                                     aria-haspopup="menu"
-                                    onClick={() =>
-                                      setMenuLeadId((cur) => (cur === l.id ? null : l.id))
-                                    }
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openRowMenu(l.id, e.clientX, e.clientY);
+                                    }}
                                   >
                                     ⋯
                                   </Button>
-                                  {menuOpen ? (
-                                    <div className="lead-row-menu" role="menu">
+                                  {menuOpen && menuLead ? (
+                                    <div
+                                      className="lead-row-menu"
+                                      role="menu"
+                                      style={{
+                                        top: menuLead.y,
+                                        left: menuLead.x
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
                                       <button
                                         type="button"
                                         role="menuitem"
                                         onClick={() => {
-                                          setMenuLeadId(null);
+                                          setMenuLead(null);
                                           openContact(l, false);
                                         }}
                                       >
@@ -716,7 +737,7 @@ export default function LeadsPage() {
                                         type="button"
                                         role="menuitem"
                                         onClick={() => {
-                                          setMenuLeadId(null);
+                                          setMenuLead(null);
                                           openContact(l, true);
                                         }}
                                       >
@@ -726,7 +747,7 @@ export default function LeadsPage() {
                                         className="lead-row-menu-link"
                                         href={tasksBoardHref(l.id)}
                                         role="menuitem"
-                                        onClick={() => setMenuLeadId(null)}
+                                        onClick={() => setMenuLead(null)}
                                       >
                                         برد وظایف
                                       </Link>
@@ -736,7 +757,7 @@ export default function LeadsPage() {
                                           role="menuitem"
                                           disabled={busy}
                                           onClick={() => {
-                                            setMenuLeadId(null);
+                                            setMenuLead(null);
                                             void setBotPaused(l.id, false);
                                           }}
                                         >
@@ -748,7 +769,7 @@ export default function LeadsPage() {
                                           role="menuitem"
                                           disabled={busy}
                                           onClick={() => {
-                                            setMenuLeadId(null);
+                                            setMenuLead(null);
                                             void setBotPaused(l.id, true);
                                           }}
                                         >
@@ -760,7 +781,7 @@ export default function LeadsPage() {
                                         role="menuitem"
                                         className="danger"
                                         onClick={() => {
-                                          setMenuLeadId(null);
+                                          setMenuLead(null);
                                           openDeleteConfirm(l);
                                         }}
                                       >
