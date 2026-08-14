@@ -41,7 +41,7 @@ def _looks_like_phone(value: str | None) -> bool:
 
 def _is_wa_jid(value: str | None) -> bool:
     s = str(value or "")
-    return "@g.us" in s or "@c.us" in s or "@s.whatsapp.net" in s
+    return "@g.us" in s or "@c.us" in s or "@s.whatsapp.net" in s or s.endswith("@lid")
 
 
 def _is_divar_style_id(value: str | None) -> bool:
@@ -572,7 +572,12 @@ def _touch_lead_from_ingest(
         elif (
             chat_name
             and chat_name != external_chat_id
-            and (not lead.name or lead.name == external_chat_id)
+            and (
+                not lead.name
+                or lead.name == external_chat_id
+                or (lead.name or "").endswith("@lid")
+                or (lead.name or "").endswith("@s.whatsapp.net")
+            )
         ):
             lead.name = chat_name[:200]
         _heal_display_name_phone(lead)
@@ -715,12 +720,25 @@ def _ensure_account_link(
 
 
 def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, acc: ChannelAccount) -> Lead:
+    from app.services.lead_identity import (
+        apply_wa_identity,
+        find_wa_identity_candidates,
+        is_lid_jid,
+        merge_lead_into,
+        normalize_lid,
+        pick_winner,
+        prefer_pn_external,
+    )
+
     external_chat_id = (body.external_chat_id or "").strip() or None
     phone = (body.phone or "").strip() or None
     chat_name = (body.chat_name or body.ad_title or "").strip() or "بدون نام"
     post_token = (body.post_token or "").strip()
     source_channel = acc.channel.value if isinstance(acc.channel, ChannelType) else str(acc.channel)
     ingest_group = _ingest_is_group(body, external_chat_id)
+    wa_lid = normalize_lid(getattr(body, "wa_lid", None) or "")
+    if not wa_lid and external_chat_id and is_lid_jid(external_chat_id):
+        wa_lid = normalize_lid(external_chat_id)
 
     # WhatsApp must not use display name as external id / phone
     if (
@@ -736,6 +754,12 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
     # Group messages never carry the sender phone into lead.phone matching
     if ingest_group:
         phone = None
+        wa_lid = ""
+    else:
+        # Prefer stable PN jid as external_chat_id when phone is known
+        preferred = prefer_pn_external(phone, external_chat_id, wa_lid or None)
+        if preferred:
+            external_chat_id = preferred
 
     def _link_lead_ok(link_row: LeadAccountLink) -> Lead | None:
         lead_row = db.get(Lead, link_row.lead_id)
@@ -748,17 +772,23 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             return None
         return lead_row
 
-    link = None
-    if external_chat_id:
-        link = (
+    def _find_link_by_ext(ext: str | None) -> LeadAccountLink | None:
+        if not ext:
+            return None
+        return (
             db.query(LeadAccountLink)
             .filter(
                 LeadAccountLink.org_id == org_id,
                 LeadAccountLink.account_id == body.account_id,
-                LeadAccountLink.external_chat_id == external_chat_id,
+                LeadAccountLink.external_chat_id == ext,
             )
             .first()
         )
+
+    link = _find_link_by_ext(external_chat_id)
+    # Also match legacy LID-keyed links when ingest now carries PN + lid
+    if not link and wa_lid and wa_lid != external_chat_id:
+        link = _find_link_by_ext(wa_lid)
     # For groups, do NOT fall back to chat_name (often was sender pushName historically).
     # For PV, chat_name match is OK only against non-group leads.
     if not link and chat_name and not ingest_group:
@@ -776,38 +806,19 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
                 link = cand
                 break
 
+    lead: Lead | None = None
     if link:
         lead = _link_lead_ok(link)
-        if lead:
-            _touch_lead_from_ingest(
-                lead,
-                phone=phone,
-                external_chat_id=external_chat_id,
-                post_token=post_token,
-                source_channel=source_channel,
-                body=body,
-                chat_name=chat_name,
-            )
-            db.add(lead)
-            if external_chat_id and not link.external_chat_id:
-                link.external_chat_id = external_chat_id
-                db.add(link)
-            return lead
-
-    lead = None
-    if external_chat_id:
-        lead = (
-            db.query(Lead)
-            .filter(Lead.org_id == org_id, Lead.external_chat_id == external_chat_id)
-            .first()
-        )
-        if lead and ingest_group and not _lead_is_group(lead):
-            lead = None
-        if lead and (not ingest_group) and _lead_is_group(lead):
-            lead = None
 
     if ingest_group:
-        # Groups: only match by group jid / group_id — never by phone or display name
+        if not lead and external_chat_id:
+            cand = (
+                db.query(Lead)
+                .filter(Lead.org_id == org_id, Lead.external_chat_id == external_chat_id)
+                .first()
+            )
+            if cand and _lead_is_group(cand):
+                lead = cand
         if not lead and body.group_id:
             lead = (
                 db.query(Lead)
@@ -829,26 +840,20 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
                 .first()
             )
     else:
-        # PV: never match group leads by phone / name
-        if not lead and external_chat_id:
-            cand = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == external_chat_id).first()
-            if cand and not _lead_is_group(cand):
-                lead = cand
-        if not lead and phone:
-            cand = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == phone).first()
-            if cand and not _lead_is_group(cand):
-                lead = cand
-        if not lead and phone:
-            cand = (
-                db.query(Lead)
-                .filter(Lead.org_id == org_id, Lead.external_chat_id == phone)
-                .first()
-            )
-            if cand and not _lead_is_group(cand):
-                lead = cand
+        # Collect all LID/PN/phone matches and merge duplicates into one lead
+        id_cands = find_wa_identity_candidates(
+            db,
+            org_id=org_id,
+            external_chat_id=external_chat_id,
+            phone=phone,
+            wa_lid=wa_lid or None,
+        )
+        by_id: dict[str, Lead] = {c.id: c for c in id_cands}
+        if lead:
+            by_id[lead.id] = lead
         # Name match only for PV, and only when name isn't a raw jid
         if (
-            not lead
+            not by_id
             and chat_name
             and chat_name != external_chat_id
             and not chat_name.endswith("@g.us")
@@ -861,11 +866,25 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
                 .first()
             )
             if cand and not _lead_is_group(cand):
-                lead = cand
+                by_id[cand.id] = cand
+
+        members = list(by_id.values())
+        if len(members) > 1:
+            winner = pick_winner(db, members)
+            for m in members:
+                if m.id != winner.id:
+                    merge_lead_into(db, winner=winner, loser=m)
+            lead = winner
+            # Re-fetch link after merge (loser links may have moved)
+            link = _find_link_by_ext(external_chat_id) or _find_link_by_ext(wa_lid) or link
+        elif len(members) == 1:
+            lead = members[0]
 
     if not lead:
         display = (body.ad_title or chat_name)[:200]
         if display == external_chat_id and phone:
+            display = phone[:200]
+        if display.endswith("@lid") and phone:
             display = phone[:200]
         if ingest_group and (display.endswith("@g.us") or display == external_chat_id):
             # Keep jid as placeholder name until a human title is known
@@ -888,6 +907,7 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             if inferred_type == "group"
             else "",
             external_chat_id=external_chat_id,
+            wa_lid=wa_lid or "",
             post_token=post_token,
             source_channel=source_channel,
             chat_type=inferred_type,
@@ -905,6 +925,14 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             body=body,
             chat_name=chat_name,
         )
+        if not ingest_group:
+            apply_wa_identity(
+                lead,
+                phone=phone,
+                external_chat_id=external_chat_id,
+                wa_lid=wa_lid or None,
+                chat_name=chat_name,
+            )
         db.add(lead)
 
     # Link chat_name for groups should be stable (jid or title), not sender name
@@ -912,13 +940,29 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
     if ingest_group and external_chat_id:
         link_chat_name = external_chat_id
 
+    # Prefer PN on the account link; upgrade legacy @lid link ids in place
+    link_ext = external_chat_id
+    if not ingest_group and link and wa_lid and (link.external_chat_id or "") == wa_lid:
+        if external_chat_id and not is_lid_jid(external_chat_id):
+            taken = _ext_id_taken(
+                db,
+                org_id=org_id,
+                account_id=body.account_id,
+                external_chat_id=external_chat_id,
+                exclude_link_id=link.id,
+            )
+            if not taken:
+                link.external_chat_id = external_chat_id
+                db.add(link)
+                link_ext = external_chat_id
+
     _ensure_account_link(
         db,
         org_id=org_id,
         lead_id=lead.id,
         account_id=body.account_id,
         chat_name=link_chat_name,
-        external_chat_id=external_chat_id,
+        external_chat_id=link_ext,
     )
     return lead
 

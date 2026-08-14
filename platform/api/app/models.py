@@ -298,6 +298,8 @@ class Lead(Base):
     phone: Mapped[str] = mapped_column(String(32), default="", index=True)
     group_id: Mapped[str] = mapped_column(String(80), default="", index=True)
     external_chat_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    # WhatsApp Linked ID (…@lid) — kept even when external_chat_id is upgraded to PN
+    wa_lid: Mapped[str] = mapped_column(String(120), default="", index=True)
     post_token: Mapped[str] = mapped_column(String(120), default="")
     source_channel: Mapped[str] = mapped_column(String(40), default="")
     chat_type: Mapped[str] = mapped_column(String(20), default="pv")

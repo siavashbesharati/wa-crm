@@ -56,6 +56,7 @@ def _to_out(lead: Lead) -> LeadOut:
         phone=lead.phone or "",
         group_id=lead.group_id or "",
         external_chat_id=lead.external_chat_id,
+        wa_lid=getattr(lead, "wa_lid", None) or "",
         post_token=lead.post_token or "",
         source_channel=lead.source_channel or "",
         chat_type=lead.chat_type,
@@ -128,6 +129,19 @@ def list_leads(
 
     rows.sort(key=sort_key)
     return [_to_out(r) for r in rows]
+
+
+@router.post("/merge-wa-duplicates")
+def merge_wa_duplicates(
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    """One-shot: merge WhatsApp LID/PN duplicate PV leads in this org."""
+    from app.services.lead_identity import merge_org_wa_duplicates
+
+    merged = merge_org_wa_duplicates(db, auth.org.id)
+    db.commit()
+    return {"ok": True, "merged": merged}
 
 
 @router.post("", response_model=LeadOut)

@@ -27,6 +27,7 @@ import {
   leadHref,
   memberLabel,
   initials,
+  tagLabel,
   type CrmTask,
   type Lead,
   type Member
@@ -56,6 +57,7 @@ function sameCalendarDay(a: string | null | undefined, b: string | null | undefi
 export default function TasksBoardPage() {
   const searchParams = useSearchParams();
   const leadFilter = searchParams.get("lead") || "";
+  const tagFromUrl = searchParams.get("tag") || "";
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -63,8 +65,8 @@ export default function TasksBoardPage() {
   const [q, setQ] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [dueFilter, setDueFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [contactFilter, setContactFilter] = useState(leadFilter);
+  const [tagFilter, setTagFilter] = useState(tagFromUrl);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStatus, setOverStatus] = useState<string | null>(null);
   const [overCardId, setOverCardId] = useState<string | null>(null);
@@ -101,6 +103,10 @@ export default function TasksBoardPage() {
   }, [leadFilter]);
 
   useEffect(() => {
+    setTagFilter(tagFromUrl);
+  }, [tagFromUrl]);
+
+  useEffect(() => {
     setDetailTask((prev) => {
       if (!prev) return prev;
       return tasks.find((t) => t.id === prev.id) || null;
@@ -113,6 +119,16 @@ export default function TasksBoardPage() {
     return map;
   }, [leads]);
 
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of leads) {
+      for (const t of l.tags || []) {
+        if (t) set.add(t);
+      }
+    }
+    return Array.from(set).sort((a, b) => tagLabel(a).localeCompare(tagLabel(b), "fa"));
+  }, [leads]);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return tasks.filter((t) => {
@@ -121,7 +137,10 @@ export default function TasksBoardPage() {
       } else if (contactFilter && t.lead_id !== contactFilter) {
         return false;
       }
-      if (statusFilter && t.status !== statusFilter) return false;
+      if (tagFilter) {
+        const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
+        if (!lead || !(lead.tags || []).includes(tagFilter)) return false;
+      }
       if (dueFilter && !sameCalendarDay(t.due_at, dueFilter)) return false;
       if (!needle) return true;
       const leadName = t.lead_id ? leadById.get(t.lead_id)?.name || "" : "";
@@ -131,7 +150,7 @@ export default function TasksBoardPage() {
         leadName.toLowerCase().includes(needle)
       );
     });
-  }, [tasks, q, leadById, contactFilter, statusFilter, dueFilter]);
+  }, [tasks, q, leadById, contactFilter, tagFilter, dueFilter]);
 
   async function persistBoardOrder(updates: TaskBoardOrderUpdate[], prev: CrmTask[]) {
     if (updates.length === 0) return;
@@ -195,17 +214,24 @@ export default function TasksBoardPage() {
 
   const createLeadId = selectedContact?.id || "";
 
+  const boardTitle = selectedContact
+    ? `برد وظایف — ${selectedContact.name}`
+    : tagFilter
+      ? `برد وظایف — ${tagLabel(tagFilter)}`
+      : "برد وظایف";
+  const boardSub = selectedContact
+    ? "فقط کارهای همین مخاطب — کارت‌ها را بکشید برای تغییر وضعیت یا اولویت"
+    : tagFilter
+      ? `فقط وظایف مخاطبینی با برچسب «${tagLabel(tagFilter)}»`
+      : "کارت‌ها را بکشید برای تغییر وضعیت یا اولویت";
+
   return (
     <Shell
-      title={selectedContact ? `برد وظایف — ${selectedContact.name}` : "برد وظایف"}
-      sub={
-        selectedContact
-          ? "فقط کارهای همین مخاطب — کارت‌ها را بکشید برای تغییر وضعیت یا اولویت"
-          : "کارت‌ها را بکشید برای تغییر وضعیت یا اولویت"
-      }
+      title={boardTitle}
+      sub={boardSub}
       search={q}
       onSearch={setQ}
-      actions={<TaskViewToggle mode="board" leadId={createLeadId || null} />}
+      actions={<TaskViewToggle mode="board" leadId={createLeadId || null} tag={tagFilter || null} />}
     >
       {loading ? (
         <PageLoading />
@@ -213,17 +239,6 @@ export default function TasksBoardPage() {
         <div className="task-board">
           <div className="task-board-filters">
             <PersianDateField value={dueFilter} onChange={setDueFilter} />
-            <label>
-              مرحله
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                <option value="">همه مرحله‌ها</option>
-                {TASK_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {TASK_STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label>
               مخاطب مرتبط
               <select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)}>
@@ -236,10 +251,30 @@ export default function TasksBoardPage() {
                 ))}
               </select>
             </label>
+            <label>
+              برچسب
+              <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+                <option value="">همه برچسب‌ها</option>
+                {tagOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {tagLabel(t)}
+                  </option>
+                ))}
+              </select>
+            </label>
             {selectedContact ? (
               <Link className="btn secondary sm" href={leadHref(selectedContact.id)}>
                 کارت مخاطب
               </Link>
+            ) : null}
+            {tagFilter ? (
+              <button
+                type="button"
+                className="btn secondary sm"
+                onClick={() => setTagFilter("")}
+              >
+                پاک برچسب ({tagLabel(tagFilter)})
+              </button>
             ) : null}
             <button
               type="button"
@@ -358,21 +393,6 @@ export default function TasksBoardPage() {
                                 بدون ارجاع
                               </span>
                             )}
-                            <select
-                              className="sm"
-                              style={{ width: "auto", maxWidth: 120, padding: "4px 6px", fontSize: 11 }}
-                              value={t.status}
-                              onChange={(e) => {
-                                void applyBoardDrop(t.id, e.target.value, null, true);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {TASK_STATUSES.map((s) => (
-                                <option key={s} value={s}>
-                                  {TASK_STATUS_LABELS[s]}
-                                </option>
-                              ))}
-                            </select>
                           </div>
                         </div>
                       );

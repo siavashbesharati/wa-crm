@@ -527,9 +527,9 @@ def handle_campaign_send(payload: dict) -> dict:
         queued = 0
         for row in pending:
             lead = db.get(Lead, row.lead_id)
-            if not lead or lead.bot_paused:
+            if not lead:
                 row.status = "skipped"
-                row.error = "bot_paused_or_missing"
+                row.error = "lead_missing"
                 db.add(row)
                 continue
             if (lead.chat_type or "").lower() == "group":

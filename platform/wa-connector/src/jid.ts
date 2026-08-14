@@ -83,10 +83,20 @@ export type MessageKeyLike = {
   participantAlt?: string | null;
 };
 
+/** Prefer a Linked-ID (@lid) from candidates. */
+export function preferLidJid(...candidates: Array<string | null | undefined>): string {
+  for (const c of candidates) {
+    const j = (c || "").trim();
+    if (j && isLidJid(j)) return stripDevice(j);
+  }
+  return "";
+}
+
 /**
  * Chat identity for CRM:
  * - Prefer phone JID for DMs when available (senderPn / remoteJidAlt / PN remoteJid)
  * - Keep @lid as external_chat_id fallback when no PN known
+ * - Always return `lid` when known so API can merge LID↔PN duplicates
  * - phone field only set when we have a real PN
  */
 export function resolveChatIdentity(key: MessageKeyLike, isGroup: boolean) {
@@ -96,6 +106,7 @@ export function resolveChatIdentity(key: MessageKeyLike, isGroup: boolean) {
       externalChatId: remoteJid,
       phone: "",
       groupId: remoteJid,
+      lid: "",
     };
   }
 
@@ -107,14 +118,23 @@ export function resolveChatIdentity(key: MessageKeyLike, isGroup: boolean) {
     isPnJid(remoteJid) ? remoteJid : ""
   );
   const phone = phoneFromJid(pnCandidate);
+  const lid = preferLidJid(
+    isLidJid(remoteJid) ? remoteJid : "",
+    key.senderLid,
+    key.participantLid,
+    // Alt fields are usually PN, but keep for completeness
+    isLidJid(key.remoteJidAlt || "") ? key.remoteJidAlt : "",
+    isLidJid(key.participantAlt || "") ? key.participantAlt : ""
+  );
   // Stable chat id: prefer PN jid so leads merge correctly; else keep LID/remote
   const externalChatId = phone
     ? `${phone}@s.whatsapp.net`
-    : preferPnJid(remoteJid, key.senderLid) || remoteJid;
+    : lid || preferPnJid(remoteJid) || remoteJid;
 
   return {
     externalChatId,
     phone,
     groupId: "",
+    lid,
   };
 }

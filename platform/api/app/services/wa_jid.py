@@ -57,6 +57,7 @@ def resolve_target_jid(lead: Lead | None, link: LeadAccountLink | None = None) -
     candidates = (
         (link.external_chat_id if link else None),
         getattr(lead, "external_chat_id", None) if lead else None,
+        getattr(lead, "wa_lid", None) if lead else None,
         getattr(lead, "group_id", None) if lead else None,
         getattr(lead, "phone", None) if lead else None,
     )

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +21,7 @@ import {
   leadIdentity,
   LtrText,
   tasksBoardHref,
+  tasksByTagHref,
   tagLabel,
   type Lead,
   type Member,
@@ -85,8 +86,37 @@ export default function LeadsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [openTaskComposer, setOpenTaskComposer] = useState(false);
+  const [menuLeadId, setMenuLeadId] = useState<string | null>(null);
+  const [tagsPop, setTagsPop] = useState<{ leadId: string; x: number; y: number } | null>(
+    null
+  );
+  const tagsPopCloseTimer = useRef<number | null>(null);
   const { busy, run } = useMutation();
   const toast = useToast();
+
+  function clearTagsPopTimer() {
+    if (tagsPopCloseTimer.current != null) {
+      window.clearTimeout(tagsPopCloseTimer.current);
+      tagsPopCloseTimer.current = null;
+    }
+  }
+
+  function openTagsPop(leadId: string, clientX: number, clientY: number) {
+    clearTagsPopTimer();
+    setMenuLeadId(null);
+    // Fixed above the cursor tip
+    const x = Math.min(Math.max(12, clientX), window.innerWidth - 12);
+    const y = Math.min(Math.max(12, clientY - 6), window.innerHeight - 12);
+    setTagsPop({ leadId, x, y });
+  }
+
+  function scheduleCloseTagsPop() {
+    clearTagsPopTimer();
+    tagsPopCloseTimer.current = window.setTimeout(() => {
+      setTagsPop(null);
+      tagsPopCloseTimer.current = null;
+    }, 160);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +137,21 @@ export default function LeadsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!menuLeadId) return;
+    const onDoc = () => setMenuLeadId(null);
+    // defer so the opening click doesn't immediately close
+    const t = window.setTimeout(() => document.addEventListener("click", onDoc), 0);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener("click", onDoc);
+    };
+  }, [menuLeadId]);
+
+  useEffect(() => {
+    return () => clearTagsPopTimer();
+  }, []);
 
   useEffect(() => {
     const id = searchParams.get("lead");
@@ -339,6 +384,14 @@ export default function LeadsPage() {
     }
   }
 
+  async function mergeWaDuplicates() {
+    const ok = await run(
+      () => api<{ ok: boolean; merged: number }>("/leads/merge-wa-duplicates", { method: "POST" }),
+      { success: "ادغام تکراری‌ها انجام شد" }
+    );
+    if (ok) await load();
+  }
+
   const isEditing = !!editingLead;
   return (
     <Shell
@@ -355,9 +408,10 @@ export default function LeadsPage() {
             title={`فهرست (${filtered.length}${filtered.length !== leads.length ? ` از ${leads.length}` : ""})`}
             help={{
               title: "فهرست لیدها",
-              body: "همه سرنخ‌های مشترک تیم. روی نام کلیک کنید برای ویرایش، یا لید جدید اضافه کنید.",
+              body: "همه سرنخ‌های مشترک تیم. روی نام کلیک کنید تا جزئیات باز شود.",
               tips: [
-                "از فیلترهای سرستون برای محدود کردن لیست استفاده کنید.",
+                "فیلترها بالای جدول هستند — سرستون‌ها خلوت مانده‌اند.",
+                "«ادغام تکراری واتساپ» لیدهای LID و شماره را یکی می‌کند.",
                 "پاک‌سازی همه فقط برای مدیر/مالک است و برگشت‌پذیر نیست."
               ]
             }}
@@ -365,6 +419,15 @@ export default function LeadsPage() {
               <div className="row-actions">
                 <Button size="sm" onClick={openCreate}>
                   افزودن لید
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={busy}
+                  disabled={leads.length === 0}
+                  onClick={() => void mergeWaDuplicates()}
+                >
+                  ادغام تکراری واتساپ
                 </Button>
                 <Button
                   variant="danger"
@@ -383,240 +446,338 @@ export default function LeadsPage() {
                 title="هنوز لیدی نیست"
                 text="از صفحه کانال‌ها واتساپ یا دیوار را وصل کنید، یا با دکمه «افزودن لید» یک مخاطب بسازید."
               />
-            ) : (              <div style={{ overflow: "auto" }}>
-                <table className="leads-table">
-                  <thead>
-                    <tr>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">نام</span>
-                          <input
-                            className="th-filter"
-                            type="text"
-                            value={nameFilter}
-                            onChange={(e) => setNameFilter(e.target.value)}
-                            placeholder="جستجو…"
-                            aria-label="فیلتر نام"
-                          />
-                        </div>
-                      </th>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">نوع</span>
-                          <select
-                            className="th-filter"
-                            value={typeFilter}
-                            onChange={(e) => setTypeFilter(e.target.value)}
-                            aria-label="فیلتر نوع"
-                          >
-                            <option value="">همه</option>
-                            <option value="pv">مخاطب</option>
-                            <option value="group">گروه</option>
-                          </select>
-                        </div>
-                      </th>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">شناسه / تلفن</span>
-                          <input
-                            className="th-filter ltr-text"
-                            dir="ltr"
-                            type="text"
-                            value={identityFilter}
-                            onChange={(e) => setIdentityFilter(e.target.value)}
-                            placeholder="جستجو…"
-                            aria-label="فیلتر شناسه یا تلفن"
-                          />
-                        </div>
-                      </th>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">کانال</span>
-                          <select
-                            className="th-filter"
-                            value={channelFilter}
-                            onChange={(e) => setChannelFilter(e.target.value)}
-                            aria-label="فیلتر کانال"
-                          >
-                            <option value="">همه</option>
-                            <option value="__none__">بدون کانال</option>
-                            {channelOptions.map((ch) => (
-                              <option key={ch} value={ch}>
-                                {CHANNEL_LABELS[ch] || ch}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </th>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">مرحله</span>
-                          <select
-                            className="th-filter"
-                            value={stageFilter}
-                            onChange={(e) => setStageFilter(e.target.value)}
-                            aria-label="فیلتر مرحله"
-                          >
-                            <option value="">همه</option>
-                            {STAGES.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </th>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">ارجاع</span>
-                          <select
-                            className="th-filter"
-                            value={assigneeFilter}
-                            onChange={(e) => setAssigneeFilter(e.target.value)}
-                            aria-label="فیلتر ارجاع"
-                          >
-                            <option value="">همه</option>
-                            <option value="__none__">بدون ارجاع</option>
-                            {members.map((m) => (
-                              <option key={m.user_id} value={m.user_id}>
-                                {memberLabel(m)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </th>
-                      <th>
-                        <div className="th-head">
-                          <span className="th-head-label">عملیات</span>
-                          {hasActiveFilters ? (
-                            <Button variant="secondary" size="sm" onClick={clearFilters}>
-                              پاک فیلتر
-                            </Button>
-                          ) : null}
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.length === 0 ? (
+            ) : (
+              <>
+                <div className="leads-toolbar">
+                  <label className="leads-toolbar-field">
+                    <span>نوع</span>
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      aria-label="فیلتر نوع"
+                    >
+                      <option value="">همه</option>
+                      <option value="pv">مخاطب</option>
+                      <option value="group">گروه</option>
+                    </select>
+                  </label>
+                  <label className="leads-toolbar-field">
+                    <span>کانال</span>
+                    <select
+                      value={channelFilter}
+                      onChange={(e) => setChannelFilter(e.target.value)}
+                      aria-label="فیلتر کانال"
+                    >
+                      <option value="">همه</option>
+                      <option value="__none__">بدون کانال</option>
+                      {channelOptions.map((ch) => (
+                        <option key={ch} value={ch}>
+                          {CHANNEL_LABELS[ch] || ch}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="leads-toolbar-field">
+                    <span>مرحله</span>
+                    <select
+                      value={stageFilter}
+                      onChange={(e) => setStageFilter(e.target.value)}
+                      aria-label="فیلتر مرحله"
+                    >
+                      <option value="">همه</option>
+                      {STAGES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="leads-toolbar-field">
+                    <span>ارجاع</span>
+                    <select
+                      value={assigneeFilter}
+                      onChange={(e) => setAssigneeFilter(e.target.value)}
+                      aria-label="فیلتر ارجاع"
+                    >
+                      <option value="">همه</option>
+                      <option value="__none__">بدون ارجاع</option>
+                      {members.map((m) => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {memberLabel(m)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="leads-toolbar-field leads-toolbar-grow">
+                    <span>شناسه / تلفن</span>
+                    <input
+                      className="ltr-text"
+                      dir="ltr"
+                      type="text"
+                      value={identityFilter}
+                      onChange={(e) => setIdentityFilter(e.target.value)}
+                      placeholder="جستجوی شماره یا JID…"
+                      aria-label="فیلتر شناسه یا تلفن"
+                    />
+                  </label>
+                  {hasActiveFilters ? (
+                    <Button variant="secondary" size="sm" onClick={clearFilters}>
+                      پاک فیلتر
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div style={{ overflow: "auto" }}>
+                  <table className="leads-table leads-table-compact">
+                    <thead>
                       <tr>
-                        <td colSpan={7} style={{ textAlign: "center", padding: "28px 12px" }}>
-                          <span style={{ color: "var(--muted)", fontWeight: 600 }}>
-                            نتیجه‌ای با این فیلتر نیست — فیلترها را تغییر دهید.
-                          </span>
-                        </td>
+                        <th>نام</th>
+                        <th>نوع</th>
+                        <th>شناسه</th>
+                        <th>کانال</th>
+                        <th>مرحله</th>
+                        <th>ارجاع</th>
+                        <th aria-label="عملیات" />
                       </tr>
-                    ) : (
-                      filtered.map((l) => (
-                        <tr key={l.id}>
-                          <td>
-                            <button type="button" className="lead-name-link" onClick={() => openContact(l)}>
-                              <strong>{l.name}</strong>
-                            </button>
-                            <div className="card-meta" style={{ marginTop: 4 }}>
-                              {l.bot_paused ? (
+                    </thead>
+                    <tbody>
+                      {filtered.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: "center", padding: "28px 12px" }}>
+                            <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+                              نتیجه‌ای با این فیلتر نیست — فیلترها را تغییر دهید.
+                            </span>
+                          </td>
+                        </tr>
+                      ) : (
+                        filtered.map((l) => {
+                          const tags = l.tags || [];
+                          const visibleTags = tags.slice(0, 2);
+                          const extraTags = tags.length - visibleTags.length;
+                          const menuOpen = menuLeadId === l.id;
+                          return (
+                            <tr key={l.id}>
+                              <td>
                                 <button
                                   type="button"
-                                  className="lead-bot-paused-chip"
-                                  title="کلیک برای شروع دوباره ربات"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void setBotPaused(l.id, false);
-                                  }}
+                                  className="lead-name-link"
+                                  onClick={() => openContact(l)}
                                 >
-                                  ربات متوقف · شروع
+                                  <strong>{l.name}</strong>
                                 </button>
-                              ) : null}
-                              {(l.tags || []).map((t) => (
-                                <Badge key={t} tone="accent">
-                                  {tagLabel(t)}
-                                </Badge>
-                              ))}
-                              {(l.lead_score || 0) > 0 ? (
-                                <Badge tone="accent">امتیاز {Math.round(l.lead_score || 0)}</Badge>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td>
-                            {l.chat_type === "group" ? (
-                              <Badge tone="accent">گروه</Badge>
-                            ) : (
-                              <Badge tone="accent">مخاطب</Badge>
-                            )}
-                          </td>
-                          <td>
-                            <LtrText>{leadIdentity(l)}</LtrText>
-                          </td>                          <td>
-                            {l.source_channel ? (
-                              <ChannelBadge channel={l.source_channel} />
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />
-                              <select
-                                value={l.stage}
-                                onChange={(e) => setStage(l.id, e.target.value)}
-                                style={{ width: "auto" }}
-                              >
-                                {STAGES.map((s) => (
-                                  <option key={s} value={s}>
-                                    {s}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </td>
-                          <td>
-                            <select
-                              value={l.assignee_id || ""}
-                              onChange={(e) => assign(l.id, e.target.value)}
-                            >
-                              <option value="">بدون ارجاع</option>
-                              {members.map((m) => (
-                                <option key={m.user_id} value={m.user_id}>
-                                  {memberLabel(m)}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              {l.bot_paused ? (
-                                <Button
-                                  size="sm"
-                                  loading={busy}
-                                  onClick={() => void setBotPaused(l.id, false)}
+                                <div className="lead-row-meta">
+                                  {l.bot_paused ? (
+                                    <button
+                                      type="button"
+                                      className="lead-bot-paused-chip"
+                                      title="کلیک برای شروع دوباره ربات"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void setBotPaused(l.id, false);
+                                      }}
+                                    >
+                                      ربات متوقف
+                                    </button>
+                                  ) : null}
+                                  {visibleTags.map((t) => (
+                                    <Link
+                                      key={t}
+                                      className="lead-tag-link"
+                                      href={tasksByTagHref(t)}
+                                      title={`وظایف با برچسب ${tagLabel(t)}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Badge tone="accent">{tagLabel(t)}</Badge>
+                                    </Link>
+                                  ))}
+                                  {extraTags > 0 ? (
+                                    <span
+                                      className="lead-tags-pop-wrap"
+                                      onMouseEnter={(e) => {
+                                        openTagsPop(l.id, e.clientX, e.clientY);
+                                      }}
+                                      onMouseLeave={() => scheduleCloseTagsPop()}
+                                    >
+                                      <span
+                                        className="lead-tag-more"
+                                        aria-expanded={tagsPop?.leadId === l.id}
+                                        aria-haspopup="dialog"
+                                      >
+                                        +{extraTags}
+                                      </span>
+                                      {tagsPop?.leadId === l.id ? (
+                                        <div
+                                          className="lead-tags-pop"
+                                          role="tooltip"
+                                          aria-label="برچسب‌های مخاطب"
+                                          style={{
+                                            top: tagsPop.y,
+                                            left: tagsPop.x
+                                          }}
+                                          onMouseEnter={() => clearTagsPopTimer()}
+                                          onMouseLeave={() => scheduleCloseTagsPop()}
+                                        >
+                                          <div className="lead-tags-pop-title">برچسب‌ها</div>
+                                          <div className="lead-tags-pop-list">
+                                            {tags.map((t) => (
+                                              <Link
+                                                key={t}
+                                                className="lead-tags-pop-item"
+                                                href={tasksByTagHref(t)}
+                                                onClick={() => setTagsPop(null)}
+                                              >
+                                                {tagLabel(t)}
+                                              </Link>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </span>
+                                  ) : null}
+                                  {(l.lead_score || 0) > 0 ? (
+                                    <span className="lead-score-pill">
+                                      {Math.round(l.lead_score || 0)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td>
+                                {l.chat_type === "group" ? (
+                                  <Badge tone="accent">گروه</Badge>
+                                ) : (
+                                  <span className="muted-cell">مخاطب</span>
+                                )}
+                              </td>
+                              <td>
+                                <LtrText>{leadIdentity(l)}</LtrText>
+                              </td>
+                              <td>
+                                {l.source_channel ? (
+                                  <ChannelBadge channel={l.source_channel} />
+                                ) : (
+                                  <span className="muted-cell">—</span>
+                                )}
+                              </td>
+                              <td>
+                                <div className="row-actions">
+                                  <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />
+                                  <select
+                                    value={l.stage}
+                                    onChange={(e) => setStage(l.id, e.target.value)}
+                                    style={{ width: "auto", minWidth: 96 }}
+                                  >
+                                    {STAGES.map((s) => (
+                                      <option key={s} value={s}>
+                                        {s}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </td>
+                              <td>
+                                <select
+                                  value={l.assignee_id || ""}
+                                  onChange={(e) => assign(l.id, e.target.value)}
                                 >
-                                  شروع ربات
-                                </Button>
-                              ) : null}
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => openContact(l, true)}
-                              >
-                                وظیفه
-                              </Button>
-                              <Link className="btn secondary sm" href={tasksBoardHref(l.id)}>
-                                برد وظایف
-                              </Link>
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={() => openDeleteConfirm(l)}
-                              >
-                                حذف
-                              </Button>
-                            </div>
-                          </td>                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                                  <option value="">بدون ارجاع</option>
+                                  {members.map((m) => (
+                                    <option key={m.user_id} value={m.user_id}>
+                                      {memberLabel(m)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="leads-actions-cell">
+                                <div className="lead-row-menu-wrap">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    aria-expanded={menuOpen}
+                                    aria-haspopup="menu"
+                                    onClick={() =>
+                                      setMenuLeadId((cur) => (cur === l.id ? null : l.id))
+                                    }
+                                  >
+                                    ⋯
+                                  </Button>
+                                  {menuOpen ? (
+                                    <div className="lead-row-menu" role="menu">
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setMenuLeadId(null);
+                                          openContact(l, false);
+                                        }}
+                                      >
+                                        جزئیات
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setMenuLeadId(null);
+                                          openContact(l, true);
+                                        }}
+                                      >
+                                        وظیفه جدید
+                                      </button>
+                                      <Link
+                                        className="lead-row-menu-link"
+                                        href={tasksBoardHref(l.id)}
+                                        role="menuitem"
+                                        onClick={() => setMenuLeadId(null)}
+                                      >
+                                        برد وظایف
+                                      </Link>
+                                      {l.bot_paused ? (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          disabled={busy}
+                                          onClick={() => {
+                                            setMenuLeadId(null);
+                                            void setBotPaused(l.id, false);
+                                          }}
+                                        >
+                                          شروع ربات
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          disabled={busy}
+                                          onClick={() => {
+                                            setMenuLeadId(null);
+                                            void setBotPaused(l.id, true);
+                                          }}
+                                        >
+                                          توقف ربات
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="danger"
+                                        onClick={() => {
+                                          setMenuLeadId(null);
+                                          openDeleteConfirm(l);
+                                        }}
+                                      >
+                                        حذف
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </Card>
 

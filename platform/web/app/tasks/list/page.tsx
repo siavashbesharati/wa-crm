@@ -16,6 +16,7 @@ import {
   TASK_STATUS_LABELS,
   leadHref,
   memberLabel,
+  tagLabel,
   tasksBoardHref,
   type CrmTask,
   type Lead,
@@ -25,12 +26,14 @@ import {
 export default function TasksListPage() {
   const searchParams = useSearchParams();
   const leadFilter = searchParams.get("lead") || "";
+  const tagFromUrl = searchParams.get("tag") || "";
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [doneId, setDoneId] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState(tagFromUrl);
   const toast = useToast();
 
   async function load() {
@@ -56,16 +59,36 @@ export default function TasksListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    setTagFilter(tagFromUrl);
+  }, [tagFromUrl]);
+
   const leadById = useMemo(() => {
     const map = new Map<string, Lead>();
     for (const l of leads) map.set(l.id, l);
     return map;
   }, [leads]);
 
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of leads) {
+      for (const t of l.tags || []) {
+        if (t) set.add(t);
+      }
+    }
+    return Array.from(set).sort((a, b) => tagLabel(a).localeCompare(tagLabel(b), "fa"));
+  }, [leads]);
+
   const visible = useMemo(() => {
-    if (!leadFilter) return tasks;
-    return tasks.filter((t) => t.lead_id === leadFilter);
-  }, [tasks, leadFilter]);
+    return tasks.filter((t) => {
+      if (leadFilter && t.lead_id !== leadFilter) return false;
+      if (tagFilter) {
+        const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
+        if (!lead || !(lead.tags || []).includes(tagFilter)) return false;
+      }
+      return true;
+    });
+  }, [tasks, leadFilter, tagFilter, leadById]);
 
   async function markDone(id: string) {
     setDoneId(id);
@@ -96,7 +119,7 @@ export default function TasksListPage() {
           >
             +
           </button>
-          <TaskViewToggle mode="list" leadId={leadFilter || null} />
+          <TaskViewToggle mode="list" leadId={leadFilter || null} tag={tagFilter || null} />
         </div>
       }
     >
@@ -104,15 +127,46 @@ export default function TasksListPage() {
         <PageLoading />
       ) : (
         <>
-          {filterLead ? (
+          <div className="task-list-filters">
+            <label>
+              برچسب
+              <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+                <option value="">همه برچسب‌ها</option>
+                {tagOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {tagLabel(t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {tagFilter ? (
+              <button type="button" className="btn secondary sm" onClick={() => setTagFilter("")}>
+                پاک برچسب
+              </button>
+            ) : null}
+          </div>
+
+          {filterLead || tagFilter ? (
             <div className="task-lead-filter-bar">
               <span>
-                فیلتر فهرست: وظایف «<strong>{filterLead.name}</strong>»
+                {filterLead ? (
+                  <>
+                    فیلتر فهرست: وظایف «<strong>{filterLead.name}</strong>»
+                  </>
+                ) : null}
+                {filterLead && tagFilter ? " — " : null}
+                {tagFilter ? (
+                  <>
+                    برچسب «<strong>{tagLabel(tagFilter)}</strong>»
+                  </>
+                ) : null}
               </span>
               <div className="row-actions">
-                <Link className="btn secondary sm" href={leadHref(filterLead.id)}>
-                  کارت مخاطب
-                </Link>
+                {filterLead ? (
+                  <Link className="btn secondary sm" href={leadHref(filterLead.id)}>
+                    کارت مخاطب
+                  </Link>
+                ) : null}
                 <Link className="btn secondary sm" href="/tasks/list">
                   همه وظایف
                 </Link>
@@ -122,14 +176,21 @@ export default function TasksListPage() {
 
           <Card
             title={
-              filterLead ? `وظایف «${filterLead.name}»` : "فهرست وظایف"
+              filterLead
+                ? `وظایف «${filterLead.name}»`
+                : tagFilter
+                  ? `وظایف با برچسب «${tagLabel(tagFilter)}»`
+                  : "فهرست وظایف"
             }
             help={{
               title: "فهرست وظایف",
               body: "روی نام مخاطب کلیک کنید تا کارت همان مخاطب باز شود."
             }}
             actions={
-              <Link className="btn secondary sm" href={tasksBoardHref(leadFilter || null)}>
+              <Link
+                className="btn secondary sm"
+                href={tasksBoardHref(leadFilter || null, tagFilter || null)}
+              >
                 نمایش برد
               </Link>
             }

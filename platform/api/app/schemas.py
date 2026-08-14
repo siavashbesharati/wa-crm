@@ -212,6 +212,7 @@ class LeadOut(BaseModel):
     phone: str
     group_id: str
     external_chat_id: str | None = None
+    wa_lid: str = ""
     post_token: str = ""
     source_channel: str = ""
     chat_type: str
@@ -311,6 +312,8 @@ class MessageIngestIn(BaseModel):
     phone: str = ""
     group_id: str = ""
     external_chat_id: str = ""
+    # WhatsApp @lid when known (even if external_chat_id is PN)
+    wa_lid: str = ""
     post_token: str = ""
     ad_title: str = ""
     chat_type: str = "pv"
@@ -430,6 +433,7 @@ class CampaignOut(BaseModel):
     sends_sent: int = 0
     sends_failed: int = 0
     sends_skipped: int = 0
+    audience_count: int = 0
 
 
 class OkrIn(BaseModel):

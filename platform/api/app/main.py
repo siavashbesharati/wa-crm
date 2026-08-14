@@ -111,6 +111,8 @@ def _ensure_sqlite_columns() -> None:
                 conn.execute(text("ALTER TABLE leads ADD COLUMN lead_score FLOAT DEFAULT 0"))
             if "ai_meta" not in cols:
                 conn.execute(text("ALTER TABLE leads ADD COLUMN ai_meta JSON"))
+            if "wa_lid" not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN wa_lid VARCHAR(120) DEFAULT ''"))
     if "ai_policies" in tables:
         cols = {c["name"] for c in insp.get_columns("ai_policies")}
         with engine.begin() as conn:

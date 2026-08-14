@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
-import { Card, EmptyState } from "@/components/ui/Card";
+import { Badge, Card, EmptyState } from "@/components/ui/Card";
+import { Switch } from "@/components/ui/Switch";
 import { PageLoading } from "@/components/ui/Spinner";
 import { STAGES, TAG_LABELS_FA, tagLabel } from "@/components/crm/shared";
 import { api } from "@/lib/api";
@@ -34,6 +35,7 @@ type Campaign = {
   sends_sent: number;
   sends_failed: number;
   sends_skipped: number;
+  audience_count?: number;
 };
 
 const STATUS_FA: Record<string, string> = {
@@ -42,6 +44,14 @@ const STATUS_FA: Record<string, string> = {
   paused: "متوقف",
   done: "تمام‌شده",
   queued: "در صف"
+};
+
+const STATUS_TONE: Record<string, "default" | "accent" | "success" | "danger"> = {
+  draft: "default",
+  running: "accent",
+  paused: "danger",
+  done: "success",
+  queued: "accent"
 };
 
 const TAG_KEYS = Object.keys(TAG_LABELS_FA).filter((k) => k !== "handoff");
@@ -161,27 +171,41 @@ export default function CampaignsPage() {
     if (ok) await load();
   }
 
+  async function previewExisting(id: string) {
+    const prev = await run(
+      () => api<{ count: number }>(`/campaigns/${id}/preview`, { method: "POST" }),
+      { silent: true }
+    );
+    if (prev) {
+      toast.push(`${prev.count} مخاطب مطابق فیلتر`, "ok");
+      await load();
+    }
+  }
+
   async function previewDraft() {
-    // Create temp? Use matching via a draft save — simpler: create then preview
     if (!name.trim() || !message.trim() || !accountId) {
       toast.push("ابتدا فرم را کامل کنید و کمپین بسازید، سپس پیش‌نمایش از لیست", "err");
       return;
     }
-    const created = await api<Campaign>("/campaigns", {
-      method: "POST",
-      body: JSON.stringify({
-        name: name.trim(),
-        message_template: message.trim(),
-        channel_account_id: accountId,
-        segment: { tags, stages, min_score: minScore, include_groups: includeGroups }
-      })
-    });
-    const prev = await api<{ count: number }>(`/campaigns/${created.id}/preview`, {
-      method: "POST"
-    });
-    setPreviewCount(prev.count);
-    await load();
-    toast.push(`${prev.count} مخاطب با این فیلتر`, "ok");
+    try {
+      const created = await api<Campaign>("/campaigns", {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          message_template: message.trim(),
+          channel_account_id: accountId,
+          segment: { tags, stages, min_score: minScore, include_groups: includeGroups }
+        })
+      });
+      const prev = await api<{ count: number }>(`/campaigns/${created.id}/preview`, {
+        method: "POST"
+      });
+      setPreviewCount(prev.count);
+      await load();
+      toast.push(`${prev.count} مخاطب با این فیلتر`, "ok");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    }
   }
 
   return (
@@ -194,7 +218,11 @@ export default function CampaignsPage() {
             <div className="form-grid" style={{ gap: 12 }}>
               <label className="full">
                 نام کمپین
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً پیگیری قصد خرید بالا" />
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="مثلاً پیگیری قصد خرید بالا"
+                />
               </label>
               <label className="full">
                 اکانت کانال
@@ -217,7 +245,10 @@ export default function CampaignsPage() {
                 />
               </label>
               <div className="full">
-                <strong>برچسب‌ها (حداقل یکی)</strong>
+                <strong>برچسب‌ها</strong>
+                <div className="hint" style={{ marginTop: 4 }}>
+                  خالی = همه مخاطبین · انتخاب‌شده = حداقل یکی از این برچسب‌ها
+                </div>
                 <div className="ai-stage-chips" style={{ marginTop: 8 }}>
                   {TAG_KEYS.map((key) => (
                     <button
@@ -233,6 +264,9 @@ export default function CampaignsPage() {
               </div>
               <div className="full">
                 <strong>مراحل</strong>
+                <div className="hint" style={{ marginTop: 4 }}>
+                  خالی = همه مراحل
+                </div>
                 <div className="ai-stage-chips" style={{ marginTop: 8 }}>
                   {STAGES.map((stage) => (
                     <button
@@ -246,33 +280,33 @@ export default function CampaignsPage() {
                   ))}
                 </div>
               </div>
-              <label>
-                حداقل امتیاز AI
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={minScore}
-                  onChange={(e) => setMinScore(Number(e.target.value) || 0)}
-                />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 24 }}>
-                <input
-                  type="checkbox"
+              <div className="full campaigns-actions-row">
+                <label className="campaigns-actions-field">
+                  حداقل امتیاز AI
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={minScore}
+                    onChange={(e) => setMinScore(Number(e.target.value) || 0)}
+                  />
+                </label>
+                <Switch
+                  className="campaigns-actions-switch"
+                  label="شامل گروه‌ها"
                   checked={includeGroups}
-                  onChange={(e) => setIncludeGroups(e.target.checked)}
+                  onChange={setIncludeGroups}
                 />
-                شامل گروه‌ها
-              </label>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-              <Button loading={busy} onClick={() => void create()}>
-                ذخیره پیش‌نویس
-              </Button>
-              <Button variant="secondary" loading={busy} onClick={() => void previewDraft()}>
-                ذخیره و شمارش مخاطب
-                {previewCount != null ? ` (${previewCount})` : ""}
-              </Button>
+                <div className="campaigns-actions-btns">
+                  <Button loading={busy} onClick={() => void create()}>
+                    ذخیره پیش‌نویس
+                  </Button>
+                  <Button variant="secondary" loading={busy} onClick={() => void previewDraft()}>
+                    ذخیره و شمارش مخاطب
+                    {previewCount != null ? ` (${previewCount})` : ""}
+                  </Button>
+                </div>
+              </div>
             </div>
           </Card>
 
@@ -281,53 +315,100 @@ export default function CampaignsPage() {
               <EmptyState title="کمپینی نیست" text="اولین کمپین nurture را بسازید." />
             ) : (
               <div className="campaign-list">
-                {rows.map((c) => (
-                  <div key={c.id} className="campaign-row">
-                    <div>
-                      <strong>{c.name}</strong>
-                      <div className="hint">
-                        {STATUS_FA[c.status] || c.status}
-                        {" · "}
-                        {accountLabel[c.channel_account_id || ""] || "بدون اکانت"}
-                        {" · "}
-                        ارسال {c.sends_total} (صف {c.sends_queued} / رد {c.sends_skipped})
+                {rows.map((c) => {
+                  const audience = c.audience_count ?? 0;
+                  return (
+                    <article key={c.id} className="campaign-card">
+                      <div className="campaign-card-body">
+                        <div className="campaign-card-head">
+                          <h3 className="campaign-card-title">{c.name}</h3>
+                          <Badge tone={STATUS_TONE[c.status] || "default"}>
+                            {STATUS_FA[c.status] || c.status}
+                          </Badge>
+                        </div>
+                        <div className="campaign-card-meta">
+                          <span>{accountLabel[c.channel_account_id || ""] || "بدون اکانت"}</span>
+                          <span className="campaign-card-dot">·</span>
+                          <span>
+                            مخاطب هدف: <strong>{audience}</strong>
+                          </span>
+                          {c.sends_total > 0 ? (
+                            <>
+                              <span className="campaign-card-dot">·</span>
+                              <span>
+                                ارسال {c.sends_total} (صف {c.sends_queued} / موفق {c.sends_sent} /
+                                رد {c.sends_skipped})
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                        <div className="campaign-card-tags">
+                          {(c.segment.tags || []).map((t) => (
+                            <span key={t} className="campaign-chip">
+                              {tagLabel(t)}
+                            </span>
+                          ))}
+                          {(c.segment.stages || []).map((s) => (
+                            <span key={s} className="campaign-chip stage">
+                              {s}
+                            </span>
+                          ))}
+                          {(c.segment.min_score || 0) > 0 ? (
+                            <span className="campaign-chip">امتیاز ≥ {c.segment.min_score}</span>
+                          ) : null}
+                          {c.segment.include_groups ? (
+                            <span className="campaign-chip">شامل گروه</span>
+                          ) : null}
+                        </div>
+                        <p className="campaign-card-msg" dir="auto">
+                          {c.message_template}
+                        </p>
                       </div>
-                      <div className="chat-head-tags" style={{ marginTop: 6 }}>
-                        {(c.segment.tags || []).map((t) => (
-                          <span key={t} className="chat-tag">
-                            {tagLabel(t)}
-                          </span>
-                        ))}
-                        {(c.segment.stages || []).map((s) => (
-                          <span key={s} className="chat-tag">
-                            {s}
-                          </span>
-                        ))}
-                        {(c.segment.min_score || 0) > 0 ? (
-                          <span className="chat-tag">امتیاز ≥ {c.segment.min_score}</span>
+                      <div className="campaign-card-actions">
+                        {c.status === "draft" || c.status === "paused" || c.status === "done" ? (
+                          <Button
+                            className="campaign-action-btn"
+                            size="sm"
+                            loading={busy}
+                            disabled={audience === 0}
+                            onClick={() => void start(c.id)}
+                          >
+                            شروع ارسال
+                          </Button>
                         ) : null}
+                        {c.status === "running" ? (
+                          <Button
+                            className="campaign-action-btn"
+                            size="sm"
+                            variant="secondary"
+                            loading={busy}
+                            onClick={() => void pause(c.id)}
+                          >
+                            توقف
+                          </Button>
+                        ) : null}
+                        <Button
+                          className="campaign-action-btn"
+                          size="sm"
+                          variant="secondary"
+                          loading={busy}
+                          onClick={() => void previewExisting(c.id)}
+                        >
+                          شمارش مخاطب
+                        </Button>
+                        <Button
+                          className="campaign-action-btn"
+                          size="sm"
+                          variant="danger"
+                          loading={busy}
+                          onClick={() => void remove(c.id)}
+                        >
+                          حذف
+                        </Button>
                       </div>
-                      <p className="hint" dir="auto" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
-                        {c.message_template}
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {c.status === "draft" || c.status === "paused" || c.status === "done" ? (
-                        <Button size="sm" loading={busy} onClick={() => void start(c.id)}>
-                          شروع ارسال
-                        </Button>
-                      ) : null}
-                      {c.status === "running" ? (
-                        <Button size="sm" variant="secondary" loading={busy} onClick={() => void pause(c.id)}>
-                          توقف
-                        </Button>
-                      ) : null}
-                      <Button size="sm" variant="danger" loading={busy} onClick={() => void remove(c.id)}>
-                        حذف
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </Card>

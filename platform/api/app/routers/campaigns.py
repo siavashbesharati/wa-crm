@@ -35,12 +35,15 @@ def _segment_dict(seg: CampaignSegmentIn | dict | None) -> dict:
 
 
 def _match_segment(lead: Lead, seg: dict) -> bool:
-    if lead.bot_paused:
-        return False
+    """Return True if lead belongs in the campaign audience.
+
+    Note: bot_paused is intentionally NOT excluded — nurture sends are
+    deliberate outreach and must still reach paused chats.
+    """
     if (lead.chat_type or "").lower() == "group" and not seg.get("include_groups"):
         return False
-    stages = seg.get("stages") or []
-    if stages and lead.stage not in stages:
+    stages = [str(s).strip() for s in (seg.get("stages") or []) if str(s).strip()]
+    if stages and (lead.stage or "").strip() not in stages:
         return False
     min_score = float(seg.get("min_score") or 0)
     if float(getattr(lead, "lead_score", 0) or 0) < min_score:
@@ -51,6 +54,11 @@ def _match_segment(lead: Lead, seg: dict) -> bool:
         if not want_tags.intersection(have):
             return False
     return True
+
+
+def _audience_count(db: Session, org_id: str, seg: dict) -> int:
+    leads = db.query(Lead).filter(Lead.org_id == org_id).all()
+    return sum(1 for l in leads if _match_segment(l, seg))
 
 
 def _send_counts(db: Session, campaign_id: str) -> dict[str, int]:
@@ -74,11 +82,12 @@ def _send_counts(db: Session, campaign_id: str) -> dict[str, int]:
 
 def _to_out(db: Session, camp: Campaign) -> CampaignOut:
     counts = _send_counts(db, camp.id)
+    seg = dict(camp.segment_json or {})
     return CampaignOut(
         id=camp.id,
         name=camp.name,
         status=camp.status,
-        segment=dict(camp.segment_json or {}),
+        segment=seg,
         message_template=camp.message_template or "",
         channel_account_id=camp.channel_account_id,
         created_at=camp.created_at,
@@ -90,6 +99,7 @@ def _to_out(db: Session, camp: Campaign) -> CampaignOut:
         sends_sent=counts["sends_sent"],
         sends_failed=counts["sends_failed"],
         sends_skipped=counts["sends_skipped"],
+        audience_count=_audience_count(db, camp.org_id, seg),
     )
 
 

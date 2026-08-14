@@ -9,6 +9,7 @@ export type Lead = {
   phone: string;
   group_id: string;
   external_chat_id?: string | null;
+  wa_lid?: string;
   post_token?: string;
   source_channel?: string;
   chat_type?: string;
@@ -113,14 +114,24 @@ export function leadHref(leadId: string) {
   return `/leads?lead=${encodeURIComponent(leadId)}`;
 }
 
-export function tasksBoardHref(leadId?: string | null) {
-  if (!leadId) return "/tasks";
-  return `/tasks?lead=${encodeURIComponent(leadId)}`;
+function tasksQuery(opts?: { leadId?: string | null; tag?: string | null }) {
+  const params = new URLSearchParams();
+  if (opts?.leadId) params.set("lead", opts.leadId);
+  if (opts?.tag) params.set("tag", opts.tag);
+  const q = params.toString();
+  return q ? `?${q}` : "";
 }
 
-export function tasksListHref(leadId?: string | null) {
-  if (!leadId) return "/tasks/list";
-  return `/tasks/list?lead=${encodeURIComponent(leadId)}`;
+export function tasksBoardHref(leadId?: string | null, tag?: string | null) {
+  return `/tasks${tasksQuery({ leadId, tag })}`;
+}
+
+export function tasksListHref(leadId?: string | null, tag?: string | null) {
+  return `/tasks/list${tasksQuery({ leadId, tag })}`;
+}
+
+export function tasksByTagHref(tag: string) {
+  return tasksBoardHref(null, tag);
 }
 
 export const STAGES = ["جدید", "پیگیری", "پیشنهاد", "خرید", "بسته"] as const;
@@ -144,17 +155,19 @@ export function initials(text: string) {
 
 export function TaskViewToggle({
   mode,
-  leadId
+  leadId,
+  tag
 }: {
   mode: "list" | "board";
   leadId?: string | null;
+  tag?: string | null;
 }) {
   return (
     <div className="view-toggle">
-      <Link href={tasksListHref(leadId)} className={mode === "list" ? "active" : ""}>
+      <Link href={tasksListHref(leadId, tag)} className={mode === "list" ? "active" : ""}>
         لیست
       </Link>
-      <Link href={tasksBoardHref(leadId)} className={mode === "board" ? "active" : ""}>
+      <Link href={tasksBoardHref(leadId, tag)} className={mode === "board" ? "active" : ""}>
         برد کانبان
       </Link>
     </div>

@@ -92,6 +92,8 @@ export type IngestPayload = {
   phone: string;
   group_id: string;
   external_chat_id: string;
+  /** WhatsApp @lid when known (even if external_chat_id is PN). */
+  wa_lid: string;
   chat_type: "pv" | "group";
   external_message_id: string;
   sender_type: "customer" | "agent" | "ai" | "system";
@@ -141,7 +143,11 @@ export function mapBaileysMessage(
     }
   } else {
     chatName =
-      pushName || identity.phone || phoneFromJid(identity.externalChatId) || remoteJid;
+      pushName ||
+      identity.phone ||
+      phoneFromJid(identity.externalChatId) ||
+      identity.lid ||
+      remoteJid;
   }
 
   return {
@@ -152,6 +158,7 @@ export function mapBaileysMessage(
     phone: isGroup ? "" : identity.phone,
     group_id: identity.groupId,
     external_chat_id: identity.externalChatId,
+    wa_lid: isGroup ? "" : identity.lid || "",
     chat_type: isGroup ? "group" : "pv",
     external_message_id: `wa:${key.id}`,
     sender_type: fromMe ? "agent" : "customer",
