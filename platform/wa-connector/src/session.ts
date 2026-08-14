@@ -13,7 +13,7 @@ import { api } from "./api-client.js";
 import { loadAuthState } from "./auth-state.js";
 import { mapBaileysMessage } from "./inbound-mapper.js";
 import { maybeTranscribeAudio } from "./media.js";
-import { phoneFromConnectedUser, phoneFromJid, preferPnJid, stripDevice } from "./jid.js";
+import { phoneFromConnectedUser, phoneFromJid, preferPnJid, isLidJid, isPnJid, stripDevice } from "./jid.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -177,21 +177,49 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
     listGroups: async () => {
       if (!sock || !connected) return [];
       const all = await sock.groupFetchAllParticipating();
-      return Object.values(all).map((g) => ({
-        jid: g.id,
-        subject: g.subject || "",
-        size: g.participants?.length || 0,
-      }));
+      return Object.values(all)
+        .map((g) => ({
+          jid: g.id,
+          subject: g.subject || "",
+          size: g.participants?.length || 0,
+          owner: (g as { owner?: string }).owner || "",
+        }))
+        .sort((a, b) => (a.subject || a.jid).localeCompare(b.subject || b.jid, "fa"));
     },
     groupParticipants: async (jid: string) => {
       if (!sock || !connected) return { subject: "", participants: [] };
       const meta = await sock.groupMetadata(jid);
+      const participants = (meta.participants || []).map((p) => {
+        const raw = p as {
+          id: string;
+          lid?: string;
+          jid?: string;
+          phoneNumber?: string;
+          admin?: string | null;
+        };
+        const phone =
+          phoneFromJid(raw.jid) ||
+          phoneFromJid(raw.phoneNumber) ||
+          (isPnJid(raw.id) ? phoneFromJid(raw.id) : "");
+        const pnJid = phone
+          ? `${phone}@s.whatsapp.net`
+          : isPnJid(raw.id)
+            ? stripDevice(raw.id)
+            : raw.jid
+              ? stripDevice(raw.jid)
+              : "";
+        return {
+          id: raw.id,
+          lid: raw.lid || (isLidJid(raw.id) ? stripDevice(raw.id) : ""),
+          jid: pnJid,
+          phone: phone || "",
+          admin: raw.admin || null,
+          is_admin: !!raw.admin,
+        };
+      });
       return {
         subject: meta.subject || "",
-        participants: (meta.participants || []).map((p) => ({
-          id: p.id,
-          admin: p.admin || null,
-        })),
+        participants,
       };
     },
   };

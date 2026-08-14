@@ -68,16 +68,26 @@ export function mapBaileysMessage(
 
   const identity = resolveChatIdentity(key, isGroup);
   const pushName = (waMsg.pushName || "").trim();
-  const chatName = isGroup
-    ? pushName || remoteJid
-    : pushName || identity.phone || phoneFromJid(identity.externalChatId) || remoteJid;
+  // Groups must use a stable group identity — never the sender pushName
+  // (that would merge the private contact chat with the group).
+  let chatName: string;
+  let bodyText = text || (mType !== "text" ? `[${mType}]` : "");
+  if (isGroup) {
+    chatName = identity.externalChatId || remoteJid;
+    if (pushName && bodyText && !fromMe) {
+      bodyText = `${pushName}: ${bodyText}`;
+    }
+  } else {
+    chatName =
+      pushName || identity.phone || phoneFromJid(identity.externalChatId) || remoteJid;
+  }
 
   return {
     account_id: accountId,
     chat_name: chatName || remoteJid,
-    body: text || (mType !== "text" ? `[${mType}]` : ""),
+    body: bodyText,
     direction: fromMe ? "outbound" : "inbound",
-    phone: identity.phone,
+    phone: isGroup ? "" : identity.phone,
     group_id: identity.groupId,
     external_chat_id: identity.externalChatId,
     chat_type: isGroup ? "group" : "pv",

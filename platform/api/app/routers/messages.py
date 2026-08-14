@@ -458,6 +458,26 @@ def _to_ingest_out(
     )
 
 
+def _ingest_is_group(body: MessageIngestIn, external_chat_id: str | None) -> bool:
+    body_type = (body.chat_type or "").strip().lower()
+    ext = (external_chat_id or "").strip()
+    return (
+        body_type == "group"
+        or bool((body.group_id or "").strip())
+        or ext.endswith("@g.us")
+        or ext.startswith("gname:")
+    )
+
+
+def _lead_is_group(lead: Lead) -> bool:
+    ct = (lead.chat_type or "").strip().lower()
+    if ct == "group":
+        return True
+    gid = (lead.group_id or "").strip()
+    ext = (lead.external_chat_id or "").strip()
+    return gid.endswith("@g.us") or ext.endswith("@g.us") or ext.startswith("gname:")
+
+
 def _touch_lead_from_ingest(
     lead: Lead,
     *,
@@ -468,15 +488,30 @@ def _touch_lead_from_ingest(
     body: MessageIngestIn,
     chat_name: str,
 ) -> None:
-    body_type = (body.chat_type or "").strip().lower()
-    inferred_type = body_type or (lead.chat_type or "pv")
-    if (
-        body_type == "group"
-        or (body.group_id or "").strip()
-        or (external_chat_id or "").endswith("@g.us")
-        or str(external_chat_id or "").startswith("gname:")
-    ):
-        inferred_type = "group"
+    ingest_group = _ingest_is_group(body, external_chat_id)
+    lead_group = _lead_is_group(lead)
+
+    # Never convert a private lead into a group (or the reverse) via touch —
+    # wrong matches used to flip PV contacts when someone spoke in a group.
+    if ingest_group and not lead_group:
+        # Only allow fill of missing metadata if this lead is clearly the same group id
+        same_group = False
+        gid = (body.group_id or external_chat_id or "").strip()
+        if gid and (
+            (lead.group_id or "").strip() == gid
+            or (lead.external_chat_id or "").strip() == gid
+        ):
+            same_group = True
+        if not same_group:
+            lead.last_message_at = datetime.utcnow()
+            lead.updated_at = datetime.utcnow()
+            return
+    if (not ingest_group) and lead_group:
+        lead.last_message_at = datetime.utcnow()
+        lead.updated_at = datetime.utcnow()
+        return
+
+    inferred_type = "group" if ingest_group else ((body.chat_type or lead.chat_type or "pv").strip().lower() or "pv")
 
     safe_phone = _sanitize_lead_phone(
         phone,
@@ -485,23 +520,34 @@ def _touch_lead_from_ingest(
         source_channel=source_channel,
         chat_type=inferred_type,
     )
-    if safe_phone and not _looks_like_phone(lead.phone or "") and not _is_divar_style_id(lead.phone or ""):
-        lead.phone = safe_phone
-    elif safe_phone and not lead.phone:
-        lead.phone = safe_phone
+    if not ingest_group:
+        if safe_phone and not _looks_like_phone(lead.phone or "") and not _is_divar_style_id(lead.phone or ""):
+            lead.phone = safe_phone
+        elif safe_phone and not lead.phone:
+            lead.phone = safe_phone
 
-    if body.group_id and not lead.group_id:
-        lead.group_id = body.group_id
-    # Always upgrade to group when ingest says so (sidebar often first-saved as pv).
-    if inferred_type == "group":
+    if ingest_group:
         lead.chat_type = "group"
         if body.group_id:
             lead.group_id = body.group_id
-        elif (external_chat_id or "").endswith("@g.us") and not lead.group_id:
-            lead.group_id = external_chat_id
+        elif (external_chat_id or "").endswith("@g.us"):
+            lead.group_id = external_chat_id or lead.group_id
         # Groups must not keep a display-name phone
         if lead.phone and not _looks_like_phone(lead.phone):
             lead.phone = ""
+        # Prefer human group title when chat_name is not the raw jid
+        if (
+            chat_name
+            and chat_name != external_chat_id
+            and not chat_name.endswith("@g.us")
+            and (not lead.name or lead.name == external_chat_id or (lead.name or "").endswith("@g.us"))
+        ):
+            lead.name = chat_name[:200]
+    else:
+        if not lead.chat_type or lead.chat_type == "group":
+            # Do not demote an established group here; guarded above
+            lead.chat_type = "pv"
+
     if external_chat_id and not lead.external_chat_id:
         # Avoid locking display names into external_chat_id when we have a better id later
         if not (
@@ -516,16 +562,17 @@ def _touch_lead_from_ingest(
         lead.post_token = post_token
     if not lead.source_channel:
         lead.source_channel = source_channel
-    # Prefer human name over raw UUID chat id
-    if body.ad_title and (not lead.name or lead.name == chat_name or lead.name == external_chat_id):
-        lead.name = body.ad_title[:200]
-    elif (
-        chat_name
-        and chat_name != external_chat_id
-        and (not lead.name or lead.name == external_chat_id)
-    ):
-        lead.name = chat_name[:200]
-    _heal_display_name_phone(lead)
+    if not ingest_group:
+        # Prefer human name over raw UUID chat id
+        if body.ad_title and (not lead.name or lead.name == chat_name or lead.name == external_chat_id):
+            lead.name = body.ad_title[:200]
+        elif (
+            chat_name
+            and chat_name != external_chat_id
+            and (not lead.name or lead.name == external_chat_id)
+        ):
+            lead.name = chat_name[:200]
+        _heal_display_name_phone(lead)
     lead.last_message_at = datetime.utcnow()
     lead.updated_at = datetime.utcnow()
 
@@ -670,6 +717,7 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
     chat_name = (body.chat_name or body.ad_title or "").strip() or "بدون نام"
     post_token = (body.post_token or "").strip()
     source_channel = acc.channel.value if isinstance(acc.channel, ChannelType) else str(acc.channel)
+    ingest_group = _ingest_is_group(body, external_chat_id)
 
     # WhatsApp must not use display name as external id / phone
     if (
@@ -682,6 +730,20 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         external_chat_id = None
     if phone and not _looks_like_phone(phone) and source_channel == "whatsapp":
         phone = None
+    # Group messages never carry the sender phone into lead.phone matching
+    if ingest_group:
+        phone = None
+
+    def _link_lead_ok(link_row: LeadAccountLink) -> Lead | None:
+        lead_row = db.get(Lead, link_row.lead_id)
+        if not lead_row:
+            return None
+        # Isolate PV ↔ group: never reuse the wrong chat type
+        if ingest_group and not _lead_is_group(lead_row):
+            return None
+        if (not ingest_group) and _lead_is_group(lead_row):
+            return None
+        return lead_row
 
     link = None
     if external_chat_id:
@@ -694,19 +756,25 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             )
             .first()
         )
-    if not link and chat_name:
-        link = (
+    # For groups, do NOT fall back to chat_name (often was sender pushName historically).
+    # For PV, chat_name match is OK only against non-group leads.
+    if not link and chat_name and not ingest_group:
+        candidates = (
             db.query(LeadAccountLink)
             .filter(
                 LeadAccountLink.org_id == org_id,
                 LeadAccountLink.account_id == body.account_id,
                 LeadAccountLink.chat_name == chat_name,
             )
-            .first()
+            .all()
         )
+        for cand in candidates:
+            if _link_lead_ok(cand):
+                link = cand
+                break
 
     if link:
-        lead = db.get(Lead, link.lead_id)
+        lead = _link_lead_ok(link)
         if lead:
             _touch_lead_from_ingest(
                 lead,
@@ -730,46 +798,85 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             .filter(Lead.org_id == org_id, Lead.external_chat_id == external_chat_id)
             .first()
         )
-    # CRM sync often saved Divar chatId as phone with empty external_chat_id
-    if not lead and external_chat_id:
-        lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == external_chat_id).first()
-    if not lead and phone:
-        lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == phone).first()
-    if not lead and phone:
-        lead = (
-            db.query(Lead)
-            .filter(Lead.org_id == org_id, Lead.external_chat_id == phone)
-            .first()
-        )
-    if not lead and body.group_id:
-        lead = db.query(Lead).filter(Lead.org_id == org_id, Lead.group_id == body.group_id).first()
-    # WhatsApp sync often stores display name only (no phone / external_chat_id yet)
-    if not lead and chat_name:
-        lead = (
-            db.query(Lead)
-            .filter(Lead.org_id == org_id, Lead.name == chat_name)
-            .first()
-        )
+        if lead and ingest_group and not _lead_is_group(lead):
+            lead = None
+        if lead and (not ingest_group) and _lead_is_group(lead):
+            lead = None
+
+    if ingest_group:
+        # Groups: only match by group jid / group_id — never by phone or display name
+        if not lead and body.group_id:
+            lead = (
+                db.query(Lead)
+                .filter(
+                    Lead.org_id == org_id,
+                    Lead.group_id == body.group_id,
+                    Lead.chat_type == "group",
+                )
+                .first()
+            )
+        if not lead and external_chat_id and external_chat_id.endswith("@g.us"):
+            lead = (
+                db.query(Lead)
+                .filter(
+                    Lead.org_id == org_id,
+                    Lead.group_id == external_chat_id,
+                    Lead.chat_type == "group",
+                )
+                .first()
+            )
+    else:
+        # PV: never match group leads by phone / name
+        if not lead and external_chat_id:
+            cand = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == external_chat_id).first()
+            if cand and not _lead_is_group(cand):
+                lead = cand
+        if not lead and phone:
+            cand = db.query(Lead).filter(Lead.org_id == org_id, Lead.phone == phone).first()
+            if cand and not _lead_is_group(cand):
+                lead = cand
+        if not lead and phone:
+            cand = (
+                db.query(Lead)
+                .filter(Lead.org_id == org_id, Lead.external_chat_id == phone)
+                .first()
+            )
+            if cand and not _lead_is_group(cand):
+                lead = cand
+        # Name match only for PV, and only when name isn't a raw jid
+        if (
+            not lead
+            and chat_name
+            and chat_name != external_chat_id
+            and not chat_name.endswith("@g.us")
+            and not chat_name.endswith("@lid")
+            and not chat_name.endswith("@s.whatsapp.net")
+        ):
+            cand = (
+                db.query(Lead)
+                .filter(Lead.org_id == org_id, Lead.name == chat_name)
+                .first()
+            )
+            if cand and not _lead_is_group(cand):
+                lead = cand
 
     if not lead:
         display = (body.ad_title or chat_name)[:200]
         if display == external_chat_id and phone:
             display = phone[:200]
-        inferred_type = (body.chat_type or "pv").strip().lower() or "pv"
-        if (
-            inferred_type == "group"
-            or (body.group_id or "").strip()
-            or (external_chat_id or "").endswith("@g.us")
-            or str(external_chat_id or "").startswith("gname:")
-        ):
-            inferred_type = "group"
-        phone_val = _sanitize_lead_phone(
-            phone,
-            external_chat_id,
-            chat_name=chat_name,
-            source_channel=source_channel,
-            chat_type=inferred_type,
-        )
+        if ingest_group and (display.endswith("@g.us") or display == external_chat_id):
+            # Keep jid as placeholder name until a human title is known
+            display = (external_chat_id or chat_name or "گروه")[:200]
+        inferred_type = "group" if ingest_group else "pv"
+        phone_val = ""
+        if not ingest_group:
+            phone_val = _sanitize_lead_phone(
+                phone,
+                external_chat_id,
+                chat_name=chat_name,
+                source_channel=source_channel,
+                chat_type=inferred_type,
+            )
         lead = Lead(
             org_id=org_id,
             name=display,
@@ -797,12 +904,17 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         )
         db.add(lead)
 
+    # Link chat_name for groups should be stable (jid or title), not sender name
+    link_chat_name = chat_name
+    if ingest_group and external_chat_id:
+        link_chat_name = external_chat_id
+
     _ensure_account_link(
         db,
         org_id=org_id,
         lead_id=lead.id,
         account_id=body.account_id,
-        chat_name=chat_name,
+        chat_name=link_chat_name,
         external_chat_id=external_chat_id,
     )
     return lead

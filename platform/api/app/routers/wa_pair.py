@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -146,14 +146,16 @@ def list_groups(
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
-    """Proxy to wa-connector group list (rate-limited client-side)."""
+    """Proxy to wa-connector group list."""
     acc = _get_org_account(db, auth.org.id, account_id)
     if (acc.connector_type or "") != "baileys":
         raise HTTPException(status_code=400, detail="فقط اکانت Baileys")
+    if (acc.pairing_state or "") != "connected" and (acc.status or "") != "online":
+        raise HTTPException(status_code=409, detail="واتساپ متصل نیست")
     import httpx
 
     try:
-        r = httpx.get(f"http://127.0.0.1:8090/groups/{account_id}", timeout=30.0)
+        r = httpx.get(f"http://127.0.0.1:8090/groups/{account_id}", timeout=45.0)
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail=r.text[:300] or "connector error")
         return r.json()
@@ -163,24 +165,27 @@ def list_groups(
         raise HTTPException(status_code=503, detail=f"wa-connector unreachable: {exc}") from exc
 
 
-@router.get("/accounts/{account_id}/groups/{group_jid}/participants")
+@router.get("/accounts/{account_id}/groups/participants")
 def group_participants(
     account_id: str,
-    group_jid: str,
-    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    jid: str = Query(..., min_length=5, description="Group JID e.g. 120…@g.us"),
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
     db: Session = Depends(get_db),
 ):
-    """Export group participants via Baileys (admin-only)."""
+    """Export group participants via Baileys."""
     acc = _get_org_account(db, auth.org.id, account_id)
     if (acc.connector_type or "") != "baileys":
         raise HTTPException(status_code=400, detail="فقط اکانت Baileys")
+    group_jid = (jid or "").strip()
+    if "@g.us" not in group_jid:
+        raise HTTPException(status_code=400, detail="jid گروه نامعتبر است")
     import httpx
     from urllib.parse import quote
 
     try:
         r = httpx.get(
-            f"http://127.0.0.1:8090/groups/{account_id}/{quote(group_jid, safe='')}",
-            timeout=45.0,
+            f"http://127.0.0.1:8090/groups/{account_id}/participants?jid={quote(group_jid, safe='')}",
+            timeout=60.0,
         )
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail=r.text[:300] or "connector error")

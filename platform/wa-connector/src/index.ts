@@ -119,26 +119,45 @@ function startHealthServer() {
     }
     if (req.url?.startsWith("/groups/") && req.method === "GET") {
       void (async () => {
-        const parts = (req.url || "").split("/").filter(Boolean);
-        // /groups/:accountId or /groups/:accountId/:groupJid
-        const accountId = parts[1];
-        const groupJid = parts[2] ? decodeURIComponent(parts.slice(2).join("/")) : "";
-        const session = sessions.get(accountId || "");
-        if (!session?.connected) {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "session not connected" }));
-          return;
-        }
         try {
-          if (!groupJid) {
-            const groups = await session.listGroups();
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ groups }));
-          } else {
+          const url = new URL(req.url || "/", "http://127.0.0.1");
+          const parts = url.pathname.split("/").filter(Boolean);
+          // /groups/:accountId  OR  /groups/:accountId/participants?jid=
+          const accountId = parts[1] || "";
+          const session = sessions.get(accountId);
+          if (!session?.connected) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "session not connected" }));
+            return;
+          }
+          if (parts[2] === "participants") {
+            const groupJid = (url.searchParams.get("jid") || "").trim();
+            if (!groupJid) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "jid query required" }));
+              return;
+            }
             const data = await session.groupParticipants(groupJid);
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ group_jid: groupJid, ...data }));
+            return;
           }
+          if (parts.length === 2) {
+            const groups = await session.listGroups();
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ groups }));
+            return;
+          }
+          // Legacy path: /groups/:accountId/:groupJid
+          const groupJid = parts[2] ? decodeURIComponent(parts.slice(2).join("/")) : "";
+          if (groupJid) {
+            const data = await session.groupParticipants(groupJid);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ group_jid: groupJid, ...data }));
+            return;
+          }
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "not found" }));
         } catch (err) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: String(err) }));
