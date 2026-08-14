@@ -1,4 +1,4 @@
-const EXT_VERSION = "7.7.2";
+const EXT_VERSION = "7.7.3";
 const BRAND = "iranexpedia.ir";
 
 console.log(
@@ -406,6 +406,22 @@ function normalizePhone(value) {
     // Bare 98xxxxxxxxxx (no +) when looks like IR country code
     if (/^98\d{10}$/.test(n)) n = "+" + n;
     return n;
+}
+
+/** Digits-only phone key for matching +989… vs 989… vs 09… */
+function phoneDigitsKey(value) {
+    const n = normalizePhone(value);
+    if (!looksLikePhone(n)) return "";
+    let d = n.replace(/\D/g, "");
+    if (d.length === 10 && d.startsWith("9")) d = "98" + d;
+    if (d.length === 11 && d.startsWith("09")) d = "98" + d.slice(1);
+    return d;
+}
+
+function phonesEqual(a, b) {
+    const da = phoneDigitsKey(a);
+    const db = phoneDigitsKey(b);
+    return !!(da && db && da === db);
 }
 
 /** Only real phone digits — never a contact/group display name. */
@@ -1458,15 +1474,25 @@ function sendWhatsAppMessage() {
     return false;
 }
 
-async function waitForChatReady(expectedName, timeoutMs) {
+async function waitForChatReady(expectedName, timeoutMs, opts) {
     const start = Date.now();
+    const want = String(expectedName || "").trim();
+    const wantPhone = phoneDigitsKey(want);
+    const loosePhone = !!(opts && opts.loosePhone);
     while (Date.now() - start < timeoutMs) {
         const input = document.querySelector(
             '#main footer div[contenteditable="true"][role="textbox"]'
         );
-        const name = getChatName();
-        if (input && (!expectedName || !name || name === expectedName)) {
-            return true;
+        if (input) {
+            if (!want) return true;
+            const name = getChatName() || "";
+            if (chatNamesEqual(name, want) || phonesEqual(name, want)) return true;
+            if (wantPhone) {
+                const id = getChatIdentity();
+                if (phonesEqual(id.phone, want) || phonesEqual(name, want)) return true;
+                // After phone search /send link, header often shows contact name — accept composer.
+                if (loosePhone && (name || id.phone)) return true;
+            }
         }
         await sleep(300);
     }
@@ -1490,6 +1516,7 @@ function clickSidebarCell(cell) {
 function chatNamesEqual(a, b) {
     if (!a || !b) return false;
     if (a === b) return true;
+    if (phonesEqual(a, b)) return true;
     if (
         globalThis.IranexpediaCrm &&
         typeof IranexpediaCrm.namesMatch === "function"
@@ -1499,21 +1526,73 @@ function chatNamesEqual(a, b) {
     return cleanChatLabel(a) === cleanChatLabel(b);
 }
 
+function cellMatchesTarget(cell, want) {
+    if (!cell || !want) return false;
+    const title = getCellChatName(cell);
+    if (title && chatNamesEqual(title, want)) return true;
+    if (!phoneDigitsKey(want)) return false;
+    const spans = cell.querySelectorAll(
+        "span[title], span[dir='auto'], span[dir='rtl'], span[dir='ltr']"
+    );
+    for (let i = 0; i < spans.length; i++) {
+        const t = cleanChatLabel(
+            spans[i].getAttribute("title") || spans[i].innerText || spans[i].textContent || ""
+        );
+        if (t && phonesEqual(t, want)) return true;
+    }
+    return false;
+}
+
+async function clearWaSearchBox(search) {
+    if (!search) return;
+    search.focus();
+    document.execCommand("selectAll", false, null);
+    document.execCommand("delete", false, null);
+    search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+}
+
+async function openChatViaPhoneUrl(phone, timeoutMs) {
+    const digits = phoneDigitsKey(phone);
+    if (!digits) return false;
+    // Soft-navigate on same origin so WA router opens the chat composer.
+    const url = "/send?phone=" + encodeURIComponent(digits);
+    try {
+        if (!location.pathname.startsWith("/send") || !String(location.search || "").includes(digits)) {
+            history.pushState(null, "", url);
+            window.dispatchEvent(new PopStateEvent("popstate"));
+            // Some WA builds only listen to full path changes
+            if (!document.querySelector('#main footer div[contenteditable="true"][role="textbox"]')) {
+                location.assign("https://web.whatsapp.com" + url);
+            }
+        }
+    } catch (_e) {
+        location.href = "https://web.whatsapp.com" + url;
+    }
+    return waitForChatReady(normalizePhone(phone), timeoutMs || 16000, { loosePhone: true });
+}
+
 async function openChatByName(targetName, timeoutMs) {
     const want = String(targetName || "").trim();
     if (!want) return false;
+    const wantPhone = phoneDigitsKey(want);
+    const waitMs = timeoutMs || 12000;
 
     const current = getChatName();
-    if (current && chatNamesEqual(current, want)) {
-        return waitForChatReady(current, timeoutMs || 8000);
+    const currentId = getChatIdentity();
+    if (
+        (current && chatNamesEqual(current, want)) ||
+        (wantPhone && phonesEqual(currentId.phone, want))
+    ) {
+        return waitForChatReady(want, Math.min(waitMs, 8000), {
+            loosePhone: !!wantPhone
+        });
     }
 
     const cells = getSidebarCells();
     for (let i = 0; i < cells.length; i++) {
-        const name = getCellChatName(cells[i]);
-        if (name && chatNamesEqual(name, want)) {
+        if (cellMatchesTarget(cells[i], want)) {
             clickSidebarCell(cells[i]);
-            return waitForChatReady(name, timeoutMs || 12000);
+            if (await waitForChatReady(want, waitMs, { loosePhone: !!wantPhone })) return true;
         }
     }
 
@@ -1523,18 +1602,43 @@ async function openChatByName(targetName, timeoutMs) {
         document.querySelector('[data-testid="chat-list-search"]') ||
         document.querySelector('div[contenteditable="true"][role="textbox"][data-tab="3"]');
     if (search) {
-        search.focus();
-        document.execCommand("selectAll", false, null);
-        document.execCommand("insertText", false, want);
-        await sleep(1200);
-        const afterSearch = getSidebarCells();
-        for (let j = 0; j < afterSearch.length; j++) {
-            const name2 = getCellChatName(afterSearch[j]);
-            if (name2 && chatNamesEqual(name2, want)) {
-                clickSidebarCell(afterSearch[j]);
-                return waitForChatReady(name2, timeoutMs || 12000);
+        const queries = wantPhone
+            ? [wantPhone, normalizePhone(want), want.replace(/^\+/, "")]
+            : [want];
+        const seenQ = {};
+        for (let qi = 0; qi < queries.length; qi++) {
+            const query = String(queries[qi] || "").trim();
+            if (!query || seenQ[query]) continue;
+            seenQ[query] = true;
+            search.focus();
+            document.execCommand("selectAll", false, null);
+            document.execCommand("insertText", false, query);
+            search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            await sleep(1400);
+            const afterSearch = getSidebarCells();
+            for (let j = 0; j < afterSearch.length; j++) {
+                if (cellMatchesTarget(afterSearch[j], want)) {
+                    clickSidebarCell(afterSearch[j]);
+                    await clearWaSearchBox(search);
+                    if (await waitForChatReady(want, waitMs, { loosePhone: !!wantPhone })) {
+                        return true;
+                    }
+                }
+            }
+            // Phone search: first chat result is usually the right contact under a display name
+            if (wantPhone && afterSearch.length) {
+                clickSidebarCell(afterSearch[0]);
+                await clearWaSearchBox(search);
+                if (await waitForChatReady(want, waitMs, { loosePhone: true })) return true;
             }
         }
+        await clearWaSearchBox(search);
+    }
+
+    // Last resort for PV numbers: WhatsApp deep link
+    if (wantPhone) {
+        log("openChatByName: fallback /send?phone=" + wantPhone);
+        return openChatViaPhoneUrl(want, Math.max(waitMs, 16000));
     }
 
     return false;

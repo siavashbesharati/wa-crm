@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, clearSession, getSession, saveSession } from "@/lib/api";
+import { api, clearSession, getSession, saveSession, isNetworkErrorMessage } from "@/lib/api";
 import { loadOrgMe } from "@/lib/me-cache";
 import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
@@ -38,8 +38,11 @@ export default function BusinessLoginPage() {
         }
         router.replace("/home");
       })
-      .catch(() => {
-        clearSession();
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : "";
+        if (!isNetworkErrorMessage(msg) && !getSession()) {
+          clearSession();
+        }
       });
     return () => {
       cancelled = true;

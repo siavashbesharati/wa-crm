@@ -69,7 +69,6 @@ class OnboardingPayIn(BaseModel):
 
 class OnboardingAiSettingsIn(BaseModel):
     agent_role: str
-    system_prompt: str
     auto_send_enabled: bool = True
 
 
@@ -101,6 +100,7 @@ class ChannelAccountIn(BaseModel):
     label: str = ""
     external_id: str = ""
     phone: str = ""  # WA alias for external_id
+    connector_type: str = "extension"  # extension | baileys
 
 
 class ChannelAccountOut(BaseModel):
@@ -110,11 +110,48 @@ class ChannelAccountOut(BaseModel):
     external_id: str
     phone: str  # WA alias
     status: str
+    connector_type: str = "extension"
+    pairing_state: str = "disconnected"
+    wa_jid: str = ""
 
 
 # Backward-compatible aliases
 WhatsAppAccountIn = ChannelAccountIn
 WhatsAppAccountOut = ChannelAccountOut
+
+
+class WaPairStatusOut(BaseModel):
+    account_id: str
+    pairing_state: str
+    status: str
+    qr_payload: str = ""
+    wa_jid: str = ""
+    connector_type: str = "baileys"
+
+
+class WaAuthStateIn(BaseModel):
+    creds_json: str = ""
+    keys_json: str = ""
+
+
+class WaAuthStateOut(BaseModel):
+    account_id: str
+    creds_json: str = ""
+    keys_json: str = ""
+
+
+class WaPairStateIn(BaseModel):
+    pairing_state: str = "disconnected"
+    qr_payload: str = ""
+    wa_jid: str = ""
+    status: str = ""
+    external_id: str = ""
+
+
+class WaGroupParticipantsOut(BaseModel):
+    group_jid: str
+    subject: str = ""
+    participants: list[dict] = Field(default_factory=list)
 
 
 class HeartbeatIn(BaseModel):
@@ -249,6 +286,8 @@ class MessageIngestIn(BaseModel):
     external_message_id: str = ""
     sender_type: str = "customer"
     trace_id: str = ""
+    media_type: str = ""
+    media_url: str = ""
 
 
 class MessageOut(BaseModel):
@@ -260,6 +299,8 @@ class MessageOut(BaseModel):
     body: str
     agent_id: str | None
     created_at: datetime
+    media_type: str = ""
+    media_url: str = ""
 
 
 class MessageIngestOut(MessageOut):
@@ -287,6 +328,7 @@ class OutboundJobOut(BaseModel):
     body: str
     sender_type: str
     status: str
+    target_jid: str = ""
 
 
 class KnowledgeIn(BaseModel):

@@ -141,11 +141,14 @@ def _queue_bot_command_ack(
         target = (target_name or "").strip() or _outbound_target(lead, link)
         if not target:
             return ""
+        from app.services.wa_jid import resolve_target_jid
+
         job = OutboundJob(
             org_id=org_id,
             account_id=account_id,
             lead_id=lead_id,
             target_name=target,
+            target_jid=resolve_target_jid(lead, link),
             body=body,
             sender_type=SenderType.system,
             status=OutboundStatus.queued,
@@ -221,7 +224,7 @@ def _apply_bot_intent(
 
 def _dispatch_inbound_actions(
     *,
-    auth: AuthContext,
+    org_id: str,
     lead: Lead,
     msg: Message,
     body: MessageIngestIn,
@@ -239,7 +242,7 @@ def _dispatch_inbound_actions(
     chat_name = (body.chat_name or lead.name or "").strip()
     if bot_cmd and ack_text:
         ack_job_id = _queue_bot_command_ack(
-            org_id=auth.org.id,
+            org_id=org_id,
             account_id=body.account_id,
             lead_id=lead.id,
             target_name=chat_name,
@@ -251,7 +254,7 @@ def _dispatch_inbound_actions(
         trace_event(trace_id, "bot_command_noop", command=bot_cmd, paused=lead.bot_paused)
         return {"status": "skipped", "reason": f"bot_{bot_cmd}_noop", "job_id": ""}
     return _maybe_auto_reply(
-        auth=auth,
+        org_id=org_id,
         lead=lead,
         msg=msg,
         body_text=body_text,
@@ -261,15 +264,16 @@ def _dispatch_inbound_actions(
     )
 
 
-@router.post("/ingest", response_model=MessageIngestOut)
-def ingest(
+def process_message_ingest(
+    *,
+    db: Session,
+    org_id: str,
     body: MessageIngestIn,
-    background_tasks: BackgroundTasks,
-    auth: AuthContext = Depends(get_auth),
-    db: Session = Depends(get_db),
-):
+    acc: ChannelAccount,
+    background_tasks: BackgroundTasks | None = None,
+) -> MessageIngestOut:
     """
-    Incoming message handler (single entry for extension).
+    Incoming message handler (shared by extension + Baileys connector).
 
     Always persists inbound text. Then decides purpose:
       - stop/handoff → set lead.bot_paused=True, optional ack, no AI
@@ -277,14 +281,6 @@ def ingest(
       - other        → if not paused, run AI auto-reply pipeline
     Pause never rejects ingest — history keeps flowing for the next actions.
     """
-    acc = (
-        db.query(ChannelAccount)
-        .filter(ChannelAccount.id == body.account_id, ChannelAccount.org_id == auth.org.id)
-        .first()
-    )
-    if not acc:
-        raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
-
     trace_id = (body.trace_id or "").strip()
     trace_event(
         trace_id,
@@ -293,7 +289,7 @@ def ingest(
         direction=body.direction,
     )
 
-    lead = _upsert_lead_from_ingest(db, auth.org.id, body, acc)
+    lead = _upsert_lead_from_ingest(db, org_id, body, acc)
     ext_msg_id = (body.external_message_id or body.wa_message_id or "").strip()
     body_text = (body.body or "").strip()
     bot_cmd = (
@@ -307,7 +303,7 @@ def ingest(
         echo = (
             db.query(Message)
             .filter(
-                Message.org_id == auth.org.id,
+                Message.org_id == org_id,
                 Message.lead_id == lead.id,
                 Message.direction == MessageDirection.outbound,
                 Message.body == body_text,
@@ -325,7 +321,7 @@ def ingest(
         existing = (
             db.query(Message)
             .filter(
-                Message.org_id == auth.org.id,
+                Message.org_id == org_id,
                 Message.account_id == body.account_id,
                 Message.wa_message_id == ext_msg_id,
             )
@@ -337,7 +333,7 @@ def ingest(
             if bot_cmd:
                 db.commit()
             auto_reply = _dispatch_inbound_actions(
-                auth=auth,
+                org_id=org_id,
                 lead=lead,
                 msg=existing,
                 body=body,
@@ -356,13 +352,15 @@ def ingest(
             )
 
     msg = Message(
-        org_id=auth.org.id,
+        org_id=org_id,
         account_id=body.account_id,
         lead_id=lead.id,
         direction=MessageDirection(body.direction),
         sender_type=SenderType(body.sender_type),
         body=body.body,
         wa_message_id=ext_msg_id,
+        media_type=(getattr(body, "media_type", None) or "").strip(),
+        media_url=(getattr(body, "media_url", None) or "").strip(),
     )
     db.add(msg)
 
@@ -381,7 +379,7 @@ def ingest(
         )
 
     auto_reply = _dispatch_inbound_actions(
-        auth=auth,
+        org_id=org_id,
         lead=lead,
         msg=msg,
         body=body,
@@ -401,6 +399,24 @@ def ingest(
     )
 
 
+@router.post("/ingest", response_model=MessageIngestOut)
+def ingest(
+    body: MessageIngestIn,
+    background_tasks: BackgroundTasks,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    from app.services.ingest_service import process_message_ingest as shared_ingest
+
+    return shared_ingest(
+        db,
+        auth.org.id,
+        body,
+        background_tasks,
+        allow_baileys_extension=False,
+    )
+
+
 def _to_out(m: Message) -> MessageOut:
     return MessageOut(
         id=m.id,
@@ -411,6 +427,8 @@ def _to_out(m: Message) -> MessageOut:
         body=m.body,
         agent_id=m.agent_id,
         created_at=m.created_at,
+        media_type=getattr(m, "media_type", "") or "",
+        media_url=getattr(m, "media_url", "") or "",
     )
 
 
@@ -787,7 +805,7 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
 
 def _maybe_auto_reply(
     *,
-    auth: AuthContext,
+    org_id: str,
     lead: Lead,
     msg: Message,
     body_text: str,
@@ -803,7 +821,7 @@ def _maybe_auto_reply(
     if bot_cmd:
         return None
     payload = {
-        "org_id": auth.org.id,
+        "org_id": org_id,
         "lead_id": lead.id,
         "message_id": msg.id,
         "trace_id": trace_id,
@@ -915,11 +933,30 @@ def send_message(body: SendMessageIn, auth: AuthContext = Depends(get_auth), db:
     if not acc:
         raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
+    from app.services.wa_jid import resolve_target_jid
+
+    link = None
+    lead = None
+    if body.lead_id:
+        lead = db.query(Lead).filter(Lead.id == body.lead_id, Lead.org_id == auth.org.id).first()
+        if lead:
+            link = (
+                db.query(LeadAccountLink)
+                .filter(
+                    LeadAccountLink.org_id == auth.org.id,
+                    LeadAccountLink.lead_id == lead.id,
+                    LeadAccountLink.account_id == body.account_id,
+                )
+                .first()
+            )
+
+    target_jid = resolve_target_jid(lead, link)
     job = OutboundJob(
         org_id=auth.org.id,
         account_id=body.account_id,
         lead_id=body.lead_id,
         target_name=body.target_name,
+        target_jid=target_jid,
         body=body.body,
         sender_type=SenderType(body.sender_type),
         created_by_id=auth.user.id,
@@ -960,4 +997,5 @@ def send_message(body: SendMessageIn, auth: AuthContext = Depends(get_auth), db:
         body=job.body,
         sender_type=job.sender_type.value,
         status=job.status.value,
+        target_jid=getattr(job, "target_jid", "") or "",
     )

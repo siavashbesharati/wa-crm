@@ -50,13 +50,6 @@ def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_
         db.add(policy)
         db.commit()
         db.refresh(policy)
-    # Soft-migrate stock defaults only (0.55 platform / 0.72 legacy)
-    mc = round(float(policy.min_confidence or 0), 2)
-    if mc in (0.55, 0.72):
-        policy.min_confidence = 0.45
-        db.add(policy)
-        db.commit()
-        db.refresh(policy)
     return _policy_out(policy)
 
 
@@ -89,7 +82,6 @@ def put_policy(
     policy.hours_start = body.hours_start
     policy.hours_end = body.hours_end
     policy.agent_role = (body.agent_role or "").strip()
-    policy.system_prompt = (body.system_prompt or "").strip()
     policy.fallback_message = (body.fallback_message or "").strip()
     db.add(policy)
     db.commit()
@@ -179,12 +171,6 @@ def run_auto_reply_for_lead(
             return {"sent": False, "reason": group_reason}
 
     result = generate_reply(db, org_id=auth.org.id, lead=lead, message=message)
-    if float(result["confidence"]) < policy.min_confidence:
-        return {
-            "sent": False,
-            "reason": "low_confidence",
-            "confidence": result["confidence"],
-        }
 
     from app.models import LeadAccountLink, MessageDirection, OutboundJob, OutboundStatus, SenderType
     from app.services.queue import enqueue as enqueue_job
@@ -201,11 +187,14 @@ def run_auto_reply_for_lead(
     )
     target = _outbound_target(lead, link)
 
+    from app.services.wa_jid import resolve_target_jid
+
     job = OutboundJob(
         org_id=auth.org.id,
         account_id=account_id,
         lead_id=lead_id,
         target_name=target,
+        target_jid=resolve_target_jid(lead, link),
         body=result["reply"],
         sender_type=SenderType.ai,
         created_by_id=auth.user.id,

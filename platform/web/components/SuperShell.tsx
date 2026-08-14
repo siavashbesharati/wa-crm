@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { clearPlatformSession, getPlatformSession, logoutPlatform, PLATFORM_KEY } from "@/lib/api";
+import { clearPlatformSession, getPlatformSession, logoutPlatform, PLATFORM_KEY, isNetworkErrorMessage } from "@/lib/api";
 import { getCachedPlatformMe, loadPlatformMe } from "@/lib/me-cache";
 import { PageLoading } from "@/components/ui/Spinner";
 
@@ -53,8 +53,17 @@ export default function SuperShell({
         setUserLabel(me.user?.display_name || me.user?.phone || "سوپر ادمین");
         setReady(true);
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "";
+        if (isNetworkErrorMessage(msg) || getPlatformSession()) {
+          const cached = getCachedPlatformMe();
+          if (cached?.user) {
+            setUserLabel(cached.user.display_name || cached.user.phone || "سوپر ادمین");
+          }
+          setReady(true);
+          return;
+        }
         clearPlatformSession();
         setReady(false);
         router.replace("/super/login");

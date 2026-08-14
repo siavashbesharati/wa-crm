@@ -125,11 +125,22 @@
       options.headers || {}
     );
     var url = String(apiUrl || DEFAULT_API).replace(/\/$/, "") + path;
-    var res = await fetch(url, {
-      method: options.method || "GET",
-      headers: headers,
-      body: options.body ? JSON.stringify(options.body) : undefined
-    });
+    var res;
+    try {
+      res = await fetch(url, {
+        method: options.method || "GET",
+        headers: headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        error: "network_error",
+        network: true,
+        status: 0,
+        data: {}
+      };
+    }
     var rawText = await res.text().catch(function () {
       return "";
     });
@@ -589,6 +600,21 @@
     }
     var me = await request("/auth/me", { method: "GET" });
     if (!me.ok) {
+      if (me.network) {
+        return {
+          connected: true,
+          offline: true,
+          me: {
+            org: {
+              id: cfg.orgId,
+              name: cfg.orgName || ""
+            }
+          },
+          config: cfg,
+          heartbeatOk: false,
+          heartbeatError: me.error || "network_error"
+        };
+      }
       return { connected: false, reason: me.error || "auth_failed", config: cfg };
     }
     var org = me.data && me.data.org;
@@ -623,9 +649,36 @@
       return { ok: false, error: list.error || "list_accounts_failed" };
     }
     var accounts = Array.isArray(list.data) ? list.data : [];
+
+    // Server-side Baileys owns WhatsApp — extension must not bind/ingest for it.
+    if (ch === "whatsapp") {
+      for (var bi = 0; bi < accounts.length; bi++) {
+        var ba = accounts[bi];
+        if (
+          ba &&
+          ba.channel === "whatsapp" &&
+          String(ba.connector_type || "extension").toLowerCase() === "baileys"
+        ) {
+          return {
+            ok: false,
+            error: "baileys_owns_whatsapp",
+            skip: true,
+            account: ba
+          };
+        }
+      }
+    }
+
     var acc = null;
     for (var i = 0; i < accounts.length; i++) {
       if (accounts[i] && accounts[i].channel === ch) {
+        // Prefer extension-type accounts for DOM connector
+        if (
+          ch === "whatsapp" &&
+          String(accounts[i].connector_type || "extension").toLowerCase() === "baileys"
+        ) {
+          continue;
+        }
         acc = accounts[i];
         break;
       }

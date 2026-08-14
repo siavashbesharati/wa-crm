@@ -72,26 +72,45 @@ export default function AiSettingsPage() {
     })();
   }, [toast]);
 
-  async function save() {
+  async function save(next?: Partial<Policy>, nextKeywordsText?: string) {
     if (!policy) return;
-    const keywords = textToKeywords(keywordsText);
-    let mode: GroupReplyMode = policy.group_reply_mode === "keywords" ? "keywords" : "off";
-    if (!policy.auto_send_enabled) mode = "off";
+    const patch: Partial<Policy> =
+      next && typeof next === "object" && !("nativeEvent" in next) ? next : {};
+    const merged: Policy = { ...policy, ...patch };
+    const keywords = textToKeywords(
+      typeof nextKeywordsText === "string" ? nextKeywordsText : keywordsText
+    );
+    let mode: GroupReplyMode = merged.group_reply_mode === "keywords" ? "keywords" : "off";
+    if (!merged.auto_send_enabled) mode = "off";
     if (mode === "keywords" && keywords.length === 0) {
       toast.push("برای پاسخ گروهی حداقل یک کلمه کلیدی وارد کنید", "err");
       return;
     }
     const body = {
-      ...policy,
+      ...merged,
       group_reply_mode: mode,
       group_keywords: keywords,
       group_auto_send_enabled: mode === "keywords"
     };
-    await run(() => api("/ai/policy", { method: "PUT", body: JSON.stringify(body) }), {
-      success: "تنظیمات پاسخ خودکار ذخیره شد"
-    });
-    setPolicy({ ...policy, ...body });
+    const ok = await run(
+      () => api("/ai/policy", { method: "PUT", body: JSON.stringify(body) }),
+      { success: "تنظیمات پاسخ خودکار ذخیره شد" }
+    );
+    if (!ok) return;
+    setPolicy({ ...merged, ...body });
     setKeywordsText(keywordsToText(keywords));
+  }
+
+  async function setAutoSendEnabled(enabled: boolean) {
+    if (!policy) return;
+    const next: Policy = {
+      ...policy,
+      auto_send_enabled: enabled,
+      group_reply_mode: enabled ? policy.group_reply_mode : "off",
+      group_auto_send_enabled: enabled ? policy.group_auto_send_enabled : false
+    };
+    setPolicy(next);
+    await save(next);
   }
 
   function toggleStage(stage: string) {
@@ -102,7 +121,6 @@ export default function AiSettingsPage() {
     setPolicy({ ...policy, allowed_stages: STAGES.filter((s) => cur.has(s)) });
   }
 
-  const confidencePct = Math.round((policy?.min_confidence ?? 0) * 100);
   const groupMode = policy?.group_reply_mode === "keywords" ? "keywords" : "off";
 
   return (
@@ -112,29 +130,44 @@ export default function AiSettingsPage() {
       ) : (
         <>
           <Card
-            title="سیستم‌پرامپت"
+            title="سیستم‌پرامپت (سوپرادمین)"
             help={{
               title: "سیستم‌پرامپت پلتفرم",
-              body: "دستورالعمل اصلی AI از پنل سوپرادمین تنظیم می‌شود و برای همه کسب‌وکارها یکسان است. دانش و محتوای هر کسب‌وکار از بخش دانش سازمانی می‌آید.",
+              body: "دستورالعمل کلی AI فقط از پنل سوپرادمین تنظیم می‌شود. هر کسب‌وکار با «نقش دستیار» و «دانش سازمانی» شخصی‌سازی می‌شود.",
               tips: [
-                "برای تغییر لحن و قواعد کلی، از سوپرادمین (/super/ai) استفاده کنید.",
-                "اطلاعات اختصاصی کسب‌وکار (قیمت، کارت، پلن‌ها) را در دانش سازمانی بگذارید."
+                "برای تغییر قواعد کلی، از سوپرادمین (/super/ai) استفاده کنید.",
+                "اطلاعات اختصاصی (قیمت، FAQ) را در بخش دانش سازمانی بگذارید."
               ]
             }}
           >
             <p className="hint" style={{ margin: 0 }}>
-              سیستم‌پرامپت کسب‌وکار جداگانه اعمال نمی‌شود؛ همه پاسخ‌ها با پرامپت سوپرادمین
-              ساخته می‌شوند و تفاوت هر کسب‌وکار از دانش سازمانی است.
+              سیستم‌پرامپت در این صفحه قابل ویرایش نیست. پایین، نقش دستیار این کسب‌وکار را
+              تنظیم کنید.
             </p>
+          </Card>
+
+          <Card title="نقش دستیار (این کسب‌وکار)">
+            <label className="full" style={{ display: "block" }}>
+              <strong>نقش و لحن پاسخ‌گویی</strong>
+              <div className="hint" style={{ margin: "4px 0 8px" }}>
+                مثلاً «مشاور فروش تورهای خارجی» — با ذخیره، بلافاصله روی پاسخ‌های بعدی اعمال
+                می‌شود.
+              </div>
+              <input
+                value={policy.agent_role || ""}
+                onChange={(e) => setPolicy({ ...policy, agent_role: e.target.value })}
+                placeholder="مثلاً مشاور فروش و پشتیبانی ایران اکسپدیا"
+                style={{ width: "100%" }}
+              />
+            </label>
           </Card>
 
           <Card
             title="پاسخ خودکار"
             help={{
               title: "پاسخ خودکار",
-              body: "وقتی روشن باشد، به پیام‌های ورودی در مراحل مجاز و با حداقل اطمینان مشخص، خودکار پاسخ می‌فرستد.",
+              body: "وقتی روشن باشد، به پیام‌های ورودی در مراحل مجاز خودکار پاسخ می‌فرستد. هر پاسخ موفق AI مستقیماً ارسال می‌شود.",
               tips: [
-                "حداقل اطمینان را بالاتر بگذارید اگر پاسخ‌های ضعیف می‌بینید.",
                 "معمولاً فقط مرحله «جدید» را مجاز کنید.",
                 "در واتساپ مشتری می‌تواند با «توقف» یا «stop» ربات را برای همان چت خاموش کند و با «شروع» یا «start» روشن کند.",
                 "پیام‌های گروه همیشه ذخیره می‌شوند؛ پاسخ گروهی فقط طبق حالت انتخاب‌شده انجام می‌شود."
@@ -144,16 +177,11 @@ export default function AiSettingsPage() {
             <div className="ai-settings-stack">
               <Switch
                 label="فعال‌سازی پاسخ خودکار"
-                hint="وقتی روشن باشد، به پیام‌های خصوصی (و در صورت تنظیم، گروه‌ها) خودکار جواب داده می‌شود."
+                hint="با روشن/خاموش شدن، همان لحظه روی سرور ذخیره می‌شود."
                 checked={policy.auto_send_enabled}
-                onChange={(v) =>
-                  setPolicy({
-                    ...policy,
-                    auto_send_enabled: v,
-                    group_reply_mode: v ? policy.group_reply_mode : "off",
-                    group_auto_send_enabled: v ? policy.group_auto_send_enabled : false
-                  })
-                }
+                onChange={(v) => {
+                  void setAutoSendEnabled(v);
+                }}
               />
 
               <div className="ai-stages-block">
@@ -209,33 +237,6 @@ export default function AiSettingsPage() {
                 ) : null}
               </div>
 
-              <div className="ai-slider-block">
-                <div className="ai-slider-head">
-                  <strong>حداقل اطمینان</strong>
-                  <span className="ai-slider-value">{confidencePct}٪</span>
-                </div>
-                <input
-                  className="ai-range"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={confidencePct}
-                  onChange={(e) =>
-                    setPolicy({
-                      ...policy,
-                      min_confidence: Number(e.target.value) / 100
-                    })
-                  }
-                  style={{
-                    ["--ai-range-pct" as string]: `${confidencePct}%`
-                  }}
-                />
-                <div className="hint">
-                  فقط وقتی مدل به اندازه‌ی کافی مطمئن باشد پاسخ ارسال می‌شود.
-                </div>
-              </div>
-
               <div className="ai-stages-block">
                 <strong>مراحل برد مجاز برای پاسخ خودکار</strong>
                 <div className="hint" style={{ marginTop: 4 }}>
@@ -261,8 +262,8 @@ export default function AiSettingsPage() {
               <label className="full" style={{ display: "block" }}>
                 <strong>پیام جایگزین (Fallback)</strong>
                 <div className="hint" style={{ margin: "4px 0 8px" }}>
-                  اگر AI خطا بدهد یا پاسخ نسازد، این متن ارسال می‌شود. خالی بگذارید تا پیام سراسری
-                  سوپرادمین استفاده شود.
+                  فقط وقتی سرویس AI خطا بدهد (شبکه، rate limit، کلید نامعتبر و…) این متن ارسال
+                  می‌شود. پاسخ موفق AI همیشه همان‌طور که تولید شده ارسال می‌شود.
                 </div>
                 <textarea
                   rows={3}
@@ -275,7 +276,7 @@ export default function AiSettingsPage() {
                 />
               </label>
 
-              <Button loading={busy} onClick={save}>
+              <Button loading={busy} onClick={() => void save()}>
                 ذخیره تنظیمات
               </Button>
             </div>

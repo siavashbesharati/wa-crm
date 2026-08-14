@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearSession, getSession, logoutOrg, ORG_KEY, api } from "@/lib/api";
+import { clearSession, getSession, logoutOrg, ORG_KEY, api, isNetworkErrorMessage } from "@/lib/api";
 import {
   EXTENSION_DOWNLOAD_NAME,
   EXTENSION_DOWNLOAD_URL,
@@ -104,8 +104,19 @@ export default function ShellChrome({
         setDaysRemaining(next.daysRemaining);
         setReady(true);
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "";
+        if (isNetworkErrorMessage(msg) || getSession()) {
+          const cachedProfile = profileFromMe(getCachedOrgMe());
+          setOrgName(cachedProfile.orgName);
+          setUserLabel(cachedProfile.userLabel);
+          setPlanId(cachedProfile.planId);
+          setPlanName(cachedProfile.planName);
+          setDaysRemaining(cachedProfile.daysRemaining);
+          setReady(true);
+          return;
+        }
         clearSession();
         setReady(false);
         router.replace("/login");

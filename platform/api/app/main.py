@@ -25,6 +25,8 @@ from app.routers import (
     seats,
     support,
     tasks,
+    wa_connector,
+    wa_pair,
     whatsapp,
 )
 from app.services.sse_hub import sse_hub
@@ -68,6 +70,7 @@ ROUTERS = [
     leads.router,
     tasks.router,
     channels.router,
+    wa_pair.router,
     whatsapp.router,
     messages.router,
     ai.router,
@@ -75,6 +78,7 @@ ROUTERS = [
     extension.router,
     payments.router,
     support.router,
+    wa_connector.router,
 ]
 
 
@@ -139,6 +143,39 @@ def _ensure_sqlite_columns() -> None:
         if "source_message_id" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN source_message_id VARCHAR(120) DEFAULT ''"))
+    if "channel_accounts" in tables:
+        cols = {c["name"] for c in insp.get_columns("channel_accounts")}
+        with engine.begin() as conn:
+            if "connector_type" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE channel_accounts ADD COLUMN connector_type VARCHAR(40) DEFAULT 'extension'"
+                    )
+                )
+            if "pairing_state" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE channel_accounts ADD COLUMN pairing_state VARCHAR(40) DEFAULT 'disconnected'"
+                    )
+                )
+            if "wa_jid" not in cols:
+                conn.execute(text("ALTER TABLE channel_accounts ADD COLUMN wa_jid VARCHAR(120) DEFAULT ''"))
+            if "qr_payload" not in cols:
+                conn.execute(text("ALTER TABLE channel_accounts ADD COLUMN qr_payload TEXT DEFAULT ''"))
+    if "outbound_jobs" in tables:
+        cols = {c["name"] for c in insp.get_columns("outbound_jobs")}
+        if "target_jid" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE outbound_jobs ADD COLUMN target_jid VARCHAR(200) DEFAULT ''")
+                )
+    if "messages" in tables:
+        cols = {c["name"] for c in insp.get_columns("messages")}
+        with engine.begin() as conn:
+            if "media_type" not in cols:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN media_type VARCHAR(40) DEFAULT ''"))
+            if "media_url" not in cols:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN media_url TEXT DEFAULT ''"))
 
 
 _mount_routers()

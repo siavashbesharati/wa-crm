@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import SuperAuthContext, get_super_auth
 from app.plans import ensure_default_plans, list_plans_admin, plan_exists, plan_limits, row_to_meta
-from app.schemas import LogoutIn, OtpRequestIn, OtpVerifyIn, TokenOut
+from app.schemas import LogoutIn, OtpRequestIn, OtpVerifyIn, TokenOut, TokenRefreshIn
 from app.services.otp import consume_otp, issue_otp
 from app.services.sms import normalize_mobile_for_sms_ir
 from app.services.security import (
@@ -20,6 +20,7 @@ from app.services.security import (
     create_platform_access_token,
     create_refresh_token,
     revoke_refresh_token,
+    verify_refresh_token,
 )
 from app.models import (
     AiPolicy,
@@ -257,6 +258,26 @@ def super_logout(body: LogoutIn, db: Session = Depends(get_db)):
     revoke_refresh_token(db, body.refresh_token)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/refresh", response_model=SuperTokenOut)
+def super_refresh(body: TokenRefreshIn, db: Session = Depends(get_db)):
+    """Renew platform access token from a valid refresh token (survives API restarts)."""
+    try:
+        user = verify_refresh_token(db, body.refresh_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    if not getattr(user, "is_platform_admin", False):
+        raise HTTPException(status_code=403, detail="فقط سوپر ادمین")
+    revoke_refresh_token(db, body.refresh_token)
+    access = create_platform_access_token(user.id)
+    refresh = create_refresh_token(db, user.id)
+    db.commit()
+    return SuperTokenOut(
+        access_token=access,
+        refresh_token=refresh,
+        user_id=user.id,
+    )
 
 
 @router.get("/me")

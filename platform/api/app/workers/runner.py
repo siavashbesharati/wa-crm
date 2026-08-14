@@ -73,17 +73,9 @@ def _try_lock_message(message_id: str) -> bool:
 
 def _outbound_target(lead: Lead, link: LeadAccountLink | None = None) -> str:
     """Prefer Divar/WA chat id over display name so the extension can open the right chat."""
-    for candidate in (
-        (link.external_chat_id if link else None),
-        getattr(lead, "external_chat_id", None),
-        lead.phone,
-        lead.group_id,
-        lead.name,
-    ):
-        t = (candidate or "").strip()
-        if t:
-            return t
-    return (lead.name or "").strip()
+    from app.services.wa_jid import resolve_outbound_target
+
+    return resolve_outbound_target(lead, link)
 
 
 def _auto_reply_result(status: str, reason: str = "", job_id: str = "") -> dict:
@@ -113,12 +105,6 @@ def handle_auto_reply(payload: dict) -> dict:
             trace_event(trace_id, "auto_reply_skip", reason="auto_send_disabled")
             safe_print(f"[worker] auto_reply skip: auto_send disabled org={payload.get('org_id')}")
             return _auto_reply_result("skipped", "auto_send_disabled")
-        # Soft-migrate stock defaults only (0.55 from platform / 0.72 legacy)
-        mc = round(float(policy.min_confidence or 0), 2)
-        if mc in (0.55, 0.72):
-            policy.min_confidence = 0.45
-            db.add(policy)
-            db.commit()
         lead = db.get(Lead, payload["lead_id"])
         msg = db.get(Message, payload["message_id"])
         if not lead or not msg or lead.bot_paused:
@@ -186,29 +172,18 @@ def handle_auto_reply(payload: dict) -> dict:
 
         trace_event(trace_id, "ai_generate_start", lead_id=lead.id)
         result = generate_reply(db, org_id=org.id, lead=lead, message=msg.body)
+        reply_preview = str(result.get("reply") or "")[:120]
         trace_event(
             trace_id,
             "ai_generate_done",
             provider=result.get("provider"),
             confidence=result.get("confidence"),
+            knowledge_hits=result.get("knowledge_hits", 0),
+            knowledge_top_score=result.get("knowledge_top_score", 0),
+            reply_preview=reply_preview,
+            fallback_reason=result.get("fallback_reason") or "",
+            error_detail=result.get("error_detail") or "",
         )
-        min_conf = float(policy.min_confidence or 0)
-        is_fallback = (
-            result.get("provider") == "fallback" or bool(result.get("force_send"))
-        )
-        if (not is_fallback) and float(result["confidence"]) < min_conf:
-            trace_event(
-                trace_id,
-                "auto_reply_skip",
-                reason="low_confidence",
-                confidence=result["confidence"],
-            )
-            safe_print(
-                f"[worker] auto_reply skip low_confidence={result['confidence']} "
-                f"min={min_conf} lead={lead.id}"
-            )
-            return _auto_reply_result("skipped", "low_confidence")
-
         # Prefer the same channel account that received the inbound message
         link = (
             db.query(LeadAccountLink)
@@ -236,12 +211,15 @@ def handle_auto_reply(payload: dict) -> dict:
 
         account_id = msg.account_id or link.account_id
         target = _outbound_target(lead, link)
+        from app.services.wa_jid import resolve_target_jid
+
         reply = result["reply"]
         job = OutboundJob(
             org_id=org.id,
             account_id=account_id,
             lead_id=lead.id,
             target_name=target,
+            target_jid=resolve_target_jid(lead, link),
             body=reply,
             sender_type=SenderType.ai,
             status=OutboundStatus.queued,

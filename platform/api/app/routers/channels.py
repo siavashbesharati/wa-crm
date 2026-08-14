@@ -38,6 +38,9 @@ def _account_out(r: ChannelAccount, *, live_online: bool | None = None) -> Chann
         external_id=r.external_id or "",
         phone=r.phone or (r.external_id if r.channel == ChannelType.whatsapp else ""),
         status=status,
+        connector_type=getattr(r, "connector_type", None) or "extension",
+        pairing_state=getattr(r, "pairing_state", None) or "disconnected",
+        wa_jid=getattr(r, "wa_jid", None) or "",
     )
 
 
@@ -104,11 +107,19 @@ def create_account(
     ch = _parse_channel(body.channel)
     external_id = (body.external_id or body.phone or "").strip()
     label = (body.label or external_id or ch.value).strip()
+    connector_type = (body.connector_type or "extension").strip().lower()
+    if connector_type not in ("extension", "baileys"):
+        connector_type = "extension"
+    if connector_type == "baileys" and ch != ChannelType.whatsapp:
+        raise HTTPException(status_code=400, detail="Baileys فقط برای واتساپ است")
     acc = ChannelAccount(
         org_id=auth.org.id,
         channel=ch,
         label=label,
         external_id=external_id,
+        connector_type=connector_type,
+        pairing_state="disconnected" if connector_type == "baileys" else "disconnected",
+        status="disconnected",
     )
     db.add(acc)
     db.commit()
@@ -192,14 +203,17 @@ def list_sessions(auth: AuthContext = Depends(get_auth), db: Session = Depends(g
 
 
 def pick_session(db: Session, org_id: str, account_id: str) -> ConnectorSession | None:
-    """Hybrid: prefer connector, else any online agent session."""
+    """Hybrid: prefer baileys for baileys accounts; else connector; else agent."""
     cutoff = datetime.utcnow() - timedelta(seconds=90)
+    acc = db.get(ChannelAccount, account_id)
     base = db.query(ConnectorSession).filter(
         ConnectorSession.org_id == org_id,
         ConnectorSession.account_id == account_id,
         ConnectorSession.last_seen_at >= cutoff,
         ConnectorSession.status == "online",
     )
+    if acc and (getattr(acc, "connector_type", None) or "extension") == "baileys":
+        return base.filter(ConnectorSession.role == ConnectorRole.baileys).first()
     connector = base.filter(ConnectorSession.role == ConnectorRole.connector).first()
     if connector:
         return connector
@@ -324,6 +338,28 @@ def claim_jobs(
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
+    acc = (
+        db.query(ChannelAccount)
+        .filter(ChannelAccount.id == account_id, ChannelAccount.org_id == auth.org.id)
+        .first()
+    )
+    if not acc:
+        raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
+
+    # Baileys accounts are delivered only by the sidecar (role=baileys)
+    if (getattr(acc, "connector_type", None) or "extension") == "baileys":
+        session = (
+            db.query(ConnectorSession)
+            .filter(
+                ConnectorSession.org_id == auth.org.id,
+                ConnectorSession.account_id == account_id,
+                ConnectorSession.device_id == device_id,
+            )
+            .first()
+        )
+        if not session or session.role != ConnectorRole.baileys:
+            return {"jobs": []}
+
     session = (
         db.query(ConnectorSession)
         .filter(
@@ -338,9 +374,29 @@ def claim_jobs(
 
     preferred = pick_session(db, auth.org.id, account_id)
     if preferred and preferred.device_id != device_id:
+        if preferred.role == ConnectorRole.baileys:
+            return {"jobs": []}
         if preferred.role == ConnectorRole.connector or session.role != ConnectorRole.connector:
             if preferred.id != session.id:
                 return {"jobs": []}
+
+    # Reclaim stale claimed jobs (>5 min)
+    stale_cutoff = datetime.utcnow() - timedelta(minutes=5)
+    stale = (
+        db.query(OutboundJob)
+        .filter(
+            OutboundJob.org_id == auth.org.id,
+            OutboundJob.account_id == account_id,
+            OutboundJob.status == OutboundStatus.claimed,
+            OutboundJob.updated_at < stale_cutoff,
+        )
+        .all()
+    )
+    for job in stale:
+        job.status = OutboundStatus.queued
+        job.claimed_by_session_id = None
+        job.updated_at = datetime.utcnow()
+        db.add(job)
 
     jobs = (
         db.query(OutboundJob)
@@ -365,6 +421,7 @@ def claim_jobs(
                 "account_id": job.account_id,
                 "lead_id": job.lead_id,
                 "target_name": job.target_name,
+                "target_jid": getattr(job, "target_jid", "") or "",
                 "body": job.body,
                 "sender_type": job.sender_type.value,
                 "status": job.status.value,

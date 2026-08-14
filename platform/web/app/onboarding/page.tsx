@@ -55,12 +55,6 @@ const AI_ROLE_EXAMPLES = [
   "هماهنگ‌کننده نوبت کلینیک زیبایی"
 ];
 
-const AI_PROMPT_EXAMPLE = `تو دستیار فروش این کسب‌وکار هستی.
-- مودب، مختصر و به فارسی پاسخ بده.
-- فقط بر اساس دانش بارگذاری‌شده قیمت و شرایط بگو؛ اگر مطمئن نیستی بگو «همکارم پیگیری می‌کند».
-- شماره کارت یا لینک پرداخت نفرست مگر در دانش آمده باشد.
-- مشتری را به مرحله بعد (مثلاً ارسال مشخصات مسافر) هدایت کن.`;
-
 const KB_TITLE_EXAMPLE = "سوالات متداول و قیمت‌ها";
 const KB_CONTENT_EXAMPLE = `سوال: ساعت پاسخگویی؟
 جواب: همه روزه از ۹ صبح تا ۹ شب.
@@ -110,7 +104,6 @@ function OnboardingPageInner() {
   const [selectedPlan, setSelectedPlan] = useState("starter");
   const [mockCard, setMockCard] = useState("4242");
   const [agentRole, setAgentRole] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
   const [autoSend, setAutoSend] = useState(true);
   const [kbTitle, setKbTitle] = useState("");
   const [kbContent, setKbContent] = useState("");
@@ -282,17 +275,12 @@ function OnboardingPageInner() {
       toast.push("نقش دستیار را وارد کنید یا یک نمونه را انتخاب کنید", "err");
       return;
     }
-    if (systemPrompt.trim().length < 20) {
-      toast.push("سیستم‌پرامپت را کامل‌تر بنویسید یا نمونه را اعمال کنید", "err");
-      return;
-    }
     setBusy(true);
     try {
       const res = await api<{ step: string }>("/orgs/onboarding/ai-settings", {
         method: "PUT",
         body: JSON.stringify({
           agent_role: agentRole.trim(),
-          system_prompt: systemPrompt.trim(),
           auto_send_enabled: autoSend
         })
       });
@@ -586,14 +574,14 @@ function OnboardingPageInner() {
                 title="۴. تنظیمات دستیار AI"
                 help={{
                   title: "تنظیمات AI",
-                  body: "نقش و قوانین پاسخ دستیار را مشخص کنید تا لحن و دقت فروش با برند شما یکی باشد.",
+                  body: "نقش دستیار مشخص می‌کند این کسب‌وکار چطور با مشتری صحبت کند. سیستم‌پرامپت کلی از سوپرادمین می‌آید؛ دانش اختصاصی را در مرحله بعد وارد می‌کنید.",
                   tips: ["از نمونه‌های آماده استفاده کنید و بعد سفارشی کنید."]
                 }}
               >
                 <div className="wizard-ai-intro">
                   <p>
-                    نقش و دستورالعمل دستیار مشخص می‌کند <strong>چطور</strong> با مشتری حرف بزند.
-                    بعداً می‌توانید از منوی «تنظیمات AI» هم ویرایش کنید.
+                    <strong>نقش دستیار</strong> لحن و تخصص کسب‌وکار شماست (مثلاً مشاور فروش تور).
+                    دانش FAQ و قیمت‌ها را در مرحله بعد بارگذاری می‌کنید.
                   </p>
                 </div>
 
@@ -620,30 +608,6 @@ function OnboardingPageInner() {
                         </button>
                       ))}
                     </div>
-                  </div>
-
-                  <label className="full">
-                    سیستم‌پرامپت (قوانین پاسخ)
-                    <textarea
-                      rows={7}
-                      value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="لحن، ممنوعیت‌ها، و نحوه هدایت مشتری…"
-                    />
-                  </label>
-                  <div className="full wizard-example-block">
-                    <div className="wizard-example-head">
-                      <span className="hint">نمونه سیستم‌پرامپت فروش</span>
-                      <button
-                        type="button"
-                        className="btn secondary"
-                        style={{ width: "auto", padding: "6px 12px" }}
-                        onClick={() => setSystemPrompt(AI_PROMPT_EXAMPLE)}
-                      >
-                        اعمال نمونه
-                      </button>
-                    </div>
-                    <pre className="wizard-example-pre">{AI_PROMPT_EXAMPLE}</pre>
                   </div>
 
                   <Switch
@@ -732,8 +696,8 @@ function OnboardingPageInner() {
               <Card
                 title="۶. راهنما و افزونه"
                 help={{
-                  title: "نصب افزونه",
-                  body: "توکن صندلی را در Chrome وارد کنید و تب واتساپ/دیوار را باز بگذارید تا همگام‌سازی شروع شود."
+                  title: "واتساپ و افزونه",
+                  body: "واتساپ را از داشبورد → کانال‌ها با QR سرور وصل کنید. افزونه فقط برای دیوار (و واتساپ قدیمی) لازم است."
                 }}
               >
                 {receipt ? (
@@ -744,7 +708,7 @@ function OnboardingPageInner() {
 
                 {seatToken ? (
                   <div className="wizard-token-box">
-                    <div className="hint">توکن صندلی شما:</div>
+                    <div className="hint">توکن صندلی شما (دیوار / افزونه):</div>
                     <code>{seatToken}</code>
                     <Button
                       size="sm"
@@ -765,13 +729,16 @@ function OnboardingPageInner() {
 
                 <ol className="guide-list">
                   <li>
-                    افزونه را دانلود و Extract کنید، سپس در{" "}
+                    برای واتساپ: بعد از ورود به داشبورد → <strong>کانال‌ها</strong> → اتصال QR
+                    (سرویس wa-connector باید روشن باشد).
+                  </li>
+                  <li>
+                    برای دیوار: افزونه را دانلود و در{" "}
                     <code>chrome://extensions</code> با Load unpacked نصب کنید.
                   </li>
                   <li>توکن بالا را در پاپ‌آپ افزونه وارد کنید (روی این نصب قفل می‌شود).</li>
                   <li>
-                    تب‌های <strong>web.whatsapp.com</strong> و/یا{" "}
-                    <strong>divar.ir/chat</strong> را باز بگذارید.
+                    تب <strong>divar.ir/chat</strong> را باز بگذارید.
                   </li>
                   <li>
                     برای دستگاه بعدی از داشبورد → صندلی افزونه توکن جدید بسازید. شماره پنل:{" "}

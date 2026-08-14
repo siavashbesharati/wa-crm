@@ -1,7 +1,63 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+_API_DIR = Path(__file__).resolve().parent.parent
+_DEFAULT_DB = _API_DIR / "wa_crm.db"
+_JWT_SECRET_FILE = _API_DIR / ".local" / "jwt_secret"
+_WA_CONNECTOR_KEY_FILE = _API_DIR / ".local" / "wa_connector_key"
+_WA_CREDS_KEY_FILE = _API_DIR / ".local" / "wa_creds_fernet_key"
+
+
+def _default_database_url() -> str:
+    """Stable SQLite path — same DB regardless of process working directory."""
+    return f"sqlite+pysqlite:///{_DEFAULT_DB.resolve().as_posix()}"
+
+
+def _load_or_create_secret_file(path: Path, fallback: str, *, min_len: int = 8) -> str:
+    """Persist a secret on disk so values survive API restarts."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            secret = path.read_text(encoding="utf-8").strip()
+            if len(secret) >= min_len:
+                return secret
+        path.write_text(fallback, encoding="utf-8")
+        return fallback
+    except OSError:
+        return fallback
+
+
+def _load_or_create_jwt_secret() -> str:
+    """Persist JWT secret on disk so tokens survive API restarts."""
+    return _load_or_create_secret_file(_JWT_SECRET_FILE, "dev-change-me")
+
+
+def _load_or_create_wa_connector_key() -> str:
+    return _load_or_create_secret_file(
+        _WA_CONNECTOR_KEY_FILE, "dev-wa-connector-key-change-me", min_len=16
+    )
+
+
+def _load_or_create_wa_creds_key() -> str:
+    """Fernet key (url-safe base64, 32 bytes). Generated once and persisted."""
+    try:
+        from cryptography.fernet import Fernet
+
+        if _WA_CREDS_KEY_FILE.is_file():
+            secret = _WA_CREDS_KEY_FILE.read_text(encoding="utf-8").strip()
+            if len(secret) >= 32:
+                return secret
+        key = Fernet.generate_key().decode("ascii")
+        _WA_CREDS_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _WA_CREDS_KEY_FILE.write_text(key, encoding="utf-8")
+        return key
+    except OSError:
+        from cryptography.fernet import Fernet
+
+        return Fernet.generate_key().decode("ascii")
 
 
 class Settings(BaseSettings):
@@ -10,12 +66,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     app_env: str = "development"
-    database_url: str = "sqlite+pysqlite:///./wa_crm.db"
+    database_url: str = _default_database_url()
     redis_url: str = "redis://localhost:6379/0"
-    jwt_secret: str = "dev-change-me"
-    jwt_access_minutes: int = 60
+    jwt_secret: str = _load_or_create_jwt_secret()
+    jwt_access_minutes: int = 60 * 24 * 7  # web CRM — 7 days
     jwt_access_minutes_seat: int = 60 * 24 * 7  # extension seat JWT — 7 days
-    jwt_refresh_days: int = 30
+    jwt_refresh_days: int = 90
+    # Shared secret for platform/wa-connector → /internal/wa/*
+    wa_connector_key: str = _load_or_create_wa_connector_key()
+    # Fernet key for encrypting Baileys auth state at rest
+    wa_creds_fernet_key: str = _load_or_create_wa_creds_key()
     # Platform owner phone (must match OTP login for /super)
     super_admin_phone: str = "09120674032"
     embedding_dim: int = 384

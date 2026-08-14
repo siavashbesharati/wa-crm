@@ -258,20 +258,13 @@ def onboarding_ai_settings(
     from app.models import AiPolicy
 
     role = (body.agent_role or "").strip()
-    prompt = (body.system_prompt or "").strip()
     if len(role) < 3:
         raise HTTPException(status_code=400, detail="نقش دستیار را وارد کنید")
-    if len(prompt) < 20:
-        raise HTTPException(
-            status_code=400,
-            detail="سیستم‌پرامپت باید حداقل چند جمله راهنما داشته باشد",
-        )
 
     policy = db.query(AiPolicy).filter(AiPolicy.org_id == auth.org.id).first()
     if not policy:
         policy = AiPolicy(org_id=auth.org.id)
     policy.agent_role = role
-    policy.system_prompt = prompt
     policy.auto_send_enabled = bool(body.auto_send_enabled)
     if not policy.allowed_stages:
         policy.allowed_stages = ["جدید"]

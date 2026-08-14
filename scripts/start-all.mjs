@@ -6,6 +6,7 @@
  *   node scripts/start-all.mjs --bump          # bump extension patch before release
  *   node scripts/start-all.mjs --skip-ext      # only start apps
  *   node scripts/start-all.mjs --no-workers
+ *   node scripts/start-all.mjs --no-wa
  *   node scripts/start-all.mjs --seed          # run migrate + seed before API
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -20,10 +21,12 @@ const args = new Set(process.argv.slice(2));
 const skipExt = args.has("--skip-ext");
 const bump = args.has("--bump");
 const noWorkers = args.has("--no-workers");
+const noWa = args.has("--no-wa");
 const seed = args.has("--seed");
 
 const apiDir = join(root, "platform", "api");
 const webDir = join(root, "platform", "web");
+const waDir = join(root, "platform", "wa-connector");
 const children = [];
 
 function log(msg) {
@@ -96,13 +99,31 @@ async function main() {
   if (seed) {
     log("Migrate + seed API database");
     runSync("python", ["scripts/migrate_multichannel.py"], apiDir, { shell: true });
+    runSync("python", ["scripts/migrate_baileys.py"], apiDir, { shell: true });
     runSync("python", ["scripts/seed_demo.py"], apiDir, { shell: true });
+  } else {
+    log("Ensure Baileys schema columns");
+    try {
+      runSync("python", ["scripts/migrate_baileys.py"], apiDir, { shell: true });
+    } catch {
+      console.warn("migrate_baileys skipped/failed — API create_all may still add columns");
+    }
+  }
+
+  if (!noWa) {
+    if (!existsSync(join(waDir, "node_modules"))) {
+      log("Install wa-connector dependencies");
+      runSync("npm", ["install"], waDir, { shell: true });
+    }
   }
 
   start("api", "python", ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"], apiDir);
   start("web", "npm", ["run", "dev"], webDir);
   if (!noWorkers) {
     start("workers", "python", ["-m", "app.workers.runner"], apiDir);
+  }
+  if (!noWa) {
+    start("wa-connector", "npm", ["run", "dev"], waDir);
   }
 
   let version = "?";
@@ -118,6 +139,7 @@ async function main() {
   API:      http://localhost:8000/api/health
   Business: http://localhost:3000/login
   Super:    http://localhost:3000/super/login
+  WA conn:  http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
   Ext folder: WAchromeExtension-dist/
   Ext ZIP:    WAchromeExtension-dist.zip  (+ panel copy in public/downloads)
   Ext ver:  v${version}

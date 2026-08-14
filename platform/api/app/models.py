@@ -39,6 +39,7 @@ class MemberRole(str, enum.Enum):
 class ConnectorRole(str, enum.Enum):
     connector = "connector"
     agent = "agent"
+    baileys = "baileys"
 
 
 class ChannelType(str, enum.Enum):
@@ -223,6 +224,13 @@ class ChannelAccount(Base):
     # WA phone or Divar session label / external id
     external_id: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(40), default="disconnected")
+    # extension = Chrome DOM connector; baileys = server-side WhatsApp
+    connector_type: Mapped[str] = mapped_column(String(40), default="extension")
+    # disconnected | qr_pending | connected
+    pairing_state: Mapped[str] = mapped_column(String(40), default="disconnected")
+    wa_jid: Mapped[str] = mapped_column(String(120), default="")
+    # Short-lived QR payload (data URL / base64) for panel pairing
+    qr_payload: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     organization = relationship("Organization", back_populates="channel_accounts")
@@ -235,6 +243,20 @@ class ChannelAccount(Base):
 
 # Backward-compatible alias
 WhatsAppAccount = ChannelAccount
+
+
+class WaAuthState(Base):
+    """Encrypted Baileys auth state per channel account."""
+
+    __tablename__ = "wa_auth_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("channel_accounts.id"), unique=True, index=True
+    )
+    creds_enc: Mapped[str] = mapped_column(Text, default="")
+    keys_enc: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 
 class ConnectorSession(Base):
@@ -327,6 +349,8 @@ class Message(Base):
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     # Stores WA message id or Divar/external message id
     wa_message_id: Mapped[str] = mapped_column(String(120), default="")
+    media_type: Mapped[str] = mapped_column(String(40), default="")  # text|image|audio|document|video
+    media_url: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
 
 
@@ -357,6 +381,8 @@ class OutboundJob(Base):
     account_id: Mapped[str] = mapped_column(ForeignKey("channel_accounts.id"), index=True)
     lead_id: Mapped[str | None] = mapped_column(ForeignKey("leads.id"), nullable=True)
     target_name: Mapped[str] = mapped_column(String(200), default="")
+    # Primary WhatsApp JID for Baileys send (e.g. 972…@s.whatsapp.net or …@g.us)
+    target_jid: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")
     sender_type: Mapped[SenderType] = mapped_column(Enum(SenderType), default=SenderType.agent)
     created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)

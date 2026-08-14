@@ -17,6 +17,7 @@
     "api:dev": "cd platform/api && python -m uvicorn app.main:app --reload --port 8000",
     "web:dev": "cd platform/web && npm run dev",
     "workers:dev": "cd platform/api && python -m app.workers.runner",
+    "wa:dev": "cd platform/wa-connector && npm run dev",
     "api:seed": "cd platform/api && python scripts/seed_demo.py"
   },
   "devDependencies": {

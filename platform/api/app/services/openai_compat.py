@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import time
 from typing import Any
 
 import httpx
@@ -12,6 +14,7 @@ logger = logging.getLogger("openai_compat")
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
+RATE_LIMIT_RETRIES = 4
 
 # Common presets for the admin UI / docs
 PROVIDER_PRESETS = {
@@ -39,6 +42,33 @@ def _normalize_base_url(base_url: str) -> str:
         url = DEFAULT_BASE_URL
     # Accept either …/v1 or full host; chat path is /chat/completions
     return url
+
+
+def _parse_retry_seconds(body: str) -> float:
+    """Groq/OpenAI rate-limit bodies often say 'try again in 1.02s'."""
+    m = re.search(r"try again in\s+([\d.]+)\s*s", body or "", re.I)
+    if not m:
+        return 0.0
+    try:
+        return max(0.5, float(m.group(1)))
+    except ValueError:
+        return 0.0
+
+
+def _provider_error_detail(status: int, body: str) -> str:
+    text = (body or "").strip()
+    if status == 429 or "rate_limit" in text.lower():
+        wait = _parse_retry_seconds(text)
+        if wait:
+            return f"محدودیت نرخ Groq/API — دوباره بعد از {wait:.1f} ثانیه"
+        return "محدودیت نرخ Groq/API (rate limit)"
+    if status == 401:
+        return "کلید API نامعتبر است"
+    if status == 404 and "model" in text.lower():
+        return "مدل AI یافت نشد — نام مدل را در سوپرادمین بررسی کنید"
+    if text:
+        return text[:240]
+    return "خطا از سرویس AI — کلید، Base URL یا مدل را بررسی کنید"
 
 
 def chat_completion(
@@ -90,20 +120,36 @@ def chat_completion(
 
     try:
         with httpx.Client(timeout=timeout) as client:
-            res = client.post(url, headers=headers, json=payload)
-            # Some gateways reject unknown fields — retry without reasoning_effort
-            if res.status_code >= 400 and effort and "reasoning" in (res.text or "").lower():
-                payload.pop("reasoning_effort", None)
+            res = None
+            for attempt in range(RATE_LIMIT_RETRIES):
                 res = client.post(url, headers=headers, json=payload)
+                # Some gateways reject unknown fields — retry without reasoning_effort
+                if res.status_code >= 400 and effort and "reasoning" in (res.text or "").lower():
+                    payload.pop("reasoning_effort", None)
+                    res = client.post(url, headers=headers, json=payload)
+                if res.status_code == 429 and attempt < RATE_LIMIT_RETRIES - 1:
+                    wait = _parse_retry_seconds(res.text or "")
+                    if not wait:
+                        wait = min(8.0, 1.5 * (attempt + 1))
+                    logger.warning(
+                        "openai-compat rate limit (attempt %s/%s), sleeping %.1fs",
+                        attempt + 1,
+                        RATE_LIMIT_RETRIES,
+                        wait,
+                    )
+                    time.sleep(wait)
+                    continue
+                break
     except httpx.HTTPError as e:
         logger.error("openai-compat network error: %s", e)
         raise HTTPException(status_code=502, detail="ارتباط با سرویس AI برقرار نشد") from e
 
+    assert res is not None
     if res.status_code >= 400:
         logger.error("openai-compat HTTP %s: %s", res.status_code, res.text[:500])
         raise HTTPException(
             status_code=502,
-            detail="خطا از سرویس AI — کلید، Base URL یا مدل را بررسی کنید",
+            detail=_provider_error_detail(res.status_code, res.text or ""),
         )
 
     data = res.json()

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, clearPlatformSession, getPlatformSession, savePlatformSession } from "@/lib/api";
+import { api, clearPlatformSession, getPlatformSession, savePlatformSession, isNetworkErrorMessage } from "@/lib/api";
 import { loadPlatformMe } from "@/lib/me-cache";
 import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
@@ -32,8 +32,11 @@ export default function SuperLoginPage() {
       .then(() => {
         if (!cancelled) router.replace("/super");
       })
-      .catch(() => {
-        clearPlatformSession();
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : "";
+        if (!isNetworkErrorMessage(msg) && !getPlatformSession()) {
+          clearPlatformSession();
+        }
       });
     return () => {
       cancelled = true;

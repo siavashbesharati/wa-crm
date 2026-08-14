@@ -6,7 +6,7 @@
 
 
 
-کانال‌های فعلی: **WhatsApp Web** و **Divar Chat** (افزونه Chrome). کانال‌های بعدی با همان مدل `ChannelAccount` اضافه می‌شوند.
+کانال‌های فعلی: **WhatsApp (Baileys سرور)** و **Divar Chat** (افزونه Chrome). واتساپ قدیمی افزونه همچنان برای اکانت‌های `connector_type=extension` پشتیبانی می‌شود.
 
 
 
@@ -39,7 +39,9 @@ Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboard
 - همگام‌سازی: `npm run sync:ext-version`  
 - obfuscate + pack در ریشه: `WAchromeExtension-dist/` و `WAchromeExtension-dist.zip` → `npm run release:ext`  
 - افزایش patch + release: `npm run release:ext:bump`  
-- اجرای همه: `npm run start:all` (همان pack + API/Web/Workers)  
+- اجرای همه: `npm run start:all` (pack افزونه + API/Web/Workers + wa-connector)  
+- بدون کانکتور واتساپ: `node scripts/start-all.mjs --no-wa`  
+- فقط کانکتور: `npm run wa:dev`  
 - کپی ZIP برای پنل: `platform/web/public/downloads/iranexpedia-extension.zip`  
 - پنل نسخه را از `GET /api/extension/latest` می‌خواند.
 
@@ -51,13 +53,15 @@ Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboard
 
 |-----|------|-----|
 
-| API | `platform/api` | منبع حقیقت سرور (`/admin/*`, `/channels`, …) |
+| API | `platform/api` | منبع حقیقت سرور (`/admin/*`, `/channels`, `/internal/wa/*`, …) |
 
 | Admin UI | `platform/web` | پنل فارسی سوپر ادمین + کسب‌وکار |
 
+| WA Connector | `platform/wa-connector` | Baileys sidecar — QR، دریافت/ارسال واتساپ |
+
 | Workers | `python -m app.workers.runner` | auto-reply / KPI |
 
-| Extension | `WAchromeExtension` / dist | پل چندکاناله + کانکتور |
+| Extension | `WAchromeExtension` / dist | دیوار (+ واتساپ legacy) |
 
 
 
@@ -110,11 +114,25 @@ python -m app.workers.runner
 
 
 
-# 4) افزونه
+# 4) WhatsApp Baileys connector
+
+cd platform/wa-connector
+
+npm install
+
+npm run dev
+
+# http://127.0.0.1:8090/health
+
+# پنل → کانال‌ها → اتصال واتساپ (QR)
+
+
+
+# 5) افزونه (دیوار)
 
 # Chrome → Load unpacked → WAchromeExtension (یا dist)
 
-# پاپ‌آپ → همان شماره مالک + OTP → واتساپ / دیوار
+# پاپ‌آپ → توکن صندلی → دیوار
 
 ```
 

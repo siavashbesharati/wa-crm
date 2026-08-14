@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException
+
 from app.config import get_settings
 from app.models import (
     AiPolicy,
@@ -24,8 +26,6 @@ CHAT_HISTORY_MSG_CHARS = 500
 
 DEFAULT_PLATFORM_SYSTEM = (
     "تو دستیار فروش و پشتیبانی یک کسب‌وکار ایرانی هستی. "
-    "فقط بر اساس دانش سازمانی همان کسب‌وکار پاسخ بده. "
-    "اگر اطلاعات کافی نداری صادقانه بگو و پیشنهاد تماس با پشتیبانی بده. "
     "پاسخ را کوتاه، مودب و به فارسی بنویس. "
     "از تاریخچه گفتگو برای حفظ زمینه استفاده کن و تکرار سوال‌های قبلی را نکن."
 )
@@ -38,6 +38,7 @@ PROVIDERS = ("openai_compatible", "gemini")
 
 
 def get_platform_ai_settings(db: Session) -> dict:
+    """Load platform AI config from DB on every call (no cache — changes apply immediately)."""
     settings = get_settings()
     base = {
         "provider": "openai_compatible",
@@ -50,7 +51,7 @@ def get_platform_ai_settings(db: Session) -> dict:
         "reasoning_effort": "",
         "system_prompt": DEFAULT_PLATFORM_SYSTEM,
         "fallback_message": DEFAULT_FALLBACK_MESSAGE,
-        "default_min_confidence": 0.55,
+        "default_min_confidence": 0.0,
         "auto_send_default": False,
         "notes": "",
         # legacy Gemini fields
@@ -89,12 +90,10 @@ def get_platform_ai_settings(db: Session) -> dict:
 
     provider = (base.get("provider") or "").strip().lower()
     if provider not in PROVIDERS:
-        # Auto-detect from what is configured
         if (base.get("api_key") or "").strip() or (
             (base.get("base_url") or "").strip()
             and "generativelanguage" not in (base.get("base_url") or "")
         ):
-            # Prefer openai_compatible when api_key / custom base present
             if (base.get("api_key") or "").strip():
                 provider = "openai_compatible"
             elif (base.get("gemini_api_key") or "").strip():
@@ -151,7 +150,7 @@ def generate_llm_text(
     user_prompt: str,
     temperature: float | None = None,
 ) -> dict:
-    """Call configured provider. Returns {reply, provider, model}."""
+    """Call configured provider. Returns {reply, provider, model}. Raises on provider errors."""
     provider = (platform.get("provider") or "openai_compatible").strip().lower()
     temp = float(temperature if temperature is not None else platform.get("temperature") or 0.4)
 
@@ -186,7 +185,6 @@ def generate_llm_text(
         top_p=float(platform.get("top_p") if platform.get("top_p") is not None else 1.0),
         reasoning_effort=(platform.get("reasoning_effort") or "").strip() or None,
     )
-    # Label for UI: guess from base_url
     label = "openai_compatible"
     bu = base_url.lower()
     if "groq.com" in bu:
@@ -208,10 +206,77 @@ def retrieve_knowledge(
     return scored[:k]
 
 
-def _compose_system_prompt(platform: dict, policy: AiPolicy | None = None) -> str:
-    """Businesses use the platform (super-admin) system prompt only — not org-stacked prompts."""
-    plat = (platform.get("system_prompt") or "").strip()
-    return plat or DEFAULT_PLATFORM_SYSTEM
+def _platform_system_prompt(platform: dict) -> str:
+    """Super-admin system prompt only."""
+    return (platform.get("system_prompt") or "").strip() or DEFAULT_PLATFORM_SYSTEM
+
+
+def _business_role_text(policy: AiPolicy | None) -> str:
+    """Business role prompt (agent_role). Legacy org system_prompt is merged for backward compat."""
+    if not policy:
+        return ""
+    role = (getattr(policy, "agent_role", None) or "").strip()
+    legacy = (getattr(policy, "system_prompt", None) or "").strip()
+    if role and legacy:
+        text = f"{role}\n\n{legacy}"
+    else:
+        text = role or legacy
+    if len(text) > 1200:
+        return text[:1200] + "…"
+    return text
+
+
+def _format_knowledge_blocks(hits: list[tuple[KnowledgeChunk, float]]) -> str:
+    blocks: list[str] = []
+    for i, (chunk, score) in enumerate(hits, start=1):
+        if score < 0.02:
+            continue
+        blocks.append(f"[{i}] (امتیاز {score:.2f})\n{chunk.content[:400]}")
+    return "\n\n".join(blocks)
+
+
+def _compose_llm_prompts(
+    *,
+    platform: dict,
+    policy: AiPolicy | None,
+    lead: Lead | None,
+    message: str,
+    hits: list[tuple[KnowledgeChunk, float]],
+    history_text: str = "",
+) -> tuple[str, str]:
+    """
+    Prompt stack:
+      1) platform system prompt (super-admin)
+      2) business role + knowledge base
+      3) user message + chat history
+    """
+    system_sections = [_platform_system_prompt(platform)]
+
+    business_sections: list[str] = []
+    role = _business_role_text(policy)
+    if role:
+        business_sections.append(f"## نقش این کسب‌وکار\n{role}")
+
+    kb_text = _format_knowledge_blocks(hits)
+    if kb_text:
+        business_sections.append(f"## دانش سازمانی\n{kb_text}")
+
+    if business_sections:
+        system_sections.append("\n\n".join(business_sections))
+
+    system_prompt = "\n\n---\n\n".join(system_sections)
+
+    lead_name = (lead.name if lead else "") or "مشتری"
+    lead_stage = (lead.stage if lead else "") or "-"
+    history = (history_text or "").strip() or "(بدون تاریخچه قبلی)"
+    user_prompt = (
+        f"نام لید: {lead_name}\n"
+        f"مرحله قیف: {lead_stage}\n\n"
+        f"تاریخچه گفتگو (قدیمی → جدید):\n{history}\n\n"
+        f"آخرین پیام مشتری:\n{message.strip()}\n\n"
+        "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."
+    )
+    return system_prompt, user_prompt
 
 
 def _clip_msg(text: str, limit: int = CHAT_HISTORY_MSG_CHARS) -> str:
@@ -267,37 +332,10 @@ def format_chat_history(
     if cur:
         expected = f"مشتری: {cur}"
         if not lines or lines[-1] != expected:
-            # Avoid near-duplicate if DB already stored the same inbound
             if not (lines and lines[-1].startswith("مشتری:") and lines[-1][len("مشتری: ") :] == cur):
                 lines.append(expected)
 
     return "\n".join(lines) if lines else "(بدون تاریخچه قبلی)"
-
-
-def _compose_user_prompt(
-    *,
-    lead: Lead | None,
-    message: str,
-    hits: list[tuple[KnowledgeChunk, float]],
-    history_text: str = "",
-) -> str:
-    kb_blocks = []
-    for i, (chunk, score) in enumerate(hits, start=1):
-        if score < 0.02:
-            continue
-        kb_blocks.append(f"[{i}] (امتیاز {score:.2f})\n{chunk.content[:800]}")
-    kb_text = "\n\n".join(kb_blocks) if kb_blocks else "(دانش مرتبطی یافت نشد)"
-    lead_name = (lead.name if lead else "") or "مشتری"
-    lead_stage = (lead.stage if lead else "") or "-"
-    history = (history_text or "").strip() or "(بدون تاریخچه قبلی)"
-    return (
-        f"نام لید: {lead_name}\n"
-        f"مرحله قیف: {lead_stage}\n\n"
-        f"دانش سازمانی مرتبط:\n{kb_text}\n\n"
-        f"تاریخچه گفتگو (قدیمی → جدید):\n{history}\n\n"
-        f"آخرین پیام مشتری (پاسخ همین را بنویس، با توجه به تاریخچه):\n{message.strip()}\n\n"
-        "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."
-    )
 
 
 def resolve_fallback_message(
@@ -320,15 +358,22 @@ def resolve_fallback_message(
     return DEFAULT_FALLBACK_MESSAGE
 
 
-def _fallback_result(reply: str) -> dict:
+def _fallback_result(
+    reply: str, *, reason: str = "provider_error", error_detail: str = ""
+) -> dict:
     return {
         "reply": reply,
-        "confidence": 1.0,
+        "confidence": 0.0,
         "sources": [],
         "provider": "fallback",
         "model": "",
-        "force_send": True,
+        "fallback_reason": reason,
+        "error_detail": (error_detail or "")[:240],
     }
+
+
+def _knowledge_sources(hits: list[tuple[KnowledgeChunk, float]]) -> list[str]:
+    return [h[0].content[:120] for h in hits if h[1] > 0.05]
 
 
 def generate_reply(
@@ -339,7 +384,7 @@ def generate_reply(
     message: str,
     history_limit: int = CHAT_HISTORY_LIMIT,
 ) -> dict:
-    """Return {reply, confidence, sources, provider, model}."""
+    """Return {reply, confidence, sources, provider, model}. Fallback only when AI provider fails."""
     platform = get_platform_ai_settings(db)
     policy = db.query(AiPolicy).filter(AiPolicy.org_id == org_id).first()
     fallback_text = resolve_fallback_message(
@@ -347,7 +392,7 @@ def generate_reply(
     )
     hits = retrieve_knowledge(db, org_id, message, k=4)
     top_score = float(hits[0][1]) if hits else 0.0
-    sources = [h[0].content[:120] for h in hits if h[1] > 0.05]
+    sources = _knowledge_sources(hits)
 
     history_msgs: list[Message] = []
     if lead and lead.id:
@@ -357,40 +402,42 @@ def generate_reply(
     history_text = format_chat_history(history_msgs, current_message=message)
 
     if not llm_is_configured(platform):
-        # Prefer knowledge snippet when retrieval is strong; else configured fallback.
-        if hits and top_score >= 0.05:
-            name = (lead.name if lead else "") or ""
-            reply = f"سلام {name}".strip() + "،\n" + hits[0][0].content[:500]
-            return {
-                "reply": reply,
-                "confidence": round(max(0.5, top_score), 3),
-                "sources": sources,
-                "provider": "knowledge_only",
-                "model": "",
-            }
-        return _fallback_result(fallback_text)
+        return _fallback_result(fallback_text, reason="llm_not_configured")
 
-    system_prompt = _compose_system_prompt(platform, policy)
-    user_prompt = _compose_user_prompt(
-        lead=lead, message=message, hits=hits, history_text=history_text
+    system_prompt, user_prompt = _compose_llm_prompts(
+        platform=platform,
+        policy=policy,
+        lead=lead,
+        message=message,
+        hits=hits,
+        history_text=history_text,
     )
+    reply_platform = {
+        **platform,
+        "max_tokens": min(int(platform.get("max_tokens") or 2048), 768),
+    }
     try:
-        out = generate_llm_text(platform, system_prompt=system_prompt, user_prompt=user_prompt)
+        out = generate_llm_text(
+            reply_platform, system_prompt=system_prompt, user_prompt=user_prompt
+        )
+    except HTTPException as e:
+        from app.services.stdio_utf8 import safe_print
+
+        detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+        safe_print(f"[ai_reply] LLM failed, using fallback: {detail}")
+        reason = "rate_limit" if "rate limit" in detail.lower() or "محدودیت نرخ" in detail else "provider_error"
+        return _fallback_result(fallback_text, reason=reason, error_detail=detail)
     except Exception as e:  # noqa: BLE001
         from app.services.stdio_utf8 import safe_print
 
         safe_print(f"[ai_reply] LLM failed, using fallback: {e}")
-        return _fallback_result(fallback_text)
+        return _fallback_result(fallback_text, reason="provider_error", error_detail=str(e)[:240])
 
     reply = (out.get("reply") or "").strip()
     if not reply:
-        return _fallback_result(fallback_text)
+        return _fallback_result(fallback_text, reason="empty_reply")
 
-    # LLM actually produced a reply — don't keep confidence stuck at ~0.45 (that blocked auto-send
-    # when org min_confidence was 0.55 and no knowledge hits existed).
-    confidence = round(max(0.65, min(0.98, 0.62 + top_score * 0.35)), 3)
-    if sources:
-        confidence = max(confidence, 0.72)
+    confidence = round(max(0.5, min(0.98, 0.55 + top_score * 0.4)), 3)
     return {
         "reply": reply,
         "confidence": confidence,
@@ -398,6 +445,8 @@ def generate_reply(
         "provider": out["provider"],
         "model": out.get("model") or "",
         "history_messages": len(history_msgs),
+        "knowledge_top_score": round(top_score, 3),
+        "knowledge_hits": len(sources),
     }
 
 
@@ -413,7 +462,7 @@ def playground_reply(
     agent_role_override: str | None = None,
     temperature: float = 0.4,
 ) -> dict:
-    """Super-admin playground: uses platform LLM config (+ optional org knowledge/history)."""
+    """Super-admin playground — same prompt stack as production auto-reply."""
     platform = get_platform_ai_settings(db)
     if not llm_is_configured(platform):
         raise ValueError("سرویس AI پیکربندی نشده — کلید و Base URL را در تنظیمات AI ذخیره کنید")
@@ -439,35 +488,25 @@ def playground_reply(
                 )
 
     if system_prompt_override is not None and system_prompt_override.strip():
-        system_prompt = system_prompt_override.strip()
-    else:
-        # Same as production: platform (super-admin) prompt only
-        system_prompt = _compose_system_prompt(platform)
-    if agent_role_override and agent_role_override.strip():
-        system_prompt = (
-            system_prompt
-            + "\n\n"
-            + f"نقش تست: {agent_role_override.strip()}"
-        )
+        platform = {**platform, "system_prompt": system_prompt_override.strip()}
 
-    kb_blocks = []
-    for i, (chunk, score) in enumerate(hits, start=1):
-        if score < 0.02:
-            continue
-        kb_blocks.append(f"[{i}] (امتیاز {score:.2f})\n{chunk.content[:800]}")
-    if org_id:
-        kb_text = "\n\n".join(kb_blocks) if kb_blocks else "(دانش مرتبطی یافت نشد)"
-    else:
-        kb_text = "(بدون سازمان — فقط پرامپت پلتفرم)"
+    if agent_role_override and agent_role_override.strip():
+        policy = policy or AiPolicy(org_id=org_id or "")
+        policy.agent_role = agent_role_override.strip()
+
+    if not org_id:
+        # No business context — platform system prompt only
+        policy = None
+        hits = []
 
     history_text = format_chat_history(history_msgs, current_message=message)
-    user_prompt = (
-        f"نام لید: {(lead_name or 'مشتری تست').strip()}\n"
-        f"مرحله قیف: {(lead_stage or 'جدید').strip()}\n\n"
-        f"دانش سازمانی مرتبط:\n{kb_text}\n\n"
-        f"تاریخچه گفتگو (قدیمی → جدید):\n{history_text}\n\n"
-        f"آخرین پیام مشتری (پاسخ همین را بنویس، با توجه به تاریخچه):\n{message.strip()}\n\n"
-        "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."
+    system_prompt, user_prompt = _compose_llm_prompts(
+        platform=platform,
+        policy=policy,
+        lead=lead or Lead(name=lead_name, stage=lead_stage),
+        message=message,
+        hits=hits,
+        history_text=history_text,
     )
 
     out = generate_llm_text(
@@ -477,10 +516,8 @@ def playground_reply(
         temperature=float(temperature),
     )
     top_score = float(hits[0][1]) if hits else 0.0
-    sources = [h[0].content[:160] for h in hits if h[1] > 0.05]
-    confidence = round(max(0.45, min(0.98, 0.35 + top_score * 0.65)), 3) if hits else 0.5
-    if hits and not sources:
-        confidence = min(confidence, 0.55)
+    sources = _knowledge_sources(hits)
+    confidence = round(max(0.5, min(0.98, 0.55 + top_score * 0.4)), 3)
 
     return {
         "reply": out["reply"],
