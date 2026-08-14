@@ -4198,6 +4198,230 @@ a.btn.wizard-btn:hover {
 }
 
 
+/* ——— پیر خرابات ——— */
+.pir-page {
+  --pir-ink: #1c1410;
+  --pir-paper: #f3ebe0;
+  --pir-wine: #6b2d2d;
+  --pir-dust: #8a7460;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.pir-hero {
+  margin-bottom: 20px;
+  padding: 8px 2px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pir-dust) 35%, transparent);
+}
+.pir-brand {
+  margin: 0 0 6px;
+  font-family: "Vazirmatn", "Shabnam", Georgia, serif;
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--pir-ink);
+  line-height: 1.15;
+}
+.pir-lead {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--pir-dust);
+  max-width: 52ch;
+}
+.pir-disclaimer {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--pir-wine) 75%, var(--pir-dust));
+}
+.pir-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+.pir-link {
+  font-size: 13px;
+  color: var(--pir-wine);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pir-wizard {
+  background: color-mix(in srgb, var(--pir-paper) 70%, var(--surface, #fff));
+  border: 1px solid color-mix(in srgb, var(--pir-dust) 28%, transparent);
+  border-radius: 16px;
+  padding: 16px 18px 14px;
+}
+.pir-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.pir-step {
+  border: 1px solid color-mix(in srgb, var(--pir-dust) 30%, transparent);
+  background: transparent;
+  color: var(--pir-dust);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pir-step.active {
+  background: var(--pir-ink);
+  border-color: var(--pir-ink);
+  color: #f7f1e8;
+}
+.pir-wizard-body {
+  min-height: 180px;
+}
+.pir-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pir-ink);
+}
+.pir-field input,
+.pir-field textarea {
+  font-weight: 400;
+  width: 100%;
+}
+.pir-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pir-chip {
+  border: 1px solid color-mix(in srgb, var(--pir-dust) 35%, transparent);
+  background: color-mix(in srgb, var(--pir-paper) 80%, transparent);
+  color: var(--pir-ink);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pir-chip.active {
+  background: color-mix(in srgb, var(--pir-wine) 12%, var(--pir-paper));
+  border-color: var(--pir-wine);
+  color: var(--pir-wine);
+}
+.pir-summary {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--pir-ink);
+}
+.pir-summary p {
+  margin: 0 0 8px;
+}
+.pir-wizard-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--pir-dust) 25%, transparent);
+}
+.pir-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: min(62vh, 640px);
+  background: color-mix(in srgb, var(--pir-paper) 55%, var(--surface, #fff));
+  border: 1px solid color-mix(in srgb, var(--pir-dust) 28%, transparent);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.pir-chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pir-dust) 22%, transparent);
+}
+.pir-chat-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pir-chat-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--pir-dust);
+  max-width: 36ch;
+}
+.pir-starters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.pir-starter {
+  border: 1px dashed color-mix(in srgb, var(--pir-dust) 45%, transparent);
+  background: transparent;
+  color: var(--pir-ink);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  text-align: right;
+  cursor: pointer;
+}
+.pir-starter:hover {
+  border-style: solid;
+  border-color: var(--pir-wine);
+}
+.pir-bubble {
+  max-width: min(92%, 520px);
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.pir-bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.pir-bubble.user {
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--pir-ink) 88%, #000);
+  color: #f7f1e8;
+}
+.pir-bubble.assistant {
+  align-self: flex-end;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--pir-dust) 30%, transparent);
+  color: var(--pir-ink);
+}
+.pir-bubble-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pir-wine);
+  margin-bottom: 4px;
+}
+.pir-thinking {
+  opacity: 0.72;
+}
+.pir-chat-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--pir-dust) 22%, transparent);
+  background: color-mix(in srgb, var(--pir-paper) 40%, #fff);
+}
+.pir-chat-composer textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 120px;
+  resize: vertical;
+}
+
 /* ——— Liquid Glass motion layer ——— */
 .main > * {
   animation: page-enter 240ms var(--ease);

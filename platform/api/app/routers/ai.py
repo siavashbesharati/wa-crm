@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
-from app.models import AiPolicy, KnowledgeDoc, Lead, MemberRole, Message
-from app.schemas import AiPolicyIn, KnowledgeIn, SuggestIn, SuggestOut
+from app.models import AiPolicy, KnowledgeDoc, Lead, MemberRole, Message, OrgCoachProfile, CoachMessage
+from app.schemas import AiPolicyIn, KnowledgeIn, SuggestIn, SuggestOut, PirProfileIn, PirChatIn
 from app.services.ai_reply import generate_reply, retrieve_knowledge
 from app.services.embeddings import chunk_text, embed_text
 from app.services.group_reply import (
@@ -501,4 +501,132 @@ def run_auto_reply_for_lead(
         "job_id": job.id,
         "confidence": result["confidence"],
         "provider": result.get("provider"),
+    }
+
+
+# --- پیر خرابات (internal coach) ---
+
+
+def _pir_profile_out(row) -> dict:
+    from app.services.pir_kharabat import profile_to_dict
+
+    return profile_to_dict(row)
+
+
+@router.get("/pir/profile")
+def get_pir_profile(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    row = db.query(OrgCoachProfile).filter(OrgCoachProfile.org_id == auth.org.id).first()
+    return _pir_profile_out(row)
+
+
+@router.put("/pir/profile")
+def put_pir_profile(
+    body: PirProfileIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime
+
+    from app.services.pir_kharabat import (
+        _normalize_goals,
+        apply_prompts_to_policy,
+        profile_to_dict,
+    )
+
+    row = db.query(OrgCoachProfile).filter(OrgCoachProfile.org_id == auth.org.id).first()
+    if not row:
+        row = OrgCoachProfile(org_id=auth.org.id)
+        db.add(row)
+
+    row.niche = (body.niche or "").strip()[:120]
+    row.audience = (body.audience or "").strip()
+    row.tone = (body.tone or "").strip()[:40]
+    row.goals = _normalize_goals(list(body.goals or []))
+    row.offers = (body.offers or "").strip()
+    row.banned_phrases = (body.banned_phrases or "").strip()
+    row.wizard_completed = bool(body.wizard_completed)
+    row.updated_at = datetime.utcnow()
+    db.add(row)
+
+    apply_prompts = body.apply_prompts
+    if apply_prompts is None:
+        apply_prompts = bool(row.wizard_completed)
+    if apply_prompts:
+        apply_prompts_to_policy(db, org_id=auth.org.id, profile=row)
+
+    db.commit()
+    db.refresh(row)
+    return profile_to_dict(row)
+
+
+@router.get("/pir/messages")
+def get_pir_messages(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    from app.services.pir_kharabat import list_messages
+
+    rows = list_messages(db, auth.org.id)
+    return {
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "body": m.body,
+                "created_at": m.created_at,
+            }
+            for m in rows
+        ]
+    }
+
+
+@router.delete("/pir/messages")
+def delete_pir_messages(
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
+    db: Session = Depends(get_db),
+):
+    from app.services.pir_kharabat import clear_messages
+
+    n = clear_messages(db, auth.org.id)
+    db.commit()
+    return {"ok": True, "deleted": n}
+
+
+@router.post("/pir/chat")
+def pir_chat(
+    body: PirChatIn,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    from app.services.pir_kharabat import run_coach_turn
+
+    message = (body.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="پیام لازم است")
+
+    profile = db.query(OrgCoachProfile).filter(OrgCoachProfile.org_id == auth.org.id).first()
+    try:
+        result = run_coach_turn(
+            db,
+            org=auth.org,
+            profile=profile,
+            user_id=auth.user.id,
+            message=message,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"خطای مربی: {exc}") from exc
+
+    msg = result["message"]
+    return {
+        "reply": result["reply"],
+        "provider": result.get("provider") or "",
+        "model": result.get("model") or "",
+        "message": {
+            "id": msg.id,
+            "role": msg.role,
+            "body": msg.body,
+            "created_at": msg.created_at,
+        },
     }

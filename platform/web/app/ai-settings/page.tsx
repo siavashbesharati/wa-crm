@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -149,7 +150,11 @@ export default function AiSettingsPage() {
           >
             <p className="hint" style={{ margin: 0 }}>
               سیستم‌پرامپت در این صفحه قابل ویرایش نیست. پایین، نقش دستیار این کسب‌وکار را
-              تنظیم کنید.
+              تنظیم کنید — یا با{" "}
+              <Link href="/pir-kharabat" style={{ fontWeight: 600 }}>
+                پیر خرابات
+              </Link>{" "}
+              ویزارد پروفایل را کامل کنید تا نقش و دستور پاسخ‌گویی خودکار نوشته شود.
             </p>
           </Card>
 
@@ -158,7 +163,8 @@ export default function AiSettingsPage() {
               <strong>نقش و لحن پاسخ‌گویی</strong>
               <div className="hint" style={{ margin: "4px 0 8px" }}>
                 مثلاً «مشاور فروش تورهای خارجی» — با ذخیره، بلافاصله روی پاسخ‌های بعدی اعمال
-                می‌شود.
+                می‌شود. پیکربندی سریع:{" "}
+                <Link href="/pir-kharabat">پیکربندی با پیر خرابات</Link>
               </div>
               <input
                 value={policy.agent_role || ""}

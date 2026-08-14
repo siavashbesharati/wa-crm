@@ -461,3 +461,43 @@ class OkrOut(BaseModel):
     period: str
     owner_id: str | None
     progress: float
+
+
+class PirProfileIn(BaseModel):
+    niche: str = ""
+    audience: str = ""
+    tone: str = ""
+    goals: list[str] = []
+    offers: str = ""
+    banned_phrases: str = ""
+    wizard_completed: bool = False
+    apply_prompts: bool = True
+
+
+class PirProfileOut(BaseModel):
+    niche: str = ""
+    audience: str = ""
+    tone: str = ""
+    goals: list[str] = []
+    offers: str = ""
+    banned_phrases: str = ""
+    wizard_completed: bool = False
+    updated_at: datetime | None = None
+
+
+class PirChatIn(BaseModel):
+    message: str
+
+
+class PirChatMessageOut(BaseModel):
+    id: str
+    role: str
+    body: str
+    created_at: datetime
+
+
+class PirChatOut(BaseModel):
+    reply: str
+    message: PirChatMessageOut
+    provider: str = ""
+    model: str = ""

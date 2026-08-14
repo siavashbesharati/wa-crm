@@ -438,6 +438,37 @@ class AiPolicy(Base):
     pause_bot_on_escalate: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class OrgCoachProfile(Base):
+    """Per-org «پیر خرابات» business profile from the onboarding wizard."""
+
+    __tablename__ = "org_coach_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), unique=True, index=True)
+    niche: Mapped[str] = mapped_column(String(120), default="")
+    audience: Mapped[str] = mapped_column(Text, default="")
+    tone: Mapped[str] = mapped_column(String(40), default="")
+    goals: Mapped[list] = mapped_column(JSON, default=list)
+    offers: Mapped[str] = mapped_column(Text, default="")
+    banned_phrases: Mapped[str] = mapped_column(Text, default="")
+    wizard_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class CoachMessage(Base):
+    """Internal coach chat thread (team ↔ پیر خرابات), never sent to WhatsApp."""
+
+    __tablename__ = "coach_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String(20), default="user")  # user | assistant
+    body: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+
 class KpiDefinition(Base):
     __tablename__ = "kpi_definitions"
 
