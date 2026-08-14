@@ -13,12 +13,18 @@ const NAV = [
   { href: "/inbox", label: "اینباکس", ico: "✉" },
   { href: "/tasks", label: "وظایف", ico: "☑" },
   { href: "/channels", label: "کانال‌ها", ico: "☎" },
+  { href: "/groups", label: "گروه‌ها", ico: "▦" },
   { href: "/team", label: "تیم", ico: "☺" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
   { href: "/kpi", label: "KPI / OKR", ico: "◉" },
   { href: "/support", label: "پشتیبانی", ico: "?" }
 ];
+
+function isNavActive(pathname: string, href: string) {
+  if (href === "/home") return pathname === "/home" || pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 function profileFromMe(me: Awaited<ReturnType<typeof loadOrgMe>> | null) {
   if (!me) {
@@ -214,7 +220,7 @@ export default function ShellChrome({
               key={item.href}
               href={item.href}
               prefetch
-              className={pathname.startsWith(item.href) ? "active" : ""}
+              className={isNavActive(pathname, item.href) ? "active" : ""}
               title={item.label}
               onClick={() => navTo(item.href)}
             >

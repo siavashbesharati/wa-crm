@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "./Button";
 
 type ModalProps = {
@@ -22,17 +22,41 @@ export function Modal({
   headerActions,
   panelClassName = ""
 }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const lastFocus = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
+    lastFocus.current = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (e.key !== "Tab") return;
+      const root = panelRef.current;
+      if (!root) return;
+      const focusable = root.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    window.setTimeout(() => {
+      panelRef.current?.querySelector<HTMLElement>("button, input, textarea")?.focus();
+    }, 30);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      lastFocus.current?.focus?.();
     };
   }, [open, onClose]);
 
@@ -41,6 +65,7 @@ export function Modal({
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
+        ref={panelRef}
         className={`modal-panel ${panelClassName}`.trim()}
         role="dialog"
         aria-modal="true"
