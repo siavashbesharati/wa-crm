@@ -124,9 +124,9 @@ export default function KpiPage() {
           </div>
 
           <Card
-            title="قیفمراحل"
+            title=" قیف مراحل"
             help={{
-              title: "قیففروش",
+              title: " قیف فروش",
               body: "تعداد لید در هر مرحله برد کانبان — نشان می‌دهد کجا بیشترین ریزش یا انباشت دارید."
             }}
           >

@@ -192,6 +192,8 @@ export default function InboxPage() {
   const toast = useToast();
   const scroller = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimer = useRef<number | null>(null);
+  const lastTypingSent = useRef(0);
 
   async function load(opts?: { quiet?: boolean }) {
     if (!opts?.quiet) setLoading(true);
@@ -255,6 +257,16 @@ export default function InboxPage() {
     }
     try {
       setMessages(await api<Message[]>(`/messages/inbox?lead_id=${t.lead.id}`));
+      // Subscribe so we receive their composing / online updates
+      if (!opts?.quiet && t.accounts[0]?.account_id) {
+        void api("/messages/presence/subscribe", {
+          method: "POST",
+          body: JSON.stringify({
+            lead_id: t.lead.id,
+            account_id: t.accounts[0].account_id
+          })
+        }).catch(() => undefined);
+      }
       if (!opts?.quiet) window.setTimeout(() => inputRef.current?.focus(), 80);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
@@ -263,7 +275,39 @@ export default function InboxPage() {
     }
   }
 
-  // Live poll: delivery receipts + contact typing while a thread is open
+  function clearTypingTimer() {
+    if (typingTimer.current != null) {
+      window.clearTimeout(typingTimer.current);
+      typingTimer.current = null;
+    }
+  }
+
+  function broadcastOwnTyping(state: "composing" | "paused") {
+    if (!active?.lead.id || !active.accounts[0]?.account_id) return;
+    const accountId = active.accounts[0].account_id;
+    const leadId = active.lead.id;
+    void api("/messages/typing", {
+      method: "POST",
+      body: JSON.stringify({ lead_id: leadId, account_id: accountId, state })
+    }).catch(() => undefined);
+  }
+
+  function onComposerChange(value: string) {
+    setText(value);
+    if (!active?.lead.id) return;
+    const now = Date.now();
+    // Presence expires ~10s — refresh composing at most every ~3s while typing
+    if (value.trim() && now - lastTypingSent.current > 3000) {
+      lastTypingSent.current = now;
+      broadcastOwnTyping("composing");
+    }
+    clearTypingTimer();
+    typingTimer.current = window.setTimeout(() => {
+      lastTypingSent.current = 0;
+      broadcastOwnTyping("paused");
+    }, 2500);
+  }
+
   useEffect(() => {
     if (!active?.lead.id) return;
     let cancelled = false;
@@ -310,6 +354,7 @@ export default function InboxPage() {
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      clearTypingTimer();
     };
   }, [active?.lead.id]);
 
@@ -319,6 +364,9 @@ export default function InboxPage() {
       toast.push("اکانت کانال برای این گفتگو موجود نیست", "err");
       return;
     }
+    clearTypingTimer();
+    broadcastOwnTyping("paused");
+    lastTypingSent.current = 0;
     const body = text.trim();
     const ok = await run(
       () =>
@@ -636,9 +684,14 @@ export default function InboxPage() {
                     rows={1}
                     value={text}
                     onChange={(e) => {
-                      setText(e.target.value);
+                      onComposerChange(e.target.value);
                       e.target.style.height = "auto";
                       e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                    }}
+                    onBlur={() => {
+                      clearTypingTimer();
+                      lastTypingSent.current = 0;
+                      broadcastOwnTyping("paused");
                     }}
                     placeholder="پیام…"
                     dir="auto"

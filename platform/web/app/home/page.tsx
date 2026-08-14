@@ -484,7 +484,7 @@ export default function HomePage() {
 
           <div className="dash-grid-2">
             <Card
-              title="قیففروش"
+              title=" قیف فروش"
               help={{
                 title: "فانل",
                 body: "توزیع لیدها در مراحل برد کانبان. میله‌های بلندتر یعنی انباشت در آن مرحله."

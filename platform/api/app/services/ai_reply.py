@@ -298,7 +298,7 @@ def _compose_llm_prompts(
     history = (history_text or "").strip() or "(بدون تاریخچه قبلی)"
     user_prompt = (
         f"نام لید: {lead_name}\n"
-        f"مرحله قیف: {lead_stage}\n\n"
+        f"مرحله  قیف : {lead_stage}\n\n"
         f"تاریخچه گفتگو (قدیمی → جدید):\n{history}\n\n"
         f"آخرین پیام مشتری:\n{message.strip()}\n\n"
         "یک پاسخ مناسب برای ارسال به مشتری بنویس. فقط متن پاسخ را برگردان."

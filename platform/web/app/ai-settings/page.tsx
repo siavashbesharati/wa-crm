@@ -270,7 +270,7 @@ export default function AiSettingsPage() {
 
               <Switch
                 label="اعمال خودکار مرحله پیشنهادی AI"
-                hint="اگر روشن باشد، بعد از تحلیل گفتگو مرحله قیف (به‌جز مراحل پایانی) خودکار به‌روز می‌شود."
+                hint="اگر روشن باشد، بعد از تحلیل گفتگو مرحله  قیف  (به‌جز مراحل پایانی) خودکار به‌روز می‌شود."
                 checked={!!policy.auto_apply_stage}
                 onChange={(v) => setPolicy({ ...policy, auto_apply_stage: v })}
               />

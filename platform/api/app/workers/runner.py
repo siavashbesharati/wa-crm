@@ -517,13 +517,26 @@ def handle_campaign_send(payload: dict) -> dict:
             .all()
         )
         if not pending:
-            camp.status = "done"
-            camp.finished_at = datetime.utcnow()
-            db.add(camp)
-            db.commit()
-            return {"status": "done"}
+            open_n = (
+                db.query(CampaignSend)
+                .filter(
+                    CampaignSend.campaign_id == camp.id,
+                    CampaignSend.status.in_(("pending", "queued")),
+                )
+                .count()
+            )
+            if open_n == 0:
+                camp.status = "done"
+                camp.finished_at = datetime.utcnow()
+                db.add(camp)
+                db.commit()
+                return {"status": "done"}
+            # Jobs still with connector — wait for completions
+            return {"status": "waiting_connector", "open": open_n}
 
-        body = (camp.message_template or "").strip()
+        from app.services.campaign_send import render_campaign_body
+
+        body_tpl = (camp.message_template or "").strip()
         queued = 0
         for row in pending:
             lead = db.get(Lead, row.lead_id)
@@ -559,6 +572,7 @@ def handle_campaign_send(payload: dict) -> dict:
                 )
             account_id = (link.account_id if link else None) or acc.id
             target = resolve_outbound_target(lead, link)
+            body = render_campaign_body(body_tpl, lead)
             job = OutboundJob(
                 org_id=org_id,
                 account_id=account_id,
@@ -601,12 +615,23 @@ def handle_campaign_send(payload: dict) -> dict:
             .filter(CampaignSend.campaign_id == camp.id, CampaignSend.status == "pending")
             .count()
         )
-        if remaining == 0:
+        # Keep running while connector still has queued jobs — finish only when all
+        # rows are terminal (sent / failed / skipped).
+        open_n = (
+            db.query(CampaignSend)
+            .filter(
+                CampaignSend.campaign_id == camp.id,
+                CampaignSend.status.in_(("pending", "queued")),
+            )
+            .count()
+        )
+        if open_n == 0:
             camp.status = "done"
             camp.finished_at = datetime.utcnow()
         else:
             camp.status = "running"
-            enqueue("campaign_send", {"campaign_id": camp.id, "org_id": org_id})
+            if remaining > 0:
+                enqueue("campaign_send", {"campaign_id": camp.id, "org_id": org_id})
         db.add(camp)
         db.commit()
         return {"status": "ok", "queued": queued, "remaining": remaining}

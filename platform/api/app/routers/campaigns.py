@@ -81,6 +81,12 @@ def _send_counts(db: Session, campaign_id: str) -> dict[str, int]:
 
 
 def _to_out(db: Session, camp: Campaign) -> CampaignOut:
+    from app.services.campaign_send import reconcile_campaign
+
+    # Heal counts + flip to done when all sends finished (survives missed complete hooks)
+    if reconcile_campaign(db, camp.id):
+        db.commit()
+        db.refresh(camp)
     counts = _send_counts(db, camp.id)
     seg = dict(camp.segment_json or {})
     return CampaignOut(
@@ -206,6 +212,8 @@ def start_campaign(
     auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
     db: Session = Depends(get_db),
 ):
+    from app.services.campaign_send import org_has_active_campaign, reconcile_campaign
+
     camp = (
         db.query(Campaign)
         .filter(Campaign.id == campaign_id, Campaign.org_id == auth.org.id)
@@ -219,6 +227,25 @@ def start_campaign(
         raise HTTPException(status_code=400, detail="متن پیام خالی است")
     if not camp.channel_account_id:
         raise HTTPException(status_code=400, detail="اکانت کانال انتخاب نشده")
+
+    # Heal any stuck "running" campaigns before checking the lock
+    for other in (
+        db.query(Campaign)
+        .filter(
+            Campaign.org_id == auth.org.id,
+            Campaign.status.in_(("running", "queued")),
+        )
+        .all()
+    ):
+        if reconcile_campaign(db, other.id):
+            db.commit()
+
+    blocking = org_has_active_campaign(db, auth.org.id, exclude_id=camp.id)
+    if blocking:
+        raise HTTPException(
+            status_code=400,
+            detail=f"تا پایان کمپین «{blocking.name}» نمی‌توانید کمپین دیگری شروع کنید",
+        )
 
     # Clear previous sends if restarting a done/paused campaign
     db.query(CampaignSend).filter(CampaignSend.campaign_id == camp.id).delete(

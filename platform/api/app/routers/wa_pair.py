@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,9 +11,41 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import ChannelAccount, ChannelType, MemberRole, WaAuthState
-from app.schemas import ChannelAccountOut, WaPairStatusOut
+from app.schemas import ChannelAccountOut, WaPairCodeStartIn, WaPairStatusOut
 
 router = APIRouter(prefix="/channels", tags=["wa-pair"])
+
+
+def _digits_phone(raw: str) -> str:
+    """Normalize to country-code digits for Baileys requestPairingCode (no +)."""
+    t = re.sub(r"\D", "", (raw or "").strip())
+    if not t:
+        return ""
+    # Iran local 09xxxxxxxxx → 989xxxxxxxxx
+    if t.startswith("09") and len(t) == 11:
+        return "98" + t[1:]
+    if t.startswith("9") and len(t) == 10:
+        return "98" + t
+    if t.startswith("00"):
+        t = t[2:]
+    return t
+
+
+def _pair_status_out(acc: ChannelAccount) -> WaPairStatusOut:
+    phone = ""
+    if (acc.pairing_state or "") == "code_pending":
+        phone = (acc.external_id or "").strip()
+    elif acc.external_id and re.fullmatch(r"\d{8,15}", acc.external_id or ""):
+        phone = acc.external_id
+    return WaPairStatusOut(
+        account_id=acc.id,
+        pairing_state=acc.pairing_state or "disconnected",
+        status=acc.status or "disconnected",
+        qr_payload=acc.qr_payload or "",
+        wa_jid=acc.wa_jid or "",
+        connector_type=acc.connector_type or "extension",
+        phone=phone,
+    )
 
 
 def _account_out(r: ChannelAccount, *, live_online: bool | None = None) -> ChannelAccountOut:
@@ -44,6 +77,13 @@ def _get_org_account(db: Session, org_id: str, account_id: str) -> ChannelAccoun
     return acc
 
 
+def _require_baileys_wa(acc: ChannelAccount) -> None:
+    if acc.channel != ChannelType.whatsapp:
+        raise HTTPException(status_code=400, detail="فقط واتساپ قابل جفت‌سازی است")
+    if (acc.connector_type or "extension") != "baileys":
+        raise HTTPException(status_code=400, detail="این اکانت روی Baileys نیست")
+
+
 @router.post("/accounts/{account_id}/pair/start", response_model=WaPairStatusOut)
 def pair_start(
     account_id: str,
@@ -51,24 +91,45 @@ def pair_start(
     db: Session = Depends(get_db),
 ):
     acc = _get_org_account(db, auth.org.id, account_id)
-    if acc.channel != ChannelType.whatsapp:
-        raise HTTPException(status_code=400, detail="فقط واتساپ قابل جفت‌سازی است")
-    if (acc.connector_type or "extension") != "baileys":
-        raise HTTPException(status_code=400, detail="این اکانت روی Baileys نیست")
+    _require_baileys_wa(acc)
     acc.pairing_state = "qr_pending"
     acc.qr_payload = ""
     acc.status = "offline"
     db.add(acc)
     db.commit()
     db.refresh(acc)
-    return WaPairStatusOut(
-        account_id=acc.id,
-        pairing_state=acc.pairing_state,
-        status=acc.status or "offline",
-        qr_payload="",
-        wa_jid=acc.wa_jid or "",
-        connector_type="baileys",
-    )
+    return _pair_status_out(acc)
+
+
+@router.post("/accounts/{account_id}/pair/code/start", response_model=WaPairStatusOut)
+def pair_code_start(
+    account_id: str,
+    body: WaPairCodeStartIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    """Start pairing-code flow: panel provides phone; connector puts 8-digit code in qr_payload."""
+    acc = _get_org_account(db, auth.org.id, account_id)
+    _require_baileys_wa(acc)
+    phone = _digits_phone(body.phone)
+    if len(phone) < 8 or len(phone) > 15:
+        raise HTTPException(
+            status_code=400,
+            detail="شماره را با کد کشور وارد کنید (مثلاً 98912… یا 0912…)",
+        )
+    # Fresh pair — wipe auth so Baileys issues a new code
+    row = db.query(WaAuthState).filter(WaAuthState.account_id == account_id).first()
+    if row:
+        db.delete(row)
+    acc.pairing_state = "code_pending"
+    acc.qr_payload = ""
+    acc.status = "offline"
+    acc.external_id = phone
+    acc.wa_jid = ""
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+    return _pair_status_out(acc)
 
 
 @router.get("/accounts/{account_id}/pair/status", response_model=WaPairStatusOut)
@@ -78,14 +139,7 @@ def pair_status(
     db: Session = Depends(get_db),
 ):
     acc = _get_org_account(db, auth.org.id, account_id)
-    return WaPairStatusOut(
-        account_id=acc.id,
-        pairing_state=acc.pairing_state or "disconnected",
-        status=acc.status or "disconnected",
-        qr_payload=acc.qr_payload or "",
-        wa_jid=acc.wa_jid or "",
-        connector_type=acc.connector_type or "extension",
-    )
+    return _pair_status_out(acc)
 
 
 @router.post("/accounts/{account_id}/pair/logout", response_model=WaPairStatusOut)
@@ -107,14 +161,7 @@ def pair_logout(
         db.delete(row)
     db.commit()
     db.refresh(acc)
-    return WaPairStatusOut(
-        account_id=acc.id,
-        pairing_state="disconnected",
-        status="offline",
-        qr_payload="",
-        wa_jid="",
-        connector_type="baileys",
-    )
+    return _pair_status_out(acc)
 
 
 @router.post("/accounts/baileys", response_model=ChannelAccountOut)

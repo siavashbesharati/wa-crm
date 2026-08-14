@@ -13,6 +13,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import ShellChrome from "@/components/ShellChrome";
 import { PageLoading } from "@/components/ui/Spinner";
+import { ChannelHealthWatch } from "@/components/channels/ChannelHealthWatch";
 
 export type PanelMeta = {
   title: string;
@@ -163,6 +164,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
       >
         {showNavShimmer ? <PageLoading /> : children}
       </ShellChrome>
+      <ChannelHealthWatch />
     </PanelContext.Provider>
   );
 }

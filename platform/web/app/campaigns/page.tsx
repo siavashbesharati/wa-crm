@@ -93,6 +93,23 @@ export default function CampaignsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep progress alive while campaigns are sending — survives route leave/return via API
+  const needsPoll = rows.some(
+    (c) =>
+      c.status === "running" ||
+      c.status === "queued" ||
+      c.sends_queued > 0
+  );
+  useEffect(() => {
+    if (!needsPoll) return;
+    const id = window.setInterval(() => {
+      void api<Campaign[]>("/campaigns")
+        .then((camps) => setRows(camps))
+        .catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [needsPoll]);
+
   const accountLabel = useMemo(() => {
     const map: Record<string, string> = {};
     for (const a of accounts) {
@@ -243,6 +260,9 @@ export default function CampaignsPage() {
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="سلام {{name}}، …"
                 />
+                <span className="hint">
+                  جای‌نگهدار: {"{{name}}"} با نام مخاطب و {"{{phone}}"} با شماره جایگزین می‌شود
+                </span>
               </label>
               <div className="full">
                 <strong>برچسب‌ها</strong>
@@ -317,6 +337,18 @@ export default function CampaignsPage() {
               <div className="campaign-list">
                 {rows.map((c) => {
                   const audience = c.audience_count ?? 0;
+                  const total = Math.max(c.sends_total, 0);
+                  const done = c.sends_sent + c.sends_failed + c.sends_skipped;
+                  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+                  const showProgress =
+                    total > 0 || c.status === "running" || c.status === "queued";
+                  const anyActive = rows.some(
+                    (x) => x.status === "running" || x.status === "queued"
+                  );
+                  const canStart =
+                    (c.status === "draft" || c.status === "paused" || c.status === "done") &&
+                    audience > 0 &&
+                    !anyActive;
                   return (
                     <article key={c.id} className="campaign-card">
                       <div className="campaign-card-body">
@@ -332,16 +364,42 @@ export default function CampaignsPage() {
                           <span>
                             مخاطب هدف: <strong>{audience}</strong>
                           </span>
-                          {c.sends_total > 0 ? (
+                          {total > 0 ? (
                             <>
                               <span className="campaign-card-dot">·</span>
                               <span>
-                                ارسال {c.sends_total} (صف {c.sends_queued} / موفق {c.sends_sent} /
-                                رد {c.sends_skipped})
+                                ارسال {total} (موفق {c.sends_sent} / ناموفق {c.sends_failed} /
+                                صف {c.sends_queued}
+                                {c.sends_skipped ? ` / رد ${c.sends_skipped}` : ""})
                               </span>
                             </>
                           ) : null}
                         </div>
+                        {showProgress ? (
+                          <div
+                            className="campaign-progress"
+                            role="progressbar"
+                            aria-valuenow={pct}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`پیشرفت ارسال ${pct} درصد`}
+                          >
+                            <div className="campaign-progress-track">
+                              <div
+                                className={`campaign-progress-fill${
+                                  c.sends_failed > 0 ? " has-fail" : ""
+                                }${c.status === "done" ? " done" : ""}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="campaign-progress-legend">
+                              <span>
+                                {done} از {total || "—"}
+                              </span>
+                              <span>{pct}٪</span>
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="campaign-card-tags">
                           {(c.segment.tags || []).map((t) => (
                             <span key={t} className="campaign-chip">
@@ -370,7 +428,14 @@ export default function CampaignsPage() {
                             className="campaign-action-btn"
                             size="sm"
                             loading={busy}
-                            disabled={audience === 0}
+                            disabled={!canStart}
+                            title={
+                              anyActive
+                                ? "تا پایان کمپین در حال اجرا صبر کنید"
+                                : audience === 0
+                                  ? "مخاطبی نیست"
+                                  : undefined
+                            }
                             onClick={() => void start(c.id)}
                           >
                             شروع ارسال

@@ -73,7 +73,12 @@ export const api = {
   heartbeat: (accountId: string) =>
     request<{ ok: boolean }>("POST", `/internal/wa/sessions/${accountId}/heartbeat`),
   ingest: (accountId: string, body: Record<string, unknown>) =>
-    request("POST", `/internal/wa/sessions/${accountId}/ingest`, body),
+    request<{
+      id?: string;
+      job_id?: string;
+      auto_reply_status?: string;
+      auto_reply_reason?: string;
+    }>("POST", `/internal/wa/sessions/${accountId}/ingest`, body),
   claimJobs: (accountId: string, limit = 5) =>
     request<{ jobs: ClaimedJob[] }>(
       "POST",
@@ -97,11 +102,15 @@ export const api = {
   ) => request("POST", `/internal/wa/sessions/${accountId}/message-status`, payload),
   reportPresence: (
     accountId: string,
-    payload: { chat_jid: string; state: string; ttl_sec?: number }
+    payload: { chat_jid: string; state: string; ttl_sec?: number; last_seen?: number }
   ) => request("POST", `/internal/wa/sessions/${accountId}/presence`, payload),
   getPairCommand: (accountId: string) =>
-    request<{ account_id: string; pairing_state: string; status: string; wa_jid: string }>(
-      "GET",
-      `/internal/wa/sessions/${accountId}/pair-command`
-    ),
+    request<{
+      account_id: string;
+      pairing_state: string;
+      status: string;
+      wa_jid: string;
+      phone?: string;
+      pair_mode?: string;
+    }>("GET", `/internal/wa/sessions/${accountId}/pair-command`),
 };

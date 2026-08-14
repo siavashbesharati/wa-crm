@@ -202,7 +202,7 @@ export default function SuperAiPlaygroundPage() {
                 <input value={leadName} onChange={(e) => setLeadName(e.target.value)} />
               </label>
               <label>
-                مرحله قیف
+                مرحله  قیف 
                 <select value={leadStage} onChange={(e) => setLeadStage(e.target.value)}>
                   {STAGES.map((s) => (
                     <option key={s} value={s}>

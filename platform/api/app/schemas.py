@@ -156,6 +156,13 @@ class WaPairStatusOut(BaseModel):
     qr_payload: str = ""
     wa_jid: str = ""
     connector_type: str = "baileys"
+    phone: str = ""
+
+
+class WaPairCodeStartIn(BaseModel):
+    """Start Baileys pairing-code flow (8-digit code on phone)."""
+
+    phone: str
 
 
 class WaAuthStateIn(BaseModel):

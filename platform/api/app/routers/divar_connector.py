@@ -348,6 +348,14 @@ def complete_job(
     job.error = error or ""
     job.updated_at = datetime.utcnow()
     db.add(job)
+    try:
+        from app.services.campaign_send import apply_job_result_to_campaign_send
+
+        apply_job_result_to_campaign_send(
+            db, job_id=job_id, ok=ok, error=error or ""
+        )
+    except Exception:  # noqa: BLE001
+        pass
     db.commit()
     trace_event(
         job_trace_id(job_id),

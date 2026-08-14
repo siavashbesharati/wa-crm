@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/Toast";
 import {
   accountIdentity,
   isAccountOn,
+  pairingStateLabel,
   statusLabel,
   type ChannelAccount
 } from "@/components/channels/shared";
@@ -24,10 +25,11 @@ type PairStatus = {
   qr_payload: string;
   wa_jid: string;
   connector_type: string;
+  phone?: string;
 };
 
 type PairModal =
-  | { kind: "whatsapp"; accountId: string }
+  | { kind: "whatsapp"; accountId: string; mode: "qr" | "code"; step: "choose" | "active" }
   | { kind: "divar"; accountId: string; step: "otp" | "code" };
 
 export default function ChannelsPage() {
@@ -38,6 +40,7 @@ export default function ChannelsPage() {
   const [pair, setPair] = useState<PairStatus | null>(null);
   const [divarPhone, setDivarPhone] = useState("");
   const [divarCode, setDivarCode] = useState("");
+  const [waPhone, setWaPhone] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ChannelAccount | null>(null);
   const toast = useToast();
 
@@ -89,16 +92,43 @@ export default function ChannelsPage() {
   );
 
   useEffect(() => {
-    if (!modal || modal.kind !== "whatsapp") return;
+    if (!modal || modal.kind !== "whatsapp" || modal.step !== "active") return;
     void pollPair(modal.accountId);
     const t = setInterval(() => void pollPair(modal.accountId), 2000);
     return () => clearInterval(t);
   }, [modal, pollPair]);
 
-  async function startWhatsAppPair(accountId: string) {
+  async function startWhatsAppQr(accountId: string) {
     await api(`/channels/accounts/${accountId}/pair/start`, { method: "POST" });
     setPair(null);
-    setModal({ kind: "whatsapp", accountId });
+    setModal({ kind: "whatsapp", accountId, mode: "qr", step: "active" });
+  }
+
+  async function startWhatsAppCode(accountId: string) {
+    const phone = waPhone.trim();
+    if (!phone) {
+      toast.push("شماره واتساپ را وارد کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${accountId}/pair/code/start`, {
+        method: "POST",
+        body: JSON.stringify({ phone })
+      });
+      setPair(null);
+      setModal({ kind: "whatsapp", accountId, mode: "code", step: "active" });
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openWhatsAppPair(accountId: string) {
+    setWaPhone("");
+    setPair(null);
+    setModal({ kind: "whatsapp", accountId, mode: "qr", step: "choose" });
   }
 
   async function addWhatsApp() {
@@ -106,7 +136,7 @@ export default function ChannelsPage() {
     try {
       const acc = await api<ChannelAccount>("/channels/accounts/baileys", { method: "POST" });
       await load();
-      await startWhatsAppPair(acc.id);
+      openWhatsAppPair(acc.id);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -115,14 +145,7 @@ export default function ChannelsPage() {
   }
 
   async function reconnectWhatsApp(accountId: string) {
-    setBusy(true);
-    try {
-      await startWhatsAppPair(accountId);
-    } catch (e) {
-      toast.push(e instanceof Error ? e.message : "خطا", "err");
-    } finally {
-      setBusy(false);
-    }
+    openWhatsAppPair(accountId);
   }
 
   async function logoutPair(accountId: string) {
@@ -257,7 +280,7 @@ export default function ChannelsPage() {
           <ChannelCard
             channel="whatsapp"
             title="واتساپ"
-            hint="اتصال با QR از موبایل"
+            hint="اتصال با QR یا کد ۸رقمی"
             accounts={waAccounts}
             busy={busy}
             onAdd={() => void addWhatsApp()}
@@ -297,16 +320,109 @@ export default function ChannelsPage() {
           </Button>
         }
       >
-        <div className="pair-qr">
-          <p className="pair-lead">واتساپ موبایل را باز کنید و QR را اسکن کنید.</p>
-          {pair?.qr_payload ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={pair.qr_payload} alt="کد QR واتساپ" width={260} height={260} />
-          ) : (
-            <div className="pair-qr-wait">در انتظار QR از سرور…</div>
-          )}
-          <p className="hint">وضعیت: {pair?.pairing_state || "qr_pending"}</p>
-        </div>
+        {modal?.kind === "whatsapp" && modal.step === "choose" ? (
+          <div className="wa-pair-choose">
+            <p className="pair-lead">چطور می‌خواهید وصل شوید؟</p>
+            <div className="wa-pair-mode-tabs">
+              <button
+                type="button"
+                className={`wa-pair-mode${modal.mode === "qr" ? " active" : ""}`}
+                onClick={() => setModal({ ...modal, mode: "qr" })}
+              >
+                اسکن QR
+              </button>
+              <button
+                type="button"
+                className={`wa-pair-mode${modal.mode === "code" ? " active" : ""}`}
+                onClick={() => setModal({ ...modal, mode: "code" })}
+              >
+                کد جفت‌سازی
+              </button>
+            </div>
+            {modal.mode === "qr" ? (
+              <div className="wa-pair-pane">
+                <p className="hint">
+                  در واتساپ موبایل: تنظیمات ← دستگاه‌های متصل ← پیوند دستگاه، سپس QR را اسکن کنید.
+                </p>
+                <Button
+                  loading={busy}
+                  onClick={() => void startWhatsAppQr(modal.accountId)}
+                >
+                  نمایش QR
+                </Button>
+              </div>
+            ) : (
+              <div className="wa-pair-pane">
+                <p className="hint">
+                  شماره واتساپ را با کد کشور وارد کنید، سپس کد ۸رقمی را در موبایل در
+                  «پیوند با شماره تلفن» وارد کنید.
+                </p>
+                <label className="wa-pair-phone">
+                  شماره (مثلاً 0912… یا 98912…)
+                  <input
+                    className="ltr-text"
+                    dir="ltr"
+                    value={waPhone}
+                    onChange={(e) => setWaPhone(e.target.value)}
+                    placeholder="989121234567"
+                    autoFocus
+                  />
+                </label>
+                <Button loading={busy} onClick={() => void startWhatsAppCode(modal.accountId)}>
+                  دریافت کد
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : modal?.kind === "whatsapp" && modal.mode === "code" ? (
+          <div className="pair-qr">
+            <p className="pair-lead">
+              در واتساپ: تنظیمات ← دستگاه‌های متصل ← پیوند دستگاه ← پیوند با شماره تلفن
+            </p>
+            {pair?.qr_payload && !pair.qr_payload.startsWith("data:") ? (
+              <div className="wa-pair-code-display" dir="ltr">
+                {pair.qr_payload}
+              </div>
+            ) : (
+              <div className="pair-qr-wait">در حال دریافت کد جفت‌سازی…</div>
+            )}
+            <p className="hint">
+              شماره: {pair?.phone || waPhone || "—"} · وضعیت:{" "}
+              {pairingStateLabel(pair?.pairing_state || "code_pending")}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setModal({ kind: "whatsapp", accountId: modal.accountId, mode: "code", step: "choose" })
+              }
+            >
+              تغییر روش / شماره
+            </Button>
+          </div>
+        ) : (
+          <div className="pair-qr">
+            <p className="pair-lead">واتساپ موبایل را باز کنید و QR را اسکن کنید.</p>
+            {pair?.qr_payload && pair.qr_payload.startsWith("data:") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pair.qr_payload} alt="کد QR واتساپ" width={260} height={260} />
+            ) : (
+              <div className="pair-qr-wait">در انتظار QR از سرور…</div>
+            )}
+            <p className="hint">
+              وضعیت: {pairingStateLabel(pair?.pairing_state || "qr_pending")}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setModal({ kind: "whatsapp", accountId: modal!.accountId, mode: "qr", step: "choose" })
+              }
+            >
+              تغییر روش اتصال
+            </Button>
+          </div>
+        )}
       </Modal>
 
       <Modal

@@ -13,6 +13,12 @@ type ModalProps = {
   panelClassName?: string;
 };
 
+function focusables(root: HTMLElement) {
+  return root.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  );
+}
+
 export function Modal({
   open,
   title,
@@ -24,21 +30,25 @@ export function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const lastFocus = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     lastFocus.current = document.activeElement as HTMLElement | null;
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
       if (e.key !== "Tab") return;
       const root = panelRef.current;
       if (!root) return;
-      const focusable = root.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const nodes = focusables(root);
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
@@ -47,23 +57,38 @@ export function Modal({
         first.focus();
       }
     };
+
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.setTimeout(() => {
-      panelRef.current?.querySelector<HTMLElement>("button, input, textarea")?.focus();
+
+    // Prefer a form field over the header close button
+    const t = window.setTimeout(() => {
+      const root = panelRef.current;
+      if (!root) return;
+      const preferred =
+        root.querySelector<HTMLElement>(
+          'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])'
+        ) ||
+        root.querySelector<HTMLElement>(
+          'button:not([disabled]):not([aria-label="بستن"]), [href], [tabindex]:not([tabindex="-1"])'
+        );
+      preferred?.focus();
     }, 30);
+
     return () => {
+      window.clearTimeout(t);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
       lastFocus.current?.focus?.();
     };
-  }, [open, onClose]);
+    // Only when open toggles — do not re-run on every parent render / onClose identity change
+  }, [open]);
 
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <div className="modal-backdrop" onClick={() => onCloseRef.current()} role="presentation">
       <div
         ref={panelRef}
         className={`modal-panel ${panelClassName}`.trim()}
@@ -76,7 +101,7 @@ export function Modal({
           {title ? <h2 id="modal-title">{title}</h2> : <div className="modal-header-spacer" />}
           <div className="modal-header-actions">
             {headerActions}
-            <Button variant="ghost" size="sm" onClick={onClose} aria-label="بستن">
+            <Button variant="ghost" size="sm" onClick={() => onCloseRef.current()} aria-label="بستن">
               ×
             </Button>
           </div>

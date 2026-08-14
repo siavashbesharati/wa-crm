@@ -48,10 +48,10 @@ async function syncSessions() {
       // Only auto-start if not explicitly logged out — wait for pair/start
       continue;
     }
-    if (state === "qr_pending" || state === "connected" || sessions.has(info.id)) {
+    if (state === "qr_pending" || state === "code_pending" || state === "connected" || state === "reconnecting" || sessions.has(info.id)) {
       await ensureSession(info);
     }
-    // Detect logout request from panel
+    // Detect logout / pair-mode changes from panel
     const prev = lastPairState.get(info.id);
     lastPairState.set(info.id, state);
     if (prev && prev !== "disconnected" && state === "disconnected") {
@@ -61,6 +61,15 @@ async function syncSessions() {
       } catch {
         /* ignore */
       }
+    } else if (
+      prev &&
+      prev !== state &&
+      (state === "code_pending" || state === "qr_pending") &&
+      sessions.has(info.id)
+    ) {
+      // Fresh QR / pairing-code request — restart socket so Baileys issues new payload
+      await stopSession(info.id);
+      await ensureSession(info);
     }
   }
 }
@@ -76,14 +85,15 @@ async function pollPairCommands() {
       /* ignore */
     }
   }
-  // Also pick up qr_pending accounts not yet started
+  // Also pick up qr_pending / code_pending accounts not yet started
   try {
     let list = await api.listSessions();
     if (config.forceAccountId) {
       list = list.filter((s) => s.id === config.forceAccountId);
     }
     for (const info of list) {
-      if (info.pairing_state === "qr_pending" && !sessions.has(info.id)) {
+      const st = (info.pairing_state || "").toLowerCase();
+      if ((st === "qr_pending" || st === "code_pending") && !sessions.has(info.id)) {
         await ensureSession(info);
       }
     }
@@ -105,6 +115,22 @@ async function tickOutbound() {
   }
 }
 
+function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on("end", () => {
+      try {
+        const raw = Buffer.concat(chunks).toString("utf8").trim();
+        resolve(raw ? (JSON.parse(raw) as Record<string, unknown>) : {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
 function startHealthServer() {
   const server = http.createServer((req, res) => {
     if (req.url === "/health" || req.url === "/") {
@@ -115,6 +141,42 @@ function startHealthServer() {
       });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(body);
+      return;
+    }
+    // POST /presence/:accountId  { jid, action: subscribe|composing|paused|recording|available|unavailable }
+    if (req.url?.startsWith("/presence/") && req.method === "POST") {
+      void (async () => {
+        try {
+          const url = new URL(req.url || "/", "http://127.0.0.1");
+          const accountId = url.pathname.split("/").filter(Boolean)[1] || "";
+          const session = sessions.get(accountId);
+          if (!session?.connected) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "session not connected" }));
+            return;
+          }
+          const body = await readJsonBody(req);
+          const jid = String(body.jid || "").trim();
+          const action = String(body.action || body.state || "").trim().toLowerCase();
+          if (action === "subscribe") {
+            if (!jid) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "jid required" }));
+              return;
+            }
+            await session.subscribePresence(jid);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true, action: "subscribe", jid }));
+            return;
+          }
+          await session.sendPresence(action, jid || undefined);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, action, jid: jid || null }));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: String(err) }));
+        }
+      })();
       return;
     }
     if (req.url?.startsWith("/groups/") && req.method === "GET") {

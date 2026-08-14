@@ -1049,6 +1049,104 @@ def get_chat_presence(
     return get_presence(org_id=auth.org.id, lead_id=lead.id)
 
 
+def _wa_link_and_jid(
+    *,
+    db: Session,
+    org_id: str,
+    lead_id: str,
+    account_id: str | None = None,
+) -> tuple[Lead, ChannelAccount, LeadAccountLink | None, str]:
+    from app.services.wa_jid import resolve_target_jid
+
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.org_id == org_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="لید یافت نشد")
+
+    links = (
+        db.query(LeadAccountLink)
+        .filter(LeadAccountLink.org_id == org_id, LeadAccountLink.lead_id == lead.id)
+        .all()
+    )
+    acc: ChannelAccount | None = None
+    link: LeadAccountLink | None = None
+    if account_id:
+        acc = (
+            db.query(ChannelAccount)
+            .filter(ChannelAccount.id == account_id, ChannelAccount.org_id == org_id)
+            .first()
+        )
+        link = next((x for x in links if x.account_id == account_id), None)
+    if not acc:
+        for x in links:
+            cand = db.get(ChannelAccount, x.account_id)
+            if cand and (cand.connector_type or "baileys") == "baileys":
+                acc = cand
+                link = x
+                break
+    if not acc:
+        raise HTTPException(status_code=404, detail="اکانت واتساپ یافت نشد")
+
+    jid = resolve_target_jid(lead, link)
+    if not jid:
+        raise HTTPException(status_code=400, detail="شناسه چت واتساپ موجود نیست")
+    return lead, acc, link, jid
+
+
+def _connector_presence(account_id: str, *, action: str, jid: str = "") -> dict:
+    import httpx
+
+    try:
+        r = httpx.post(
+            f"http://127.0.0.1:8090/presence/{account_id}",
+            json={"action": action, "jid": jid},
+            timeout=5.0,
+        )
+        if r.status_code >= 400:
+            return {"ok": False, "error": r.text}
+        return r.json() if r.content else {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@router.post("/presence/subscribe")
+def subscribe_chat_presence(
+    body: dict,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """Ask Baileys to subscribe to presence updates for this lead's chat."""
+    lead_id = str(body.get("lead_id") or "").strip()
+    account_id = str(body.get("account_id") or "").strip() or None
+    if not lead_id:
+        raise HTTPException(status_code=400, detail="lead_id لازم است")
+    _, acc, _, jid = _wa_link_and_jid(
+        db=db, org_id=auth.org.id, lead_id=lead_id, account_id=account_id
+    )
+    result = _connector_presence(acc.id, action="subscribe", jid=jid)
+    return {"ok": bool(result.get("ok", True)), "jid": jid, "connector": result}
+
+
+@router.post("/typing")
+def broadcast_typing(
+    body: dict,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """Broadcast composing / paused / recording to WhatsApp for an open inbox thread."""
+    lead_id = str(body.get("lead_id") or "").strip()
+    account_id = str(body.get("account_id") or "").strip() or None
+    state = str(body.get("state") or body.get("action") or "composing").strip().lower()
+    if not lead_id:
+        raise HTTPException(status_code=400, detail="lead_id لازم است")
+    if state not in ("composing", "recording", "paused", "available", "unavailable"):
+        raise HTTPException(status_code=400, detail="state نامعتبر")
+    _, acc, _, jid = _wa_link_and_jid(
+        db=db, org_id=auth.org.id, lead_id=lead_id, account_id=account_id
+    )
+    result = _connector_presence(acc.id, action=state, jid=jid)
+    return {"ok": bool(result.get("ok", True)), "state": state, "jid": jid, "connector": result}
+
+
 @router.get("/inbox", response_model=list[MessageOut])
 def inbox(
     lead_id: str | None = None,

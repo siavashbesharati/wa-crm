@@ -26,10 +26,18 @@ def encrypt_text(plain: str) -> str:
     return _fernet().encrypt(plain.encode("utf-8")).decode("ascii")
 
 
-def decrypt_text(token: str) -> str:
+def decrypt_text(token: str, *, strict: bool = False) -> str:
+    """Decrypt ciphertext.
+
+    - empty token → ""
+    - strict=False (default): corrupt/wrong-key → "" (legacy Divar callers)
+    - strict=True: corrupt/wrong-key → ValueError (WA auth must not look "empty")
+    """
     if not token:
         return ""
     try:
         return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
-    except (InvalidToken, ValueError, TypeError):
+    except (InvalidToken, ValueError, TypeError) as exc:
+        if strict:
+            raise ValueError("wa auth decrypt failed — check WA_CREDS_FERNET_KEY") from exc
         return ""

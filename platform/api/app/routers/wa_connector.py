@@ -72,6 +72,7 @@ def list_sessions(
             "wa_jid": r.wa_jid or "",
             "pairing_state": r.pairing_state or "disconnected",
             "status": r.status or "disconnected",
+            "phone": (r.external_id or "") if (r.pairing_state or "") == "code_pending" else "",
         }
         for r in rows
     ]
@@ -87,11 +88,15 @@ def get_auth(
     row = db.query(WaAuthState).filter(WaAuthState.account_id == account_id).first()
     if not row:
         return WaAuthStateOut(account_id=account_id, creds_json="", keys_json="")
-    return WaAuthStateOut(
-        account_id=account_id,
-        creds_json=decrypt_text(row.creds_enc or ""),
-        keys_json=decrypt_text(row.keys_enc or ""),
-    )
+    try:
+        return WaAuthStateOut(
+            account_id=account_id,
+            creds_json=decrypt_text(row.creds_enc or "", strict=True),
+            keys_json=decrypt_text(row.keys_enc or "", strict=True),
+        )
+    except ValueError as exc:
+        # Do NOT return empty auth — that would make the sidecar overwrite a good session
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.put("/sessions/{account_id}/auth", response_model=WaAuthStateOut)
@@ -176,8 +181,8 @@ def put_pair_state(
     elif body.pairing_state == "connected":
         acc.status = "online"
         acc.qr_payload = ""
-    elif body.pairing_state in ("disconnected", "qr_pending"):
-        if body.pairing_state == "disconnected":
+    elif body.pairing_state in ("disconnected", "qr_pending", "reconnecting", "code_pending"):
+        if body.pairing_state in ("disconnected", "reconnecting"):
             acc.status = "offline"
     db.add(acc)
     db.commit()
@@ -387,6 +392,15 @@ def complete_job(
             )
             db.add(msg)
 
+    try:
+        from app.services.campaign_send import apply_job_result_to_campaign_send
+
+        apply_job_result_to_campaign_send(
+            db, job_id=job_id, ok=ok, error=error or ""
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
     db.commit()
     trace_event(
         job_trace_id(job_id),
@@ -473,7 +487,7 @@ def presence_update(
     if not chat_jid:
         return {"ok": False, "reason": "missing_chat"}
 
-    # Match lead by external_chat_id on link or lead
+    # Match lead by external_chat_id / wa_lid / phone
     link = (
         db.query(LeadAccountLink)
         .filter(
@@ -492,6 +506,12 @@ def presence_update(
             .filter(Lead.org_id == acc.org_id, Lead.external_chat_id == chat_jid)
             .first()
         )
+    if not lead and chat_jid.endswith("@lid"):
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == acc.org_id, Lead.wa_lid == chat_jid)
+            .first()
+        )
     if not lead:
         # try phone-form jid without device / suffix variants
         bare = chat_jid.split("@")[0].split(":")[0]
@@ -501,8 +521,22 @@ def presence_update(
                 .filter(Lead.org_id == acc.org_id, Lead.phone == bare)
                 .first()
             )
+            if not lead and chat_jid.endswith("@lid"):
+                lead = (
+                    db.query(Lead)
+                    .filter(Lead.org_id == acc.org_id, Lead.wa_lid == f"{bare}@lid")
+                    .first()
+                )
     if not lead:
         return {"ok": False, "reason": "lead_not_found"}
+
+    last_seen_raw = body.get("last_seen")
+    last_seen: int | None = None
+    if last_seen_raw is not None:
+        try:
+            last_seen = int(last_seen_raw)
+        except (TypeError, ValueError):
+            last_seen = None
 
     row = set_presence(
         org_id=acc.org_id,
@@ -511,6 +545,7 @@ def presence_update(
         account_id=acc.id,
         external_chat_id=chat_jid,
         ttl_sec=float(body.get("ttl_sec") or 6),
+        last_seen=last_seen,
     )
     try:
         publish_org_event(
@@ -534,11 +569,15 @@ def get_pair_command(
     _: None = Depends(require_connector_key),
     db: Session = Depends(get_db),
 ):
-    """Sidecar polls this to learn when the panel requested QR pairing / logout."""
+    """Sidecar polls this to learn when the panel requested QR / code pairing / logout."""
     acc = _baileys_account(db, account_id)
+    state = acc.pairing_state or "disconnected"
+    phone = (acc.external_id or "").strip() if state == "code_pending" else ""
     return {
         "account_id": acc.id,
-        "pairing_state": acc.pairing_state or "disconnected",
+        "pairing_state": state,
         "status": acc.status or "disconnected",
         "wa_jid": acc.wa_jid or "",
+        "phone": phone,
+        "pair_mode": "code" if state == "code_pending" else "qr",
     }
