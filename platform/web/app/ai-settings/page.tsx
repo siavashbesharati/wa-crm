@@ -26,6 +26,8 @@ type Policy = {
   agent_role: string;
   system_prompt: string;
   fallback_message: string;
+  auto_apply_stage: boolean;
+  pause_bot_on_escalate: boolean;
 };
 
 function keywordsToText(list: string[] | undefined): string {
@@ -62,7 +64,12 @@ export default function AiSettingsPage() {
           p.group_reply_mode === "keywords" || p.group_auto_send_enabled
             ? "keywords"
             : "off";
-        setPolicy({ ...p, group_reply_mode: mode });
+        setPolicy({
+          ...p,
+          group_reply_mode: mode,
+          auto_apply_stage: !!p.auto_apply_stage,
+          pause_bot_on_escalate: p.pause_bot_on_escalate !== false
+        });
         setKeywordsText(keywordsToText(p.group_keywords));
       } catch (e) {
         toast.push(e instanceof Error ? e.message : "خطا", "err");
@@ -240,7 +247,9 @@ export default function AiSettingsPage() {
               <div className="ai-stages-block">
                 <strong>مراحل برد مجاز برای پاسخ خودکار</strong>
                 <div className="hint" style={{ marginTop: 4 }}>
-                  ربات فقط روی لیدهایی که در این مراحل هستند جواب می‌دهد (مثلاً فقط «جدید»).
+                  ربات فقط روی لیدهایی که در این مراحل هستند جواب می‌دهد. اگر فقط «جدید»
+                  انتخاب باشد، بعد از رفتن به «پیگیری/پیشنهاد» دیگر پاسخ خودکار نمی‌فرستد
+                  (پیشنهاد دستی Inbox همچنان کار می‌کند).
                 </div>
                 <div className="ai-stage-chips">
                   {STAGES.map((stage) => {
@@ -258,6 +267,64 @@ export default function AiSettingsPage() {
                   })}
                 </div>
               </div>
+
+              <Switch
+                label="اعمال خودکار مرحله پیشنهادی AI"
+                hint="اگر روشن باشد، بعد از تحلیل گفتگو مرحله قیف (به‌جز مراحل پایانی) خودکار به‌روز می‌شود."
+                checked={!!policy.auto_apply_stage}
+                onChange={(v) => setPolicy({ ...policy, auto_apply_stage: v })}
+              />
+
+              <Switch
+                label="توقف ربات هنگام اسکالیشن"
+                hint="وقتی ریسک از دست رفتن یا نیاز به کارشناس تشخیص داده شود، ربات برای آن مخاطب متوقف می‌شود."
+                checked={policy.pause_bot_on_escalate !== false}
+                onChange={(v) => setPolicy({ ...policy, pause_bot_on_escalate: v })}
+              />
+
+              <label className="full" style={{ display: "block" }}>
+                <strong>حداقل اطمینان برای ارسال خودکار</strong>
+                <div className="hint" style={{ margin: "4px 0 8px" }}>
+                  اگر امتیاز اطمینان پاسخ کمتر از این مقدار باشد، ارسال خودکار انجام نمی‌شود.
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={policy.min_confidence}
+                  onChange={(e) =>
+                    setPolicy({ ...policy, min_confidence: Number(e.target.value) })
+                  }
+                />
+              </label>
+
+              <Switch
+                label="فقط در ساعت کاری"
+                hint="خارج از بازه زمانی، پاسخ خودکار ارسال نمی‌شود (غنی‌سازی CRM همچنان انجام می‌شود)."
+                checked={!!policy.business_hours_only}
+                onChange={(v) => setPolicy({ ...policy, business_hours_only: v })}
+              />
+              {policy.business_hours_only ? (
+                <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <label>
+                    از ساعت
+                    <input
+                      type="time"
+                      value={policy.hours_start || "09:00"}
+                      onChange={(e) => setPolicy({ ...policy, hours_start: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    تا ساعت
+                    <input
+                      type="time"
+                      value={policy.hours_end || "18:00"}
+                      onChange={(e) => setPolicy({ ...policy, hours_end: e.target.value })}
+                    />
+                  </label>
+                </div>
+              ) : null}
 
               <label className="full" style={{ display: "block" }}>
                 <strong>پیام جایگزین (Fallback)</strong>

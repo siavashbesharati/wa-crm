@@ -21,6 +21,7 @@ import {
   leadIdentity,
   LtrText,
   tasksBoardHref,
+  tagLabel,
   type Lead,
   type Member,
   memberLabel
@@ -276,6 +277,18 @@ export default function LeadsPage() {
     await load();
   }
 
+  async function setBotPaused(leadId: string, paused: boolean) {
+    await run(
+      () =>
+        api(`/leads/${leadId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ bot_paused: paused })
+        }),
+      { success: paused ? "ربات متوقف شد" : "ربات دوباره فعال شد" }
+    );
+    await load();
+  }
+
   function openDeleteConfirm(l: Lead) {
     setDeleteTarget(l);
     setDeleteConfirmName("");
@@ -501,12 +514,27 @@ export default function LeadsPage() {
                               <strong>{l.name}</strong>
                             </button>
                             <div className="card-meta" style={{ marginTop: 4 }}>
-                              {l.bot_paused ? <Badge tone="danger">ربات متوقف</Badge> : null}
+                              {l.bot_paused ? (
+                                <button
+                                  type="button"
+                                  className="lead-bot-paused-chip"
+                                  title="کلیک برای شروع دوباره ربات"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void setBotPaused(l.id, false);
+                                  }}
+                                >
+                                  ربات متوقف · شروع
+                                </button>
+                              ) : null}
                               {(l.tags || []).map((t) => (
                                 <Badge key={t} tone="accent">
-                                  {t}
+                                  {tagLabel(t)}
                                 </Badge>
                               ))}
+                              {(l.lead_score || 0) > 0 ? (
+                                <Badge tone="accent">امتیاز {Math.round(l.lead_score || 0)}</Badge>
+                              ) : null}
                             </div>
                           </td>
                           <td>
@@ -556,6 +584,15 @@ export default function LeadsPage() {
                           </td>
                           <td>
                             <div className="row-actions">
+                              {l.bot_paused ? (
+                                <Button
+                                  size="sm"
+                                  loading={busy}
+                                  onClick={() => void setBotPaused(l.id, false)}
+                                >
+                                  شروع ربات
+                                </Button>
+                              ) : null}
                               <Button
                                 variant="secondary"
                                 size="sm"

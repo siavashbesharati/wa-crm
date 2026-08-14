@@ -424,6 +424,26 @@ export default function HomePage() {
                 <i style={{ width: `${seatPct}%` }} />
               </div>
             </div>
+            <div className="dash-kpi">
+              <small>پاسخ AI ۷روز</small>
+              <strong>{fmt(Number(m.ai_outbound_7d || 0))}</strong>
+              <em>غنی‌سازی: {fmt(Number(m.ai_enrichments_7d || 0))}</em>
+            </div>
+            <div className="dash-kpi">
+              <small>پذیرش پیشنهاد AI</small>
+              <strong>
+                {Math.round(Number(m.ai_suggest_accept_rate || 0) * 100).toLocaleString("fa-IR")}٪
+              </strong>
+              <em>
+                {fmt(Number(m.ai_suggest_accepted_7d || 0))}/
+                {fmt(Number(m.ai_suggest_shown_7d || 0))}
+              </em>
+            </div>
+            <div className="dash-kpi">
+              <small>وظایف AI باز</small>
+              <strong>{fmt(Number(m.ai_tasks_open || 0))}</strong>
+              <em>اسکالیشن ۷روز: {fmt(Number(m.ai_escalations_7d || 0))}</em>
+            </div>
           </div>
 
           <div className="dash-grid-2">

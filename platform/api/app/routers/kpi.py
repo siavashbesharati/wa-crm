@@ -145,6 +145,81 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
 
     metrics["seats_max"] = float(int(plan_limits(auth.org.plan).get("max_seats") or 0))
 
+    # AI CRM metrics (live from ai_events / messages / tasks)
+    from app.models import AiEvent, SenderType
+
+    since = datetime.utcnow() - timedelta(days=7)
+
+    def _evt_count(etype: str) -> float:
+        return float(
+            db.query(func.count(AiEvent.id))
+            .filter(
+                AiEvent.org_id == org_id,
+                AiEvent.event_type == etype,
+                AiEvent.created_at >= since,
+            )
+            .scalar()
+            or 0
+        )
+
+    shown = _evt_count("ai_suggest_shown")
+    accepted = _evt_count("ai_suggest_accepted")
+    metrics["ai_outbound_7d"] = float(
+        db.query(func.count(Message.id))
+        .filter(
+            Message.org_id == org_id,
+            Message.sender_type == SenderType.ai,
+            Message.created_at >= since,
+        )
+        .scalar()
+        or 0
+    )
+    metrics["ai_enrichments_7d"] = _evt_count("lead_enriched")
+    metrics["ai_escalations_7d"] = _evt_count("lead_escalated")
+    metrics["ai_suggest_shown_7d"] = shown
+    metrics["ai_suggest_accepted_7d"] = accepted
+    metrics["ai_suggest_accept_rate"] = round((accepted / shown) if shown else 0.0, 3)
+    metrics["ai_tasks_open"] = float(
+        db.query(func.count(Task.id))
+        .filter(
+            Task.org_id == org_id,
+            Task.source == "ai",
+            Task.status.in_([TaskStatus.open, TaskStatus.in_progress]),
+        )
+        .scalar()
+        or 0
+    )
+    metrics["ai_skip_confidence_7d"] = float(
+        db.query(func.count(AiEvent.id))
+        .filter(
+            AiEvent.org_id == org_id,
+            AiEvent.event_type == "auto_reply_skip",
+            AiEvent.created_at >= since,
+        )
+        .scalar()
+        or 0
+    )
+
+    # Avg enrich confidence from recent enrich events
+    enrich_rows = (
+        db.query(AiEvent)
+        .filter(
+            AiEvent.org_id == org_id,
+            AiEvent.event_type == "lead_enriched",
+            AiEvent.created_at >= since,
+        )
+        .order_by(AiEvent.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    confs = []
+    for ev in enrich_rows:
+        try:
+            confs.append(float((ev.payload or {}).get("confidence") or 0))
+        except (TypeError, ValueError):
+            pass
+    metrics["ai_avg_confidence"] = round(sum(confs) / len(confs), 3) if confs else 0.0
+
     # funnel by stage
     stages = ["جدید", "پیگیری", "پیشنهاد", "خرید", "بسته"]
     funnel = []

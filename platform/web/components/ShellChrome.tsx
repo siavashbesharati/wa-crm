@@ -12,6 +12,7 @@ const NAV = [
   { href: "/leads", label: "مخاطبین", ico: "☰" },
   { href: "/inbox", label: "اینباکس", ico: "✉" },
   { href: "/tasks", label: "وظایف", ico: "☑" },
+  { href: "/campaigns", label: "کمپین‌ها", ico: "◎" },
   { href: "/channels", label: "کانال‌ها", ico: "☎" },
   { href: "/groups", label: "گروه‌ها", ico: "▦" },
   { href: "/team", label: "تیم", ico: "☺" },

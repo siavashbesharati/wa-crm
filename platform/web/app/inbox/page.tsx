@@ -6,7 +6,12 @@ import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
-import { initials, leadHref } from "@/components/crm/shared";
+import {
+  initials,
+  leadHref,
+  tagLabel,
+  SENTIMENT_LABELS_FA
+} from "@/components/crm/shared";
 import { ChannelBadge } from "@/components/channels/brand";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
@@ -19,6 +24,16 @@ type Thread = {
     phone: string;
     stage: string;
     source_channel?: string;
+    tags?: string[];
+    lead_score?: number;
+    bot_paused?: boolean;
+    notes?: string;
+    ai_meta?: {
+      sentiment?: string;
+      suggested_stage?: string;
+      confidence?: number;
+      escalation?: boolean;
+    };
   };
   accounts: { account_id: string; chat_name: string }[];
   last_message: { body: string; direction: string; created_at: string } | null;
@@ -30,9 +45,16 @@ type Message = {
   direction: string;
   sender_type: string;
   created_at: string;
+  media_type?: string;
 };
 
 type ChannelFilter = "all" | "whatsapp" | "divar";
+
+type SuggestDraft = {
+  reply: string;
+  confidence: number;
+  sources: string[];
+};
 
 function channelOf(t: Thread) {
   return (t.lead.source_channel || "").toLowerCase();
@@ -71,6 +93,27 @@ function dayLabel(iso: string) {
   return d.toLocaleDateString("fa-IR", { weekday: "long", month: "long", day: "numeric" });
 }
 
+function displayMessageBody(body: string, mediaType?: string) {
+  const raw = (body || "").trim();
+  if (!raw || raw === "[]") {
+    if (mediaType === "sticker") return "استیکر";
+    if (mediaType === "image") return "تصویر";
+    if (mediaType === "audio") return "پیام صوتی";
+    if (mediaType === "video") return "ویدیو";
+    if (mediaType === "document") return "سند";
+    return "پیام بدون متن";
+  }
+  // Connector placeholders like [sticker] / [تصویر]
+  const m = raw.match(/^\[([^\]]+)\]$/);
+  if (m) return m[1];
+  return raw;
+}
+
+function isPlaceholderBody(body: string) {
+  const raw = (body || "").trim();
+  return !raw || raw === "[]" || /^\[([^\]]+)\]$/.test(raw);
+}
+
 function senderLabel(type: string, outbound: boolean) {
   if (outbound) {
     if (type === "ai") return "هوش مصنوعی";
@@ -78,6 +121,22 @@ function senderLabel(type: string, outbound: boolean) {
     return "ارسال‌شده";
   }
   return "مشتری";
+}
+
+function isRiskLead(lead: Thread["lead"]) {
+  const tags = lead.tags || [];
+  const sentiment = lead.ai_meta?.sentiment;
+  const hardRisk = tags.some((t) =>
+    ["churn_risk", "detractor", "complaint"].includes(t)
+  );
+  const needsHuman = tags.includes("needs_human");
+  // needs_human alone with neutral/positive tone is not shown as risk
+  return (
+    !!lead.ai_meta?.escalation ||
+    sentiment === "negative" ||
+    hardRisk ||
+    (needsHuman && sentiment === "negative")
+  );
 }
 
 export default function InboxPage() {
@@ -89,6 +148,9 @@ export default function InboxPage() {
   const [opening, setOpening] = useState(false);
   const [q, setQ] = useState("");
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
+  const [allowSuggest, setAllowSuggest] = useState(true);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [draft, setDraft] = useState<SuggestDraft | null>(null);
   const { busy, run } = useMutation();
   const toast = useToast();
   const scroller = useRef<HTMLDivElement>(null);
@@ -97,7 +159,12 @@ export default function InboxPage() {
   async function load(opts?: { quiet?: boolean }) {
     if (!opts?.quiet) setLoading(true);
     try {
-      setThreads(await api<Thread[]>("/messages/threads"));
+      const rows = await api<Thread[]>("/messages/threads");
+      setThreads(rows);
+      setActive((cur) => {
+        if (!cur) return cur;
+        return rows.find((r) => r.lead.id === cur.lead.id) || cur;
+      });
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
@@ -107,6 +174,14 @@ export default function InboxPage() {
 
   useEffect(() => {
     load();
+    (async () => {
+      try {
+        const p = await api<{ plan_allows_suggest?: boolean }>("/ai/policy");
+        setAllowSuggest(p.plan_allows_suggest !== false);
+      } catch {
+        setAllowSuggest(true);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -119,7 +194,8 @@ export default function InboxPage() {
       return (
         t.lead.name.toLowerCase().includes(needle) ||
         (t.lead.phone || "").includes(needle) ||
-        (t.last_message?.body || "").toLowerCase().includes(needle)
+        (t.last_message?.body || "").toLowerCase().includes(needle) ||
+        (t.lead.tags || []).some((tag) => tag.toLowerCase().includes(needle))
       );
     });
   }, [threads, q, channelFilter]);
@@ -134,6 +210,7 @@ export default function InboxPage() {
 
   async function openThread(t: Thread, opts?: { quiet?: boolean }) {
     setActive(t);
+    setDraft(null);
     if (!opts?.quiet) setOpening(true);
     try {
       setMessages(await api<Message[]>(`/messages/inbox?lead_id=${t.lead.id}`));
@@ -168,11 +245,84 @@ export default function InboxPage() {
     );
     if (ok) {
       setText("");
+      setDraft(null);
       if (inputRef.current) inputRef.current.style.height = "auto";
       await openThread(active, { quiet: true });
       await load({ quiet: true });
     }
   }
+
+  async function requestSuggest() {
+    if (!active) return;
+    const lastInbound = chronological.filter((m) => m.direction === "inbound").slice(-1)[0];
+    const message = text.trim() || lastInbound?.body || "سلام";
+    setSuggestBusy(true);
+    try {
+      const res = await api<SuggestDraft>("/ai/suggest", {
+        method: "POST",
+        body: JSON.stringify({ lead_id: active.lead.id, message })
+      });
+      setDraft(res);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در پیشنهاد AI", "err");
+    } finally {
+      setSuggestBusy(false);
+    }
+  }
+
+  async function acceptSuggest() {
+    if (!active || !draft) return;
+    setText(draft.reply);
+    try {
+      await api("/ai/suggest/accept", {
+        method: "POST",
+        body: JSON.stringify({ lead_id: active.lead.id, message: draft.reply })
+      });
+    } catch {
+      /* non-blocking */
+    }
+    setDraft(null);
+    window.setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+        inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`;
+        inputRef.current.focus();
+      }
+    }, 40);
+  }
+
+  async function applySuggestedStage() {
+    if (!active) return;
+    const stage = (active.lead.ai_meta?.suggested_stage || "").trim();
+    if (!stage || stage === active.lead.stage) return;
+    const ok = await run(
+      () =>
+        api(`/leads/${active.lead.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ stage })
+        }),
+      { success: "مرحله اعمال شد" }
+    );
+    if (ok) await load({ quiet: true });
+  }
+
+  async function resumeBot() {
+    if (!active) return;
+    const ok = await run(
+      () =>
+        api(`/leads/${active.lead.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ bot_paused: false })
+        }),
+      { success: "ربات دوباره فعال شد" }
+    );
+    if (ok) await load({ quiet: true });
+  }
+
+  const activeTags = active?.lead.tags || [];
+  const activeScore = Math.round(active?.lead.lead_score || 0);
+  const activeSentiment = active?.lead.ai_meta?.sentiment || "";
+  const suggestedStage = (active?.lead.ai_meta?.suggested_stage || "").trim();
 
   return (
     <Shell title="اینباکس" sub="گفتگوهای واتساپ و دیوار در یک جا" search={q} onSearch={setQ}>
@@ -212,7 +362,7 @@ export default function InboxPage() {
                     <button
                       key={t.lead.id}
                       type="button"
-                      className={`chat-row${on ? " active" : ""}`}
+                      className={`chat-row${on ? " active" : ""}${isRiskLead(t.lead) ? " risk" : ""}`}
                       aria-current={on ? "true" : undefined}
                       onClick={() => void openThread(t)}
                     >
@@ -258,7 +408,47 @@ export default function InboxPage() {
                       <ChannelBadge channel={channelOf(active)} />
                       {active.lead.phone ? <span dir="ltr">{active.lead.phone}</span> : null}
                       {active.lead.stage ? <span>{active.lead.stage}</span> : null}
+                      {activeScore > 0 ? <span>امتیاز {activeScore}</span> : null}
+                      {active.lead.bot_paused ? (
+                        <>
+                          <span className="chat-risk">ربات متوقف</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            loading={busy}
+                            onClick={() => void resumeBot()}
+                          >
+                            شروع ربات
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
+                    {activeTags.length > 0 || activeSentiment ? (
+                      <div className="chat-head-tags">
+                        {activeSentiment ? (
+                          <span className={`chat-tag${activeSentiment === "negative" ? " danger" : ""}`}>
+                            {SENTIMENT_LABELS_FA[activeSentiment] || activeSentiment}
+                          </span>
+                        ) : null}
+                        {activeTags.slice(0, 6).map((t) => (
+                          <span key={t} className="chat-tag">
+                            {tagLabel(t)}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {isRiskLead(active.lead) ? (
+                      <div className="chat-risk-banner">این گفتگو ریسک دارد یا نیاز به کارشناس دارد.</div>
+                    ) : null}
+                    {suggestedStage && suggestedStage !== active.lead.stage ? (
+                      <div className="chat-stage-suggest">
+                        <span>پیشنهاد مرحله: {suggestedStage}</span>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => void applySuggestedStage()}>
+                          اعمال
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 </header>
 
@@ -277,7 +467,12 @@ export default function InboxPage() {
                           {showDay ? <div className="chat-day">{dayLabel(m.created_at)}</div> : null}
                           <div className={`bubble-row ${outbound ? "out" : "in"}`}>
                             <div className={`bubble ${outbound ? "out" : "in"}`}>
-                              <p dir="auto">{m.body}</p>
+                              <p
+                                dir="auto"
+                                className={isPlaceholderBody(m.body) ? "bubble-placeholder" : undefined}
+                              >
+                                {displayMessageBody(m.body, m.media_type)}
+                              </p>
                               <span className="bubble-meta">
                                 {senderLabel(m.sender_type, outbound)}
                                 {" · "}
@@ -291,6 +486,24 @@ export default function InboxPage() {
                   )}
                 </div>
 
+                {draft ? (
+                  <div className="chat-ai-draft">
+                    <div className="chat-ai-draft-head">
+                      <strong>پیشنهاد هوش مصنوعی</strong>
+                      <span>اطمینان {(draft.confidence * 100).toFixed(0)}٪</span>
+                    </div>
+                    <p dir="auto">{draft.reply}</p>
+                    <div className="chat-ai-draft-actions">
+                      <Button type="button" size="sm" onClick={() => void acceptSuggest()}>
+                        پذیرش
+                      </Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => setDraft(null)}>
+                        رد
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <form
                   className="chat-composer"
                   onSubmit={(e) => {
@@ -298,6 +511,17 @@ export default function InboxPage() {
                     void send();
                   }}
                 >
+                  {allowSuggest ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      loading={suggestBusy}
+                      onClick={() => void requestSuggest()}
+                    >
+                      پیشنهاد AI
+                    </Button>
+                  ) : null}
                   <textarea
                     ref={inputRef}
                     rows={1}

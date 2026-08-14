@@ -250,7 +250,7 @@ def onboarding_ai_settings(
     policy.agent_role = role
     policy.auto_send_enabled = bool(body.auto_send_enabled)
     if not policy.allowed_stages:
-        policy.allowed_stages = ["جدید"]
+        policy.allowed_stages = ["جدید", "پیگیری", "پیشنهاد"]
     db.add(policy)
 
     if _step(auth.org) in ("ai_settings", "payment", "guides", "knowledge"):

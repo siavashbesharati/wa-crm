@@ -63,6 +63,8 @@ def _to_out(lead: Lead) -> LeadOut:
         board_order=int(getattr(lead, "board_order", 0) or 0),
         tags=lead.tags or [],
         notes=lead.notes or "",
+        lead_score=float(getattr(lead, "lead_score", 0) or 0),
+        ai_meta=dict(getattr(lead, "ai_meta", None) or {}),
         assignee_id=lead.assignee_id,
         bot_paused=lead.bot_paused,
         last_message_at=lead.last_message_at,

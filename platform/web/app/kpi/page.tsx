@@ -101,6 +101,26 @@ export default function KpiPage() {
               <span>{m.messages_inbound_7d ?? 0}</span>
               <small>پیام ورودی ۷روز</small>
             </div>
+            <div className="stat">
+              <span>{m.ai_outbound_7d ?? 0}</span>
+              <small>پاسخ AI ۷روز</small>
+            </div>
+            <div className="stat">
+              <span>{Math.round(Number(m.ai_suggest_accept_rate || 0) * 100)}%</span>
+              <small>نرخ پذیرش پیشنهاد</small>
+            </div>
+            <div className="stat">
+              <span>{m.ai_enrichments_7d ?? 0}</span>
+              <small>غنی‌سازی لید ۷روز</small>
+            </div>
+            <div className="stat">
+              <span>{m.ai_tasks_open ?? 0}</span>
+              <small>وظایف AI باز</small>
+            </div>
+            <div className="stat">
+              <span>{m.ai_escalations_7d ?? 0}</span>
+              <small>اسکالیشن ۷روز</small>
+            </div>
           </div>
 
           <Card

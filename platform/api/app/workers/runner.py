@@ -46,6 +46,44 @@ def _release_lock(message_id: str) -> None:
         pass
 
 
+def _enrich_lock_path(message_id: str) -> Path:
+    return _LOCK_DIR / f"en_{message_id.strip()}.lock"
+
+
+def _try_lock_enrich(message_id: str) -> bool:
+    mid = (message_id or "").strip()
+    if not mid:
+        return True
+    _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    path = _enrich_lock_path(mid)
+    if path.exists():
+        try:
+            age = time.time() - path.stat().st_mtime
+            if age >= _LOCK_STALE_SEC:
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    try:
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(time.time()).encode("ascii", errors="ignore"))
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+
+
+def _release_enrich_lock(message_id: str) -> None:
+    mid = (message_id or "").strip()
+    if not mid:
+        return
+    try:
+        _enrich_lock_path(mid).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _try_lock_message(message_id: str) -> bool:
     """Prevent duplicate auto_reply for the same inbound message (Windows-safe)."""
     mid = (message_id or "").strip()
@@ -114,9 +152,14 @@ def handle_auto_reply(payload: dict) -> dict:
                 return _auto_reply_result("skipped", "bot_paused")
             trace_event(trace_id, "auto_reply_skip", reason="lead_or_msg_missing")
             return _auto_reply_result("skipped", "lead_or_msg_missing")
-        if (msg.body or "").strip() in ("", "(sync)"):
+        if (msg.body or "").strip() in ("", "(sync)", "[]"):
             trace_event(trace_id, "auto_reply_skip", reason="empty_body")
             return _auto_reply_result("skipped", "empty_body")
+        body_stripped = (msg.body or "").strip()
+        if body_stripped.startswith("[") and body_stripped.endswith("]") and len(body_stripped) <= 24:
+            # Media placeholder like [استیکر] — no text for RAG reply
+            trace_event(trace_id, "auto_reply_skip", reason="media_placeholder")
+            return _auto_reply_result("skipped", "media_placeholder")
         if lead.stage not in (policy.allowed_stages or []):
             trace_event(
                 trace_id,
@@ -184,6 +227,55 @@ def handle_auto_reply(payload: dict) -> dict:
             fallback_reason=result.get("fallback_reason") or "",
             error_detail=result.get("error_detail") or "",
         )
+
+        from app.services.policy_gates import meets_min_confidence, within_business_hours
+        from app.services.ai_events import record_ai_event
+
+        if not within_business_hours(policy):
+            record_ai_event(
+                db,
+                org_id=org.id,
+                event_type="auto_reply_skip",
+                lead_id=lead.id,
+                payload={"reason": "outside_business_hours"},
+            )
+            db.commit()
+            trace_event(trace_id, "auto_reply_skip", reason="outside_business_hours")
+            safe_print(f"[worker] auto_reply skip: outside_business_hours lead={lead.id}")
+            return _auto_reply_result("skipped", "outside_business_hours")
+
+        conf = float(result.get("confidence") or 0)
+        if not meets_min_confidence(policy, conf):
+            record_ai_event(
+                db,
+                org_id=org.id,
+                event_type="auto_reply_skip",
+                lead_id=lead.id,
+                payload={
+                    "reason": "below_min_confidence",
+                    "confidence": conf,
+                    "min_confidence": float(policy.min_confidence or 0),
+                },
+            )
+            # Soft signal only — do not mark needs_human (that triggers risk UI / escalation)
+            tags = list(lead.tags or [])
+            if "follow_up" not in tags:
+                tags.append("follow_up")
+                lead.tags = tags
+                db.add(lead)
+            db.commit()
+            trace_event(
+                trace_id,
+                "auto_reply_skip",
+                reason="below_min_confidence",
+                confidence=conf,
+            )
+            safe_print(
+                f"[worker] auto_reply skip: below_min_confidence "
+                f"conf={conf} min={policy.min_confidence} lead={lead.id}"
+            )
+            return _auto_reply_result("skipped", "below_min_confidence")
+
         # Prefer the same channel account that received the inbound message
         link = (
             db.query(LeadAccountLink)
@@ -263,6 +355,23 @@ def handle_auto_reply(payload: dict) -> dict:
             f"target={target!r} provider={result.get('provider')} "
             f"confidence={result.get('confidence')}"
         )
+        try:
+            from app.services.ai_events import record_ai_event
+
+            record_ai_event(
+                db,
+                org_id=org.id,
+                event_type="auto_reply_queued",
+                lead_id=lead.id,
+                payload={
+                    "job_id": job.id,
+                    "confidence": result.get("confidence"),
+                    "provider": result.get("provider"),
+                },
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001
+            pass
         return _auto_reply_result(
             "queued",
             f"provider={result.get('provider')}",
@@ -275,6 +384,237 @@ def handle_auto_reply(payload: dict) -> dict:
     finally:
         db.close()
         _release_lock(message_id)
+
+
+def handle_lead_enrich(payload: dict) -> dict:
+    """Async CRM enrichment: tags, notes, score, optional stage/task/escalate."""
+    message_id = str(payload.get("message_id") or "")
+    org_id = str(payload.get("org_id") or "")
+    lead_id = str(payload.get("lead_id") or "")
+    if message_id and not _try_lock_enrich(message_id):
+        return {"status": "skipped", "reason": "already_processing"}
+    db = SessionLocal()
+    try:
+        org = db.get(Organization, org_id)
+        lead = db.get(Lead, lead_id)
+        msg = db.get(Message, message_id) if message_id else None
+        if not org or not lead:
+            return {"status": "skipped", "reason": "org_or_lead_missing"}
+        if msg and (msg.body or "").strip() in ("", "(sync)"):
+            return {"status": "skipped", "reason": "empty_body"}
+
+        # Idempotent: skip if already enriched for this message
+        meta = dict(lead.ai_meta or {}) if isinstance(lead.ai_meta, dict) else {}
+        if message_id and meta.get("last_message_id") == message_id:
+            return {"status": "skipped", "reason": "already_enriched"}
+
+        policy = db.query(AiPolicy).filter(AiPolicy.org_id == org.id).first()
+        from app.services.lead_enrich import apply_enrichment_to_lead, generate_enrichment
+        from app.services.ai_events import record_ai_event
+
+        body_text = (msg.body if msg else "") or str(payload.get("body") or "")
+        enrichment = generate_enrichment(
+            db, org_id=org.id, lead=lead, message=body_text
+        )
+        applied = apply_enrichment_to_lead(
+            db,
+            org_id=org.id,
+            lead=lead,
+            enrichment=enrichment,
+            message_id=message_id,
+            policy=policy,
+        )
+        db.add(lead)
+        record_ai_event(
+            db,
+            org_id=org.id,
+            event_type="lead_enriched",
+            lead_id=lead.id,
+            payload={
+                "tags_added": applied.get("tags_added"),
+                "lead_score": applied.get("lead_score"),
+                "sentiment": applied.get("sentiment"),
+                "suggested_stage": applied.get("suggested_stage"),
+                "stage_applied": applied.get("stage_applied"),
+                "task_id": applied.get("task_id"),
+                "escalated": applied.get("escalated"),
+                "confidence": applied.get("confidence"),
+            },
+        )
+        if applied.get("escalated"):
+            record_ai_event(
+                db,
+                org_id=org.id,
+                event_type="lead_escalated",
+                lead_id=lead.id,
+                payload={
+                    "bot_paused": applied.get("bot_paused"),
+                    "task_id": applied.get("task_id"),
+                    "sentiment": applied.get("sentiment"),
+                },
+            )
+        db.commit()
+        safe_print(
+            f"[worker] lead_enrich ok lead={lead.id} score={applied.get('lead_score')} "
+            f"tags={applied.get('tags_added')} escalated={applied.get('escalated')}"
+        )
+        return {"status": "ok", **applied}
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        safe_print(f"[worker] lead_enrich error: {e}")
+        return {"status": "error", "reason": str(e)}
+    finally:
+        db.close()
+        if message_id:
+            _release_enrich_lock(message_id)
+
+
+def handle_campaign_send(payload: dict) -> dict:
+    """Process one campaign: create outbound jobs for matching pending sends."""
+    campaign_id = str(payload.get("campaign_id") or "")
+    org_id = str(payload.get("org_id") or "")
+    db = SessionLocal()
+    try:
+        from app.models import (
+            Campaign,
+            CampaignSend,
+            ChannelAccount,
+            LeadAccountLink,
+            OutboundJob,
+            OutboundStatus,
+            SenderType,
+        )
+        from app.services.queue import enqueue
+        from app.services.wa_jid import resolve_outbound_target, resolve_target_jid
+        from app.services.policy_gates import within_business_hours
+
+        camp = db.get(Campaign, campaign_id)
+        if not camp or camp.org_id != org_id:
+            return {"status": "skipped", "reason": "campaign_missing"}
+        if camp.status not in ("running", "queued"):
+            return {"status": "skipped", "reason": f"status_{camp.status}"}
+
+        policy = db.query(AiPolicy).filter(AiPolicy.org_id == org_id).first()
+        if not within_business_hours(policy):
+            # leave running; worker will retry later
+            return {"status": "deferred", "reason": "outside_business_hours"}
+
+        acc = db.get(ChannelAccount, camp.channel_account_id) if camp.channel_account_id else None
+        if not acc or acc.org_id != org_id:
+            camp.status = "paused"
+            db.add(camp)
+            db.commit()
+            return {"status": "error", "reason": "account_missing"}
+
+        pending = (
+            db.query(CampaignSend)
+            .filter(
+                CampaignSend.campaign_id == camp.id,
+                CampaignSend.status == "pending",
+            )
+            .limit(40)
+            .all()
+        )
+        if not pending:
+            camp.status = "done"
+            camp.finished_at = datetime.utcnow()
+            db.add(camp)
+            db.commit()
+            return {"status": "done"}
+
+        body = (camp.message_template or "").strip()
+        queued = 0
+        for row in pending:
+            lead = db.get(Lead, row.lead_id)
+            if not lead or lead.bot_paused:
+                row.status = "skipped"
+                row.error = "bot_paused_or_missing"
+                db.add(row)
+                continue
+            if (lead.chat_type or "").lower() == "group":
+                seg = camp.segment_json or {}
+                if not seg.get("include_groups"):
+                    row.status = "skipped"
+                    row.error = "group_excluded"
+                    db.add(row)
+                    continue
+            link = (
+                db.query(LeadAccountLink)
+                .filter(
+                    LeadAccountLink.org_id == org_id,
+                    LeadAccountLink.lead_id == lead.id,
+                    LeadAccountLink.account_id == acc.id,
+                )
+                .first()
+            )
+            if not link:
+                link = (
+                    db.query(LeadAccountLink)
+                    .filter(
+                        LeadAccountLink.org_id == org_id,
+                        LeadAccountLink.lead_id == lead.id,
+                    )
+                    .first()
+                )
+            account_id = (link.account_id if link else None) or acc.id
+            target = resolve_outbound_target(lead, link)
+            job = OutboundJob(
+                org_id=org_id,
+                account_id=account_id,
+                lead_id=lead.id,
+                target_name=target,
+                target_jid=resolve_target_jid(lead, link),
+                body=body,
+                sender_type=SenderType.agent,
+                created_by_id=camp.created_by_id,
+                status=OutboundStatus.queued,
+            )
+            db.add(job)
+            db.flush()
+            db.add(
+                Message(
+                    org_id=org_id,
+                    account_id=account_id,
+                    lead_id=lead.id,
+                    direction=MessageDirection.outbound,
+                    sender_type=SenderType.agent,
+                    body=body,
+                )
+            )
+            row.status = "queued"
+            row.job_id = job.id
+            db.add(row)
+            enqueue("outbound_send", {"job_id": job.id, "org_id": org_id})
+            queued += 1
+            try:
+                from app.services.sse_hub import publish_job_ready
+
+                publish_job_ready(
+                    account_id, job_id=job.id, reason="campaign_send", org_id=org_id
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        remaining = (
+            db.query(CampaignSend)
+            .filter(CampaignSend.campaign_id == camp.id, CampaignSend.status == "pending")
+            .count()
+        )
+        if remaining == 0:
+            camp.status = "done"
+            camp.finished_at = datetime.utcnow()
+        else:
+            camp.status = "running"
+            enqueue("campaign_send", {"campaign_id": camp.id, "org_id": org_id})
+        db.add(camp)
+        db.commit()
+        return {"status": "ok", "queued": queued, "remaining": remaining}
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        safe_print(f"[worker] campaign_send error: {e}")
+        return {"status": "error", "reason": str(e)}
+    finally:
+        db.close()
 
 
 def handle_kpi(payload: dict) -> None:
@@ -304,6 +644,14 @@ def main() -> None:
         job = dequeue("auto_reply")
         if job:
             handle_auto_reply(job)
+            continue
+        enrich_job = dequeue("lead_enrich")
+        if enrich_job:
+            handle_lead_enrich(enrich_job)
+            continue
+        camp_job = dequeue("campaign_send")
+        if camp_job:
+            handle_campaign_send(camp_job)
             continue
         kpi_job = dequeue("kpi_rollup")
         if kpi_job:

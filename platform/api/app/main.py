@@ -15,6 +15,7 @@ from app.routers import (
     admin,
     ai,
     auth,
+    campaigns,
     channels,
     divar_connector,
     divar_pair,
@@ -73,6 +74,7 @@ ROUTERS = [
     whatsapp.router,
     messages.router,
     ai.router,
+    campaigns.router,
     kpi.router,
     payments.router,
     support.router,
@@ -100,6 +102,15 @@ def _ensure_sqlite_columns() -> None:
         if "plan_expires_at" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME"))
+    if "leads" in tables:
+        cols = {c["name"] for c in insp.get_columns("leads")}
+        with engine.begin() as conn:
+            if "board_order" not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN board_order INTEGER DEFAULT 0"))
+            if "lead_score" not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN lead_score FLOAT DEFAULT 0"))
+            if "ai_meta" not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN ai_meta JSON"))
     if "ai_policies" in tables:
         cols = {c["name"] for c in insp.get_columns("ai_policies")}
         with engine.begin() as conn:
@@ -121,16 +132,21 @@ def _ensure_sqlite_columns() -> None:
                 )
             if "group_keywords" not in cols:
                 conn.execute(text("ALTER TABLE ai_policies ADD COLUMN group_keywords JSON"))
+            if "auto_apply_stage" not in cols:
+                conn.execute(
+                    text("ALTER TABLE ai_policies ADD COLUMN auto_apply_stage BOOLEAN DEFAULT 0")
+                )
+            if "pause_bot_on_escalate" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE ai_policies ADD COLUMN pause_bot_on_escalate BOOLEAN DEFAULT 1"
+                    )
+                )
     if "payments" in tables:
         cols = {c["name"] for c in insp.get_columns("payments")}
         if "raw_callback" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE payments ADD COLUMN raw_callback TEXT DEFAULT ''"))
-    if "leads" in tables:
-        cols = {c["name"] for c in insp.get_columns("leads")}
-        if "board_order" not in cols:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE leads ADD COLUMN board_order INTEGER DEFAULT 0"))
     if "tasks" in tables:
         cols = {c["name"] for c in insp.get_columns("tasks")}
         if "board_order" not in cols:

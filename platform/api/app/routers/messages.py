@@ -931,12 +931,30 @@ def _maybe_auto_reply(
     background_tasks: BackgroundTasks | None = None,
 ) -> dict | None:
     """Run sync auto-reply for inbound text; returns status dict or None if not applicable."""
-    _ = background_tasks
     if direction != "inbound" or not body_text or body_text == "(sync)":
         return None
     bot_cmd = parse_bot_command(body_text)
     if bot_cmd:
         return None
+
+    enrich_payload = {
+        "org_id": org_id,
+        "lead_id": lead.id,
+        "message_id": msg.id,
+        "body": body_text,
+    }
+    enqueue("lead_enrich", enrich_payload)
+    if background_tasks is not None:
+        def _run_enrich() -> None:
+            try:
+                from app.workers.runner import handle_lead_enrich
+
+                handle_lead_enrich(enrich_payload)
+            except Exception:  # noqa: BLE001
+                pass
+
+        background_tasks.add_task(_run_enrich)
+
     payload = {
         "org_id": org_id,
         "lead_id": lead.id,
@@ -1021,6 +1039,11 @@ def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)
                     "source_channel": lead.source_channel,
                     "stage": lead.stage,
                     "assignee_id": lead.assignee_id,
+                    "tags": lead.tags or [],
+                    "lead_score": float(getattr(lead, "lead_score", 0) or 0),
+                    "ai_meta": dict(getattr(lead, "ai_meta", None) or {}),
+                    "bot_paused": bool(lead.bot_paused),
+                    "notes": lead.notes or "",
                 },
                 "accounts": [
                     {

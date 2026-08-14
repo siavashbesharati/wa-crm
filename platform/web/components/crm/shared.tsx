@@ -16,9 +16,45 @@ export type Lead = {
   board_order?: number;
   tags: string[];
   notes: string;
+  lead_score?: number;
+  ai_meta?: {
+    sentiment?: string;
+    suggested_stage?: string;
+    last_enriched_at?: string;
+    confidence?: number;
+    escalation?: boolean;
+  };
   assignee_id: string | null;
   bot_paused?: boolean;
 };
+
+export const TAG_LABELS_FA: Record<string, string> = {
+  new_lead: "لید جدید",
+  high_intent: "قصد خرید بالا",
+  low_intent: "قصد خرید پایین",
+  price_sensitive: "حساس به قیمت",
+  info_seeking: "در حال تحقیق",
+  ready_to_buy: "آماده خرید",
+  promoter: "راضی / معرف",
+  detractor: "ناراضی",
+  churn_risk: "ریسک از دست رفتن",
+  needs_human: "نیاز به کارشناس",
+  complaint: "شکایت",
+  follow_up: "نیاز به پیگیری",
+  qualified: "واجد شرایط",
+  unqualified: "غیرواجد",
+  handoff: "ارجاع دستی"
+};
+
+export const SENTIMENT_LABELS_FA: Record<string, string> = {
+  positive: "مثبت",
+  neutral: "خنثی",
+  negative: "منفی"
+};
+
+export function tagLabel(key: string) {
+  return TAG_LABELS_FA[key] || key;
+}
 
 export const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "واتساپ",
@@ -54,6 +90,7 @@ export type CrmTask = {
   assignee_id: string | null;
   due_at: string | null;
   board_order?: number;
+  source?: string;
 };
 
 export const TASK_STATUSES = ["open", "in_progress", "done", "cancelled"] as const;

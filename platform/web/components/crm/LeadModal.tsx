@@ -19,6 +19,8 @@ import {
   LtrText,
   initials,
   memberLabel,
+  tagLabel,
+  SENTIMENT_LABELS_FA,
   TASK_STATUS_LABELS,
   tasksBoardHref,
   type CrmTask,
@@ -39,13 +41,32 @@ type LeadModalProps = {
 
 function LeadDetailView({
   lead,
-  assignee
+  assignee,
+  onApplyStage,
+  applyingStage,
+  onResumeBot,
+  resumingBot
 }: {
   lead: Lead;
   assignee: Member | undefined;
+  onApplyStage?: (stage: string) => void;
+  applyingStage?: boolean;
+  onResumeBot?: () => void;
+  resumingBot?: boolean;
 }) {
   const identity = leadIdentity(lead);
   const isGroup = lead.chat_type === "group";
+  const score = typeof lead.lead_score === "number" ? lead.lead_score : 0;
+  const meta = lead.ai_meta || {};
+  const suggested = (meta.suggested_stage || "").trim();
+  const sentiment = meta.sentiment || "";
+  const risk =
+    sentiment === "negative" ||
+    !!meta.escalation ||
+    (lead.tags || []).some((t) =>
+      ["churn_risk", "detractor", "complaint"].includes(t)
+    ) ||
+    ((lead.tags || []).includes("needs_human") && sentiment === "negative");
 
   return (
     <div className="lead-modal-view">
@@ -64,6 +85,12 @@ function LeadDetailView({
             <Badge tone={lead.bot_paused ? "danger" : "accent"}>
               {lead.bot_paused ? "ربات متوقف" : "ربات فعال"}
             </Badge>
+            {lead.bot_paused && onResumeBot ? (
+              <Button type="button" size="sm" loading={resumingBot} onClick={onResumeBot}>
+                شروع دوباره ربات
+              </Button>
+            ) : null}
+            {risk ? <Badge tone="danger">ریسک / نیاز به کارشناس</Badge> : null}
           </div>
         </div>
       </div>
@@ -88,10 +115,38 @@ function LeadDetailView({
           </span>
         </div>
         <div className="lead-info-tile">
-          <span className="lead-info-tile-label">نوع چت</span>
-          <span className="lead-info-tile-value">{isGroup ? "گروه واتساپ" : "پیام خصوصی"}</span>
+          <span className="lead-info-tile-label">امتیاز AI</span>
+          <span className="lead-info-tile-value">{Math.round(score)}</span>
         </div>
       </div>
+
+      {sentiment || suggested ? (
+        <div className="lead-modal-section">
+          <span className="lead-modal-section-label">بینش هوش مصنوعی</span>
+          <div className="card-meta" style={{ gap: 8, alignItems: "center" }}>
+            {sentiment ? (
+              <Badge tone={sentiment === "negative" ? "danger" : "accent"}>
+                احساس: {SENTIMENT_LABELS_FA[sentiment] || sentiment}
+              </Badge>
+            ) : null}
+            {suggested && suggested !== lead.stage ? (
+              <>
+                <Badge tone="accent">پیشنهاد مرحله: {suggested}</Badge>
+                {onApplyStage ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    loading={applyingStage}
+                    onClick={() => onApplyStage(suggested)}
+                  >
+                    اعمال مرحله
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {(lead.tags || []).length > 0 ? (
         <div className="lead-modal-section">
@@ -99,7 +154,7 @@ function LeadDetailView({
           <div className="card-meta">
             {(lead.tags || []).map((t) => (
               <Badge key={t} tone="accent">
-                {t}
+                {tagLabel(t)}
               </Badge>
             ))}
           </div>
@@ -263,7 +318,10 @@ function LeadTasksSection({
             return (
               <div key={t.id} className="lead-task-item">
                 <div className="lead-task-copy">
-                  <strong>{t.title}</strong>
+                  <strong>
+                    {t.title}
+                    {t.source === "ai" ? " · AI" : ""}
+                  </strong>
                   {t.message ? <span className="hint">{t.message}</span> : null}
                   {t.due_at ? (
                     <span className="hint">سررسید: {formatJalali(t.due_at)}</span>
@@ -364,6 +422,32 @@ export function LeadModal({
     }
   }
 
+  async function applySuggestedStage(stage: string) {
+    if (!lead || !stage) return;
+    const ok = await run(
+      () =>
+        api(`/leads/${lead.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ stage })
+        }),
+      { success: "مرحله اعمال شد" }
+    );
+    if (ok) await onChanged();
+  }
+
+  async function resumeBot() {
+    if (!lead) return;
+    const ok = await run(
+      () =>
+        api(`/leads/${lead.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ bot_paused: false })
+        }),
+      { success: "ربات دوباره فعال شد" }
+    );
+    if (ok) await onChanged();
+  }
+
   const deleteNameMatches =
     !!lead && deleteConfirmName.trim() === lead.name.trim();
 
@@ -420,7 +504,14 @@ export function LeadModal({
       >
         {mode === "view" ? (
           <>
-            <LeadDetailView lead={lead} assignee={assignee} />
+            <LeadDetailView
+              lead={lead}
+              assignee={assignee}
+              onApplyStage={(stage) => void applySuggestedStage(stage)}
+              applyingStage={busy}
+              onResumeBot={() => void resumeBot()}
+              resumingBot={busy}
+            />
             <LeadTasksSection
               lead={lead}
               members={members}

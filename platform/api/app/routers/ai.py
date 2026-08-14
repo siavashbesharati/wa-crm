@@ -18,7 +18,7 @@ from app.services.group_reply import (
 from app.services.queue import enqueue
 
 
-def _policy_out(policy: AiPolicy) -> dict:
+def _policy_out(policy: AiPolicy, *, plan_allows_auto: bool = True, plan_allows_suggest: bool = True) -> dict:
     mode = resolve_group_reply_mode(policy)
     keywords = normalize_group_keywords(getattr(policy, "group_keywords", None))
     return {
@@ -34,23 +34,47 @@ def _policy_out(policy: AiPolicy) -> dict:
         "agent_role": getattr(policy, "agent_role", "") or "",
         "system_prompt": getattr(policy, "system_prompt", "") or "",
         "fallback_message": getattr(policy, "fallback_message", "") or "",
-        "plan_allows_auto": True,
-        "plan_allows_suggest": True,
+        "auto_apply_stage": bool(getattr(policy, "auto_apply_stage", False)),
+        "pause_bot_on_escalate": bool(getattr(policy, "pause_bot_on_escalate", True)),
+        "plan_allows_auto": plan_allows_auto,
+        "plan_allows_suggest": plan_allows_suggest,
     }
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
+@router.get("/taxonomy")
+def taxonomy(_: AuthContext = Depends(get_auth)):
+    from app.services.crm_taxonomy import (
+        FUNNEL_STAGES,
+        SENTIMENT_LABELS_FA,
+        TAG_LABELS_FA,
+    )
+
+    return {
+        "tags": [{"key": k, "label": v} for k, v in TAG_LABELS_FA.items()],
+        "sentiments": [{"key": k, "label": v} for k, v in SENTIMENT_LABELS_FA.items()],
+        "stages": list(FUNNEL_STAGES),
+    }
+
+
 @router.get("/policy")
 def get_policy(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    from app.plans import plan_limits
+
     policy = db.query(AiPolicy).filter(AiPolicy.org_id == auth.org.id).first()
     if not policy:
         policy = AiPolicy(org_id=auth.org.id)
         db.add(policy)
         db.commit()
         db.refresh(policy)
-    return _policy_out(policy)
+    limits = plan_limits(auth.org.plan, db=db)
+    return _policy_out(
+        policy,
+        plan_allows_auto=bool(limits.get("ai_auto_send", False)),
+        plan_allows_suggest=bool(limits.get("ai_suggest", True)),
+    )
 
 
 @router.put("/policy")
@@ -83,9 +107,21 @@ def put_policy(
     policy.hours_end = body.hours_end
     policy.agent_role = (body.agent_role or "").strip()
     policy.fallback_message = (body.fallback_message or "").strip()
+    policy.auto_apply_stage = bool(body.auto_apply_stage)
+    policy.pause_bot_on_escalate = bool(body.pause_bot_on_escalate)
     db.add(policy)
     db.commit()
-    return {"ok": True, **_policy_out(policy)}
+    from app.plans import plan_limits
+
+    limits = plan_limits(auth.org.plan, db=db)
+    return {
+        "ok": True,
+        **_policy_out(
+            policy,
+            plan_allows_auto=bool(limits.get("ai_auto_send", False)),
+            plan_allows_suggest=bool(limits.get("ai_suggest", True)),
+        ),
+    }
 
 
 @router.get("/knowledge")
@@ -325,16 +361,54 @@ retrieve = retrieve_knowledge
 
 @router.post("/suggest", response_model=SuggestOut)
 def suggest(body: SuggestIn, auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    from app.plans import plan_limits
+    from app.services.ai_events import record_ai_event
+
+    limits = plan_limits(auth.org.plan, db=db)
+    if not limits.get("ai_suggest", True):
+        raise HTTPException(status_code=402, detail="پلن شما پیشنهاد AI ندارد")
+
     lead = db.query(Lead).filter(Lead.id == body.lead_id, Lead.org_id == auth.org.id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="لید یافت نشد")
 
     result = generate_reply(db, org_id=auth.org.id, lead=lead, message=body.message)
+    record_ai_event(
+        db,
+        org_id=auth.org.id,
+        event_type="ai_suggest_shown",
+        lead_id=lead.id,
+        payload={"confidence": result.get("confidence"), "provider": result.get("provider")},
+        commit=True,
+    )
     return SuggestOut(
         reply=result["reply"],
         confidence=float(result["confidence"]),
         sources=list(result.get("sources") or []),
     )
+
+
+@router.post("/suggest/accept")
+def suggest_accept(
+    body: SuggestIn,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """Log that an agent accepted a suggestion (for KPI accept rate)."""
+    from app.services.ai_events import record_ai_event
+
+    lead = db.query(Lead).filter(Lead.id == body.lead_id, Lead.org_id == auth.org.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="لید یافت نشد")
+    record_ai_event(
+        db,
+        org_id=auth.org.id,
+        event_type="ai_suggest_accepted",
+        lead_id=lead.id,
+        payload={"message_len": len(body.message or "")},
+        commit=True,
+    )
+    return {"ok": True}
 
 
 @router.post("/auto-reply/run")
@@ -363,6 +437,13 @@ def run_auto_reply_for_lead(
             return {"sent": False, "reason": group_reason}
 
     result = generate_reply(db, org_id=auth.org.id, lead=lead, message=message)
+
+    from app.services.policy_gates import meets_min_confidence, within_business_hours
+
+    if not within_business_hours(policy):
+        return {"sent": False, "reason": "outside_business_hours"}
+    if not meets_min_confidence(policy, float(result.get("confidence") or 0)):
+        return {"sent": False, "reason": "below_min_confidence", "confidence": result.get("confidence")}
 
     from app.models import LeadAccountLink, MessageDirection, OutboundJob, OutboundStatus, SenderType
     from app.services.queue import enqueue as enqueue_job

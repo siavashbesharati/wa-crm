@@ -305,6 +305,9 @@ class Lead(Base):
     board_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
+    lead_score: Mapped[float] = mapped_column(Float, default=0.0)
+    # {sentiment, suggested_stage, last_enriched_at, last_message_id, confidence, escalation}
+    ai_meta: Mapped[dict] = mapped_column(JSON, default=dict)
     assignee_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     bot_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -417,7 +420,9 @@ class AiPolicy(Base):
     group_reply_mode: Mapped[str] = mapped_column(String(32), default="off")
     group_keywords: Mapped[list] = mapped_column(JSON, default=list)
     min_confidence: Mapped[float] = mapped_column(Float, default=0.45)
-    allowed_stages: Mapped[list] = mapped_column(JSON, default=lambda: ["جدید"])
+    allowed_stages: Mapped[list] = mapped_column(
+        JSON, default=lambda: ["جدید", "پیگیری", "پیشنهاد"]
+    )
     business_hours_only: Mapped[bool] = mapped_column(Boolean, default=False)
     hours_start: Mapped[str] = mapped_column(String(8), default="09:00")
     hours_end: Mapped[str] = mapped_column(String(8), default="18:00")
@@ -425,6 +430,8 @@ class AiPolicy(Base):
     system_prompt: Mapped[str] = mapped_column(Text, default="")
     # Empty = inherit platform ai_defaults.fallback_message
     fallback_message: Mapped[str] = mapped_column(Text, default="")
+    auto_apply_stage: Mapped[bool] = mapped_column(Boolean, default=False)
+    pause_bot_on_escalate: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class KpiDefinition(Base):
@@ -509,3 +516,55 @@ class SupportMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     ticket = relationship("SupportTicket", back_populates="messages")
+
+
+class AiEvent(Base):
+    """Thin event log for AI CRM KPIs (enrich / suggest / skip / escalate)."""
+
+    __tablename__ = "ai_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    lead_id: Mapped[str | None] = mapped_column(ForeignKey("leads.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+
+class Campaign(Base):
+    """One-shot segment nurture blast via existing outbound pipeline."""
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    # {tags: [], stages: [], min_score: 0, include_groups: false}
+    segment_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    message_template: Mapped[str] = mapped_column(Text, default="")
+    channel_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("channel_accounts.id"), nullable=True
+    )
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CampaignSend(Base):
+    __tablename__ = "campaign_sends"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "lead_id", name="uq_campaign_lead"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    campaign_id: Mapped[str] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    job_id: Mapped[str] = mapped_column(String(36), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)

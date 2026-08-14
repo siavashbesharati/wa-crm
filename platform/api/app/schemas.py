@@ -219,6 +219,8 @@ class LeadOut(BaseModel):
     board_order: int = 0
     tags: list[str]
     notes: str
+    lead_score: float = 0.0
+    ai_meta: dict = Field(default_factory=dict)
     assignee_id: str | None
     bot_paused: bool
     last_message_at: datetime | None
@@ -237,6 +239,7 @@ class LeadPatchIn(BaseModel):
     stage: str | None = None
     tags: list[str] | None = None
     notes: str | None = None
+    lead_score: float | None = None
     assignee_id: str | None = None
     bot_paused: bool | None = None
     board_order: int | None = None
@@ -383,7 +386,7 @@ class AiPolicyIn(BaseModel):
     group_reply_mode: str = "off"
     group_keywords: list[str] = Field(default_factory=list)
     min_confidence: float = 0.45
-    allowed_stages: list[str] = Field(default_factory=lambda: ["جدید"])
+    allowed_stages: list[str] = Field(default_factory=lambda: ["جدید", "پیگیری", "پیشنهاد"])
     business_hours_only: bool = False
     hours_start: str = "09:00"
     hours_end: str = "18:00"
@@ -391,6 +394,40 @@ class AiPolicyIn(BaseModel):
     system_prompt: str = ""
     # Empty string = use platform global fallback_message
     fallback_message: str = ""
+    auto_apply_stage: bool = False
+    pause_bot_on_escalate: bool = True
+
+
+class CampaignSegmentIn(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+    stages: list[str] = Field(default_factory=list)
+    min_score: float = 0
+    include_groups: bool = False
+
+
+class CampaignIn(BaseModel):
+    name: str
+    message_template: str = ""
+    channel_account_id: str | None = None
+    segment: CampaignSegmentIn = Field(default_factory=CampaignSegmentIn)
+
+
+class CampaignOut(BaseModel):
+    id: str
+    name: str
+    status: str
+    segment: dict
+    message_template: str
+    channel_account_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    sends_total: int = 0
+    sends_queued: int = 0
+    sends_sent: int = 0
+    sends_failed: int = 0
+    sends_skipped: int = 0
 
 
 class OkrIn(BaseModel):

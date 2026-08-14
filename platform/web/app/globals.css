@@ -730,6 +730,23 @@ input.ltr-text {
   text-decoration: underline;
 }
 
+.lead-bot-paused-chip {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 59, 48, 0.12);
+  color: #c62828;
+}
+.lead-bot-paused-chip:hover {
+  background: rgba(255, 59, 48, 0.2);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2157,6 +2174,8 @@ a.btn.wizard-btn:hover {
   font-weight: 400;
   line-height: 1.45;
   letter-spacing: -0.01em;
+  font-family: Vazirmatn, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+    "Segoe UI", Tahoma, sans-serif;
 }
 .bubble p {
   margin: 0;
@@ -2164,6 +2183,10 @@ a.btn.wizard-btn:hover {
   overflow-wrap: anywhere;
   word-break: break-word;
   text-align: start;
+}
+.bubble-placeholder {
+  opacity: 0.72;
+  font-style: italic;
 }
 .bubble.in {
   background: #e9e9eb;
@@ -2216,6 +2239,89 @@ a.btn.wizard-btn:hover {
 }
 .chat-composer .btn {
   flex-shrink: 0;
+}
+
+.chat-head-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chat-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(29, 29, 31, 0.06);
+  color: var(--muted);
+}
+.chat-tag.danger {
+  background: rgba(255, 59, 48, 0.12);
+  color: #c62828;
+}
+.chat-risk {
+  color: #c62828;
+  font-weight: 600;
+}
+.chat-risk-banner {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 59, 48, 0.08);
+  color: #b71c1c;
+  font-size: 12px;
+}
+.chat-stage-suggest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.chat-row.risk .chat-avatar {
+  box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.35);
+}
+.chat-ai-draft {
+  margin: 0 14px 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(29, 29, 31, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+}
+.chat-ai-draft-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.chat-ai-draft p {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.chat-ai-draft-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.campaign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.campaign-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.campaign-row:last-child {
+  border-bottom: 0;
 }
 
 .thread {
