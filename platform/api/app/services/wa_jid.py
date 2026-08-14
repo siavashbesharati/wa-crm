@@ -40,8 +40,20 @@ def normalize_to_jid(value: str | None) -> str:
     return ""
 
 
+def _looks_like_display_name(value: str) -> bool:
+    t = (value or "").strip()
+    if not t:
+        return True
+    if " " in t or t.startswith("~") or "کاربر" in t:
+        return True
+    return False
+
+
 def resolve_target_jid(lead: Lead | None, link: LeadAccountLink | None = None) -> str:
-    """Prefer stable chat ids; never return a display name as JID."""
+    """Prefer stable chat ids; never return a display name as JID.
+
+    Also returns Divar conversation ids (short tokens / UUIDs) for divar_api sends.
+    """
     candidates = (
         (link.external_chat_id if link else None),
         getattr(lead, "external_chat_id", None) if lead else None,
@@ -52,6 +64,10 @@ def resolve_target_jid(lead: Lead | None, link: LeadAccountLink | None = None) -
         jid = normalize_to_jid(c)
         if jid:
             return jid
+    for c in candidates:
+        t = (c or "").strip()
+        if t and not _looks_like_display_name(t) and len(t) >= 4:
+            return t
     return ""
 
 

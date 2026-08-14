@@ -74,6 +74,10 @@ export default function ChannelsPage() {
   const [busy, setBusy] = useState(false);
   const [qrAccountId, setQrAccountId] = useState<string | null>(null);
   const [pair, setPair] = useState<PairStatus | null>(null);
+  const [divarAccountId, setDivarAccountId] = useState<string | null>(null);
+  const [divarPhone, setDivarPhone] = useState("");
+  const [divarCode, setDivarCode] = useState("");
+  const [divarStep, setDivarStep] = useState<"idle" | "otp" | "code">("idle");
   const [groupsAccountId, setGroupsAccountId] = useState<string>("");
   const [groups, setGroups] = useState<WaGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -186,6 +190,89 @@ export default function ChannelsPage() {
     }
   }
 
+  async function createDivarApi() {
+    setBusy(true);
+    try {
+      const acc = await api<Account>("/channels/accounts/divar-api", { method: "POST" });
+      toast.push("اکانت دیوار سرور ساخته شد — شماره را وارد کنید", "ok");
+      setDivarAccountId(acc.id);
+      setDivarStep("otp");
+      setDivarPhone("");
+      setDivarCode("");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startDivarOtp(accountId?: string) {
+    const id = accountId || divarAccountId;
+    if (!id) return;
+    const phone = divarPhone.trim();
+    if (!/^09\d{9}$/.test(phone)) {
+      toast.push("شماره را مثل 09123456789 وارد کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${id}/divar/pair/start`, {
+        method: "POST",
+        body: JSON.stringify({ phone })
+      });
+      setDivarAccountId(id);
+      setDivarStep("code");
+      toast.push("کد تأیید ارسال شد", "ok");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در ارسال کد", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitDivarCode() {
+    if (!divarAccountId) return;
+    const code = divarCode.trim();
+    if (!/^\d{4,8}$/.test(code)) {
+      toast.push("کد تأیید را وارد کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${divarAccountId}/divar/pair/code`, {
+        method: "POST",
+        body: JSON.stringify({ code })
+      });
+      toast.push("دیوار متصل شد — سرویس divar-connector را روشن کنید", "ok");
+      setDivarStep("idle");
+      setDivarAccountId(null);
+      setDivarCode("");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "کد نامعتبر", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logoutDivar(accountId: string) {
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${accountId}/divar/pair/logout`, { method: "POST" });
+      if (divarAccountId === accountId) {
+        setDivarAccountId(null);
+        setDivarStep("idle");
+      }
+      toast.push("اتصال دیوار قطع شد", "ok");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadGroups() {
     if (!groupsAccountId) {
       toast.push("یک اکانت واتساپ متصل انتخاب کنید", "err");
@@ -242,7 +329,7 @@ export default function ChannelsPage() {
   return (
     <Shell
       title="کانال‌ها"
-      sub="واتساپ سرور (Baileys) با QR در پنل — دیوار همچنان از طریق افزونه"
+      sub="واتساپ (Baileys / QR) و دیوار (OTP سرور) — بدون وابستگی اجباری به افزونه"
     >
       {loading ? (
         <PageLoading />
@@ -285,20 +372,94 @@ export default function ChannelsPage() {
           </Card>
 
           <Card
+            title="اتصال دیوار سرور"
+            help={{
+              title: "Divar API",
+              body: "با OTP شماره دیوار را به سرور وصل کنید. پیام‌ها از API رسمی چت همگام می‌شوند.",
+              tips: [
+                "سرویس platform/divar-connector باید اجرا باشد.",
+                "همان حساب را هم‌زمان روی افزونه و کانکتور سرور وصل نکنید."
+              ]
+            }}
+          >
+            <button type="button" className="btn primary" disabled={busy} onClick={() => void createDivarApi()}>
+              اتصال دیوار جدید (OTP)
+            </button>
+            {divarStep !== "idle" && (
+              <div style={{ marginTop: 16, display: "grid", gap: 10, maxWidth: 360 }}>
+                {divarStep === "otp" && (
+                  <>
+                    <label>
+                      شماره موبایل دیوار
+                      <input
+                        value={divarPhone}
+                        onChange={(e) => setDivarPhone(e.target.value)}
+                        placeholder="09123456789"
+                        dir="ltr"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={busy}
+                      onClick={() => void startDivarOtp()}
+                    >
+                      ارسال کد
+                    </button>
+                  </>
+                )}
+                {divarStep === "code" && (
+                  <>
+                    <label>
+                      کد تأیید
+                      <input
+                        value={divarCode}
+                        onChange={(e) => setDivarCode(e.target.value)}
+                        placeholder="12345"
+                        dir="ltr"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+                    </label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        disabled={busy}
+                        onClick={() => void submitDivarCode()}
+                      >
+                        تأیید و اتصال
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy}
+                        onClick={() => setDivarStep("otp")}
+                      >
+                        تغییر شماره
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </Card>
+
+          <Card
             title="اکانت‌های من"
             help={{
               title: "کانال‌ها",
-              body: "اکانت‌های واتساپ (سرور یا افزونه) و دیوار.",
+              body: "اکانت‌های واتساپ و دیوار (سرور یا افزونه).",
               tips: [
-                "واتساپ Baileys: وضعیت از سرور.",
-                "دیوار: توکن صندلی + تب باز در افزونه."
+                "واتساپ Baileys / دیوار divar_api: وضعیت از سرور.",
+                "افزونه فقط اگر هنوز اکانت extension دارید لازم است."
               ]
             }}
           >
             {accounts.length === 0 ? (
               <EmptyState
                 title="هنوز کانالی نیست"
-                text="برای واتساپ دکمه اتصال QR را بزنید؛ برای دیوار توکن صندلی را در افزونه وارد کنید."
+                text="واتساپ را با QR یا دیوار را با OTP وصل کنید."
               />
             ) : (
               <table>
@@ -315,18 +476,27 @@ export default function ChannelsPage() {
                 <tbody>
                   {accounts.map((a) => {
                     const on = isOn(a.status, a.pairing_state);
-                    const isBaileys = (a.connector_type || "extension") === "baileys";
+                    const ctype = a.connector_type || "extension";
+                    const isBaileys = ctype === "baileys";
+                    const isDivarApi = ctype === "divar_api";
+                    const typeLabel = isBaileys || isDivarApi ? "سرور" : "افزونه";
                     return (
                       <tr key={a.id}>
                         <td>
                           <Badge tone="accent">{CHANNEL_LABELS[a.channel] || a.channel}</Badge>
                         </td>
                         <td>{a.label}</td>
-                        <td>{isBaileys ? "سرور" : "افزونه"}</td>
+                        <td>{typeLabel}</td>
                         <td>{a.external_id || a.phone || a.wa_jid || "-"}</td>
                         <td>
                           <Badge tone={on ? "online" : "offline"}>
-                            {on ? "روشن" : a.pairing_state === "qr_pending" ? "QR" : "خاموش"}
+                            {on
+                              ? "روشن"
+                              : a.pairing_state === "qr_pending"
+                                ? "QR"
+                                : a.pairing_state === "otp_pending"
+                                  ? "OTP"
+                                  : "خاموش"}
                           </Badge>
                         </td>
                         <td>
@@ -348,6 +518,32 @@ export default function ChannelsPage() {
                                 onClick={() => void startPair(a.id)}
                               >
                                 اتصال QR
+                              </button>
+                            )
+                          ) : null}
+                          {isDivarApi && a.channel === "divar" ? (
+                            on ? (
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={busy}
+                                onClick={() => void logoutDivar(a.id)}
+                              >
+                                قطع اتصال
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={busy}
+                                onClick={() => {
+                                  setDivarAccountId(a.id);
+                                  setDivarStep("otp");
+                                  setDivarPhone(a.external_id || "");
+                                  setDivarCode("");
+                                }}
+                              >
+                                اتصال OTP
                               </button>
                             )
                           ) : null}

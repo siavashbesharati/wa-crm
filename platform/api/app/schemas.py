@@ -100,7 +100,7 @@ class ChannelAccountIn(BaseModel):
     label: str = ""
     external_id: str = ""
     phone: str = ""  # WA alias for external_id
-    connector_type: str = "extension"  # extension | baileys
+    connector_type: str = "extension"  # extension | baileys | divar_api
 
 
 class ChannelAccountOut(BaseModel):
@@ -113,6 +113,36 @@ class ChannelAccountOut(BaseModel):
     connector_type: str = "extension"
     pairing_state: str = "disconnected"
     wa_jid: str = ""
+
+
+class DivarPairStartIn(BaseModel):
+    phone: str
+
+
+class DivarPairCodeIn(BaseModel):
+    code: str
+
+
+class DivarPairStatusOut(BaseModel):
+    account_id: str
+    pairing_state: str
+    status: str
+    phone: str = ""
+    connector_type: str = "divar_api"
+    message: str = ""
+
+
+class DivarAuthStateIn(BaseModel):
+    cookies_json: str = ""
+    pending_json: str = ""
+    cursors_json: str = ""
+
+
+class DivarAuthStateOut(BaseModel):
+    account_id: str
+    cookies_json: str = ""
+    pending_json: str = ""
+    cursors_json: str = ""
 
 
 # Backward-compatible aliases

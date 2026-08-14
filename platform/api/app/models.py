@@ -40,6 +40,7 @@ class ConnectorRole(str, enum.Enum):
     connector = "connector"
     agent = "agent"
     baileys = "baileys"
+    divar = "divar"
 
 
 class ChannelType(str, enum.Enum):
@@ -224,9 +225,9 @@ class ChannelAccount(Base):
     # WA phone or Divar session label / external id
     external_id: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(40), default="disconnected")
-    # extension = Chrome DOM connector; baileys = server-side WhatsApp
+    # extension = Chrome DOM; baileys = WA server; divar_api = Divar HTTP client
     connector_type: Mapped[str] = mapped_column(String(40), default="extension")
-    # disconnected | qr_pending | connected
+    # disconnected | qr_pending | otp_pending | connected
     pairing_state: Mapped[str] = mapped_column(String(40), default="disconnected")
     wa_jid: Mapped[str] = mapped_column(String(120), default="")
     # Short-lived QR payload (data URL / base64) for panel pairing
@@ -256,6 +257,21 @@ class WaAuthState(Base):
     )
     creds_enc: Mapped[str] = mapped_column(Text, default="")
     keys_enc: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class DivarAuthState(Base):
+    """Encrypted Divar cookie session + OTP pending + sync cursors."""
+
+    __tablename__ = "divar_auth_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("channel_accounts.id"), unique=True, index=True
+    )
+    cookies_enc: Mapped[str] = mapped_column(Text, default="")
+    pending_enc: Mapped[str] = mapped_column(Text, default="")
+    cursors_json: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 

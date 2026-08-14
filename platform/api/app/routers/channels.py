@@ -108,17 +108,19 @@ def create_account(
     external_id = (body.external_id or body.phone or "").strip()
     label = (body.label or external_id or ch.value).strip()
     connector_type = (body.connector_type or "extension").strip().lower()
-    if connector_type not in ("extension", "baileys"):
+    if connector_type not in ("extension", "baileys", "divar_api"):
         connector_type = "extension"
     if connector_type == "baileys" and ch != ChannelType.whatsapp:
         raise HTTPException(status_code=400, detail="Baileys فقط برای واتساپ است")
+    if connector_type == "divar_api" and ch != ChannelType.divar:
+        raise HTTPException(status_code=400, detail="divar_api فقط برای دیوار است")
     acc = ChannelAccount(
         org_id=auth.org.id,
         channel=ch,
         label=label,
         external_id=external_id,
         connector_type=connector_type,
-        pairing_state="disconnected" if connector_type == "baileys" else "disconnected",
+        pairing_state="disconnected",
         status="disconnected",
     )
     db.add(acc)
@@ -203,7 +205,7 @@ def list_sessions(auth: AuthContext = Depends(get_auth), db: Session = Depends(g
 
 
 def pick_session(db: Session, org_id: str, account_id: str) -> ConnectorSession | None:
-    """Hybrid: prefer baileys for baileys accounts; else connector; else agent."""
+    """Prefer server connector roles for baileys/divar_api accounts."""
     cutoff = datetime.utcnow() - timedelta(seconds=90)
     acc = db.get(ChannelAccount, account_id)
     base = db.query(ConnectorSession).filter(
@@ -212,8 +214,11 @@ def pick_session(db: Session, org_id: str, account_id: str) -> ConnectorSession 
         ConnectorSession.last_seen_at >= cutoff,
         ConnectorSession.status == "online",
     )
-    if acc and (getattr(acc, "connector_type", None) or "extension") == "baileys":
+    ctype = (getattr(acc, "connector_type", None) or "extension") if acc else "extension"
+    if ctype == "baileys":
         return base.filter(ConnectorSession.role == ConnectorRole.baileys).first()
+    if ctype == "divar_api":
+        return base.filter(ConnectorSession.role == ConnectorRole.divar).first()
     connector = base.filter(ConnectorSession.role == ConnectorRole.connector).first()
     if connector:
         return connector
@@ -346,8 +351,9 @@ def claim_jobs(
     if not acc:
         raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
-    # Baileys accounts are delivered only by the sidecar (role=baileys)
-    if (getattr(acc, "connector_type", None) or "extension") == "baileys":
+    # Server connectors own their outbound queues
+    ctype = (getattr(acc, "connector_type", None) or "extension")
+    if ctype == "baileys":
         session = (
             db.query(ConnectorSession)
             .filter(
@@ -358,6 +364,18 @@ def claim_jobs(
             .first()
         )
         if not session or session.role != ConnectorRole.baileys:
+            return {"jobs": []}
+    elif ctype == "divar_api":
+        session = (
+            db.query(ConnectorSession)
+            .filter(
+                ConnectorSession.org_id == auth.org.id,
+                ConnectorSession.account_id == account_id,
+                ConnectorSession.device_id == device_id,
+            )
+            .first()
+        )
+        if not session or session.role != ConnectorRole.divar:
             return {"jobs": []}
 
     session = (
@@ -374,7 +392,7 @@ def claim_jobs(
 
     preferred = pick_session(db, auth.org.id, account_id)
     if preferred and preferred.device_id != device_id:
-        if preferred.role == ConnectorRole.baileys:
+        if preferred.role in (ConnectorRole.baileys, ConnectorRole.divar):
             return {"jobs": []}
         if preferred.role == ConnectorRole.connector or session.role != ConnectorRole.connector:
             if preferred.id != session.id:

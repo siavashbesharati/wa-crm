@@ -7,6 +7,7 @@
  *   node scripts/start-all.mjs --skip-ext      # only start apps
  *   node scripts/start-all.mjs --no-workers
  *   node scripts/start-all.mjs --no-wa
+ *   node scripts/start-all.mjs --no-divar
  *   node scripts/start-all.mjs --seed          # run migrate + seed before API
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -22,11 +23,13 @@ const skipExt = args.has("--skip-ext");
 const bump = args.has("--bump");
 const noWorkers = args.has("--no-workers");
 const noWa = args.has("--no-wa");
+const noDivar = args.has("--no-divar");
 const seed = args.has("--seed");
 
 const apiDir = join(root, "platform", "api");
 const webDir = join(root, "platform", "web");
 const waDir = join(root, "platform", "wa-connector");
+const divarDir = join(root, "platform", "divar-connector");
 const children = [];
 
 function log(msg) {
@@ -117,6 +120,17 @@ async function main() {
     }
   }
 
+  if (!noDivar) {
+    log("Ensure divar-connector deps (requests)");
+    try {
+      runSync("python", ["-m", "pip", "install", "-q", "-r", "requirements.txt"], divarDir, {
+        shell: true
+      });
+    } catch {
+      console.warn("divar-connector pip install skipped/failed");
+    }
+  }
+
   start("api", "python", ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"], apiDir);
   start("web", "npm", ["run", "dev"], webDir);
   if (!noWorkers) {
@@ -124,6 +138,9 @@ async function main() {
   }
   if (!noWa) {
     start("wa-connector", "npm", ["run", "dev"], waDir);
+  }
+  if (!noDivar) {
+    start("divar-connector", "python", ["main.py"], divarDir);
   }
 
   let version = "?";
@@ -136,13 +153,14 @@ async function main() {
   console.log(`
 --------------------------------------------------
  Platform running
-  API:      http://localhost:8000/api/health
-  Business: http://localhost:3000/login
-  Super:    http://localhost:3000/super/login
-  WA conn:  http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
-  Ext folder: WAchromeExtension-dist/
-  Ext ZIP:    WAchromeExtension-dist.zip  (+ panel copy in public/downloads)
-  Ext ver:  v${version}
+  API:         http://localhost:8000/api/health
+  Business:    http://localhost:3000/login
+  Super:       http://localhost:3000/super/login
+  WA conn:     http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
+  Divar conn:  http://127.0.0.1:8091/health${noDivar ? " (skipped)" : ""}
+  Ext folder:  WAchromeExtension-dist/
+  Ext ZIP:     WAchromeExtension-dist.zip  (+ panel copy in public/downloads)
+  Ext ver:   v${version}
  Press Ctrl+C to stop all
 --------------------------------------------------
 `);

@@ -1,4 +1,4 @@
-"""Shared message ingest used by extension JWT route and Baileys internal API."""
+"""Shared message ingest used by extension JWT route and server connectors."""
 
 from __future__ import annotations
 
@@ -16,15 +16,14 @@ def process_message_ingest(
     background_tasks: BackgroundTasks | None = None,
     *,
     allow_baileys_extension: bool = False,
+    allow_divar_api: bool = False,
 ) -> MessageIngestOut:
     """
     Persist inbound/outbound channel messages and run bot/AI post-handlers.
 
-    When allow_baileys_extension is False (default for public /messages/ingest),
-    WhatsApp accounts with connector_type=baileys reject extension ingest so
-    only the server sidecar feeds that account.
+    When allow_* flags are False (public /messages/ingest), server-owned
+    accounts reject extension ingest so only the matching sidecar feeds them.
     """
-    # Import lazily to avoid circular imports at module load.
     from app.routers import messages as messages_router
 
     acc = (
@@ -36,14 +35,22 @@ def process_message_ingest(
         raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
     connector = (getattr(acc, "connector_type", None) or "extension").strip().lower()
+    channel = str(getattr(acc.channel, "value", acc.channel) or "")
+
     if (
         not allow_baileys_extension
         and connector == "baileys"
-        and str(getattr(acc.channel, "value", acc.channel) or "") == "whatsapp"
+        and channel == "whatsapp"
     ):
         raise HTTPException(
             status_code=409,
             detail="این اکانت واتساپ روی Baileys است؛ ingest فقط از کانکتور سرور مجاز است",
+        )
+
+    if not allow_divar_api and connector == "divar_api" and channel == "divar":
+        raise HTTPException(
+            status_code=409,
+            detail="این اکانت دیوار روی کانکتور سرور است؛ ingest فقط از divar-connector مجاز است",
         )
 
     return messages_router.process_message_ingest(

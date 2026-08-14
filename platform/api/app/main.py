@@ -16,6 +16,8 @@ from app.routers import (
     ai,
     auth,
     channels,
+    divar_connector,
+    divar_pair,
     extension,
     kpi,
     leads,
@@ -71,6 +73,7 @@ ROUTERS = [
     tasks.router,
     channels.router,
     wa_pair.router,
+    divar_pair.router,
     whatsapp.router,
     messages.router,
     ai.router,
@@ -79,6 +82,7 @@ ROUTERS = [
     payments.router,
     support.router,
     wa_connector.router,
+    divar_connector.router,
 ]
 
 

@@ -669,6 +669,25 @@
       }
     }
 
+    // Server-side Divar API owns Divar — extension must not bind/ingest for it.
+    if (ch === "divar") {
+      for (var di = 0; di < accounts.length; di++) {
+        var da = accounts[di];
+        if (
+          da &&
+          da.channel === "divar" &&
+          String(da.connector_type || "extension").toLowerCase() === "divar_api"
+        ) {
+          return {
+            ok: false,
+            error: "divar_api_owns_divar",
+            skip: true,
+            account: da
+          };
+        }
+      }
+    }
+
     var acc = null;
     for (var i = 0; i < accounts.length; i++) {
       if (accounts[i] && accounts[i].channel === ch) {

@@ -8,6 +8,7 @@ _API_DIR = Path(__file__).resolve().parent.parent
 _DEFAULT_DB = _API_DIR / "wa_crm.db"
 _JWT_SECRET_FILE = _API_DIR / ".local" / "jwt_secret"
 _WA_CONNECTOR_KEY_FILE = _API_DIR / ".local" / "wa_connector_key"
+_DIVAR_CONNECTOR_KEY_FILE = _API_DIR / ".local" / "divar_connector_key"
 _WA_CREDS_KEY_FILE = _API_DIR / ".local" / "wa_creds_fernet_key"
 
 
@@ -38,6 +39,12 @@ def _load_or_create_jwt_secret() -> str:
 def _load_or_create_wa_connector_key() -> str:
     return _load_or_create_secret_file(
         _WA_CONNECTOR_KEY_FILE, "dev-wa-connector-key-change-me", min_len=16
+    )
+
+
+def _load_or_create_divar_connector_key() -> str:
+    return _load_or_create_secret_file(
+        _DIVAR_CONNECTOR_KEY_FILE, "dev-divar-connector-key-change-me", min_len=16
     )
 
 
@@ -74,7 +81,9 @@ class Settings(BaseSettings):
     jwt_refresh_days: int = 90
     # Shared secret for platform/wa-connector → /internal/wa/*
     wa_connector_key: str = _load_or_create_wa_connector_key()
-    # Fernet key for encrypting Baileys auth state at rest
+    # Shared secret for platform/divar-connector → /internal/divar/*
+    divar_connector_key: str = _load_or_create_divar_connector_key()
+    # Fernet key for encrypting Baileys / Divar auth state at rest
     wa_creds_fernet_key: str = _load_or_create_wa_creds_key()
     # Platform owner phone (must match OTP login for /super)
     super_admin_phone: str = "09120674032"
