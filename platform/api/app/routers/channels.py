@@ -107,9 +107,10 @@ def create_account(
     ch = _parse_channel(body.channel)
     external_id = (body.external_id or body.phone or "").strip()
     label = (body.label or external_id or ch.value).strip()
-    connector_type = (body.connector_type or "extension").strip().lower()
-    if connector_type not in ("extension", "baileys", "divar_api"):
-        connector_type = "extension"
+    connector_type = (body.connector_type or "").strip().lower()
+    if connector_type not in ("baileys", "divar_api"):
+        # Default by channel — Chrome extension connector removed
+        connector_type = "baileys" if ch == ChannelType.whatsapp else "divar_api"
     if connector_type == "baileys" and ch != ChannelType.whatsapp:
         raise HTTPException(status_code=400, detail="Baileys فقط برای واتساپ است")
     if connector_type == "divar_api" and ch != ChannelType.divar:

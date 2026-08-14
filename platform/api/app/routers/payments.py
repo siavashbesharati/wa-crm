@@ -158,14 +158,12 @@ def start_payment(
     amount = int(meta.get("price_irr") or 0)
 
     if amount <= 0 or provider == "mock":
-        # ensure_bootstrap_seat only creates when none exist
-        token = apply_paid_plan(
+        apply_paid_plan(
             db,
             auth.org,
             plan=plan,
             purpose=purpose,
             user=auth.user,
-            create_seat=True,
         )
         payment = Payment(
             org_id=auth.org.id,
@@ -191,7 +189,6 @@ def start_payment(
             "paid": True,
             "plan": plan,
             "purpose": purpose,
-            "bootstrap_seat_token": token,
             "receipt": receipt_for(plan, ref=payment.ref_number, amount_irr=amount),
         }
 
@@ -294,7 +291,6 @@ def zibal_callback(
         plan=payment.plan,
         purpose=payment.purpose,
         user=user,
-        create_seat=True,
     )
     db.add(payment)
     db.commit()

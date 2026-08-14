@@ -1,17 +1,15 @@
 /**
- * Build/release the extension, then start API + Web + Workers together.
+ * Start API + Web + Workers + WA/Divar connectors.
  *
  * Usage (repo root):
  *   node scripts/start-all.mjs
- *   node scripts/start-all.mjs --bump          # bump extension patch before release
- *   node scripts/start-all.mjs --skip-ext      # only start apps
  *   node scripts/start-all.mjs --no-workers
  *   node scripts/start-all.mjs --no-wa
  *   node scripts/start-all.mjs --no-divar
- *   node scripts/start-all.mjs --seed          # run migrate + seed before API
+ *   node scripts/start-all.mjs --seed
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,8 +17,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const args = new Set(process.argv.slice(2));
 
-const skipExt = args.has("--skip-ext");
-const bump = args.has("--bump");
 const noWorkers = args.has("--no-workers");
 const noWa = args.has("--no-wa");
 const noDivar = args.has("--no-divar");
@@ -37,8 +33,6 @@ function log(msg) {
 }
 
 function runSync(command, cmdArgs, cwd, { shell = false } = {}) {
-  // Never shell-wrap absolute paths like C:\Program Files\nodejs\node.exe
-  // — Windows cmd splits on spaces and fails with "'C:\\Program' is not recognized".
   const r = spawnSync(command, cmdArgs, {
     cwd,
     stdio: "inherit",
@@ -52,7 +46,6 @@ function runSync(command, cmdArgs, cwd, { shell = false } = {}) {
 
 function start(name, command, cmdArgs, cwd) {
   log(`Start ${name}`);
-  // npm/python on Windows need shell so .cmd shims resolve
   const child = spawn(command, cmdArgs, {
     cwd,
     stdio: "inherit",
@@ -85,15 +78,6 @@ function shutdown() {
 }
 
 async function main() {
-  if (!skipExt) {
-    log("Release extension (sync version → obfuscate → pack downloads ZIP)");
-    const releaseArgs = ["scripts/release-extension.mjs"];
-    if (bump) releaseArgs.push("--bump");
-    runSync(process.execPath, releaseArgs, root, { shell: false });
-  } else {
-    log("Skipping extension release (--skip-ext)");
-  }
-
   if (!existsSync(join(webDir, "node_modules"))) {
     log("Install web dependencies");
     runSync("npm", ["install"], webDir, { shell: true });
@@ -103,13 +87,19 @@ async function main() {
     log("Migrate + seed API database");
     runSync("python", ["scripts/migrate_multichannel.py"], apiDir, { shell: true });
     runSync("python", ["scripts/migrate_baileys.py"], apiDir, { shell: true });
+    runSync("python", ["scripts/migrate_divar.py"], apiDir, { shell: true });
     runSync("python", ["scripts/seed_demo.py"], apiDir, { shell: true });
   } else {
-    log("Ensure Baileys schema columns");
+    log("Ensure connector schema");
     try {
       runSync("python", ["scripts/migrate_baileys.py"], apiDir, { shell: true });
     } catch {
-      console.warn("migrate_baileys skipped/failed — API create_all may still add columns");
+      console.warn("migrate_baileys skipped/failed");
+    }
+    try {
+      runSync("python", ["scripts/migrate_divar.py"], apiDir, { shell: true });
+    } catch {
+      console.warn("migrate_divar skipped/failed");
     }
   }
 
@@ -121,7 +111,7 @@ async function main() {
   }
 
   if (!noDivar) {
-    log("Ensure divar-connector deps (requests)");
+    log("Ensure divar-connector deps");
     try {
       runSync("python", ["-m", "pip", "install", "-q", "-r", "requirements.txt"], divarDir, {
         shell: true
@@ -143,24 +133,14 @@ async function main() {
     start("divar-connector", "python", ["main.py"], divarDir);
   }
 
-  let version = "?";
-  try {
-    version = JSON.parse(readFileSync(join(root, "config", "extension.json"), "utf8")).version;
-  } catch {
-    /* ignore */
-  }
-
   console.log(`
 --------------------------------------------------
  Platform running
-  API:         http://localhost:8000/api/health
-  Business:    http://localhost:3000/login
-  Super:       http://localhost:3000/super/login
-  WA conn:     http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
-  Divar conn:  http://127.0.0.1:8091/health${noDivar ? " (skipped)" : ""}
-  Ext folder:  WAchromeExtension-dist/
-  Ext ZIP:     WAchromeExtension-dist.zip  (+ panel copy in public/downloads)
-  Ext ver:   v${version}
+  API:        http://localhost:8000/api/health
+  Business:   http://localhost:3000/login
+  Super:      http://localhost:3000/super/login
+  WA conn:    http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
+  Divar conn: http://127.0.0.1:8091/health${noDivar ? " (skipped)" : ""}
  Press Ctrl+C to stop all
 --------------------------------------------------
 `);

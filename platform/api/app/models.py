@@ -225,8 +225,8 @@ class ChannelAccount(Base):
     # WA phone or Divar session label / external id
     external_id: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(40), default="disconnected")
-    # extension = Chrome DOM; baileys = WA server; divar_api = Divar HTTP client
-    connector_type: Mapped[str] = mapped_column(String(40), default="extension")
+    # baileys = WA server; divar_api = Divar HTTP client
+    connector_type: Mapped[str] = mapped_column(String(40), default="baileys")
     # disconnected | qr_pending | otp_pending | connected
     pairing_state: Mapped[str] = mapped_column(String(40), default="disconnected")
     wa_jid: Mapped[str] = mapped_column(String(120), default="")
@@ -286,31 +286,6 @@ class ConnectorSession(Base):
     role: Mapped[ConnectorRole] = mapped_column(Enum(ConnectorRole), default=ConnectorRole.agent)
     status: Mapped[str] = mapped_column(String(40), default="online")
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-
-class ExtensionSeat(Base):
-    """One concurrent Chrome-extension connection seat for an organization.
-
-    token_plain is kept so owners can always copy the token from the dashboard.
-    token_hash is used for lookups. After first activate, the seat locks to that
-    install_id until admin resets/removes it.
-    """
-
-    __tablename__ = "extension_seats"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
-    label: Mapped[str] = mapped_column(String(120), default="")
-    token_prefix: Mapped[str] = mapped_column(String(16), default="")
-    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    token_plain: Mapped[str] = mapped_column(String(120), default="")
-    status: Mapped[str] = mapped_column(String(40), default="available")  # available|locked|revoked
-    bound_install_id: Mapped[str] = mapped_column(String(80), default="")
-    bound_device_id: Mapped[str] = mapped_column(String(80), default="")
-    bound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 

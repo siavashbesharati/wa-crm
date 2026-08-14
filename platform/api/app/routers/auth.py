@@ -10,7 +10,6 @@ from app.database import get_db
 from app.deps import AuthContext, get_auth
 from app.models import (
     AiPolicy,
-    ExtensionSeat,
     MemberRole,
     Membership,
     Organization,
@@ -157,7 +156,7 @@ def verify_otp(body: OtpVerifyIn, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=TokenOut)
 def refresh_session(body: TokenRefreshIn, db: Session = Depends(get_db)):
-    """Issue a new access token from a valid refresh token (extension / web)."""
+    """Issue a new access token from a valid refresh token."""
     try:
         user = verify_refresh_token(db, body.refresh_token)
     except ValueError as exc:
@@ -181,39 +180,14 @@ def refresh_session(body: TokenRefreshIn, db: Session = Depends(get_db)):
     if getattr(org, "status", "active") == "suspended":
         raise HTTPException(status_code=403, detail="این کسب‌وکار موقتاً غیرفعال است")
 
-    install_id = (body.install_id or "").strip()
-    seat_id = ""
-    seat: ExtensionSeat | None = None
-    if install_id:
-        seat = (
-            db.query(ExtensionSeat)
-            .filter(
-                ExtensionSeat.org_id == org.id,
-                ExtensionSeat.bound_install_id == install_id,
-                ExtensionSeat.status != "revoked",
-            )
-            .first()
-        )
-        if seat:
-            seat_id = seat.id
-            seat.last_seen_at = datetime.utcnow()
-            db.add(seat)
-
     role = membership.role.value
-    access_mins = settings.jwt_access_minutes
-    if seat_id:
-        role = "agent"
-        access_mins = settings.jwt_access_minutes_seat
-
     revoke_refresh_token(db, body.refresh_token)
     access = create_access_token(
         user.id,
         org.id,
         role,
         scope="org",
-        seat_id=seat_id,
-        install_id=install_id,
-        access_minutes=access_mins,
+        access_minutes=settings.jwt_access_minutes,
     )
     refresh = create_refresh_token(db, user.id)
     db.commit()

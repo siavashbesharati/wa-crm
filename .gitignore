@@ -8,7 +8,8 @@ platform/api/**/__pycache__/
 platform/api/.venv/
 *.pyc
 
-# Built / obfuscated extension (generate with npm run release:ext / start:all)
+# Built Chrome extension artifacts (removed — server connectors only)
+# (kept briefly so old clones ignore leftovers)
 WAchromeExtension-dist/
 WAchromeExtension-dist.zip
 _ext_zip_stage/

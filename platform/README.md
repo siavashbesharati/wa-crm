@@ -6,7 +6,7 @@
 
 
 
-کانال‌های فعلی: **WhatsApp (Baileys سرور)** و **Divar Chat** (افزونه Chrome). واتساپ قدیمی افزونه همچنان برای اکانت‌های `connector_type=extension` پشتیبانی می‌شود.
+کانال‌های فعلی: **WhatsApp (Baileys سرور — QR)** و **Divar (API سرور — OTP)**. افزونه Chrome حذف شده است.
 
 
 
@@ -27,7 +27,7 @@
 ورودها از هم جدا هستند (توکن `platform` در برابر توکن `org`).
 
 **ورود/ثبت‌نام کسب‌وکار (فقط شماره):** `/login` → OTP.  
-- شماره جدید → ساخت draft → ویزارد `/onboarding` (پروفایل → پلن → پرداخت → راهنما/افزونه) → داشبورد  
+- شماره جدید → ساخت draft → ویزارد `/onboarding` (پروفایل → پلن → پرداخت → AI → راهنمای کانال) → داشبورد  
 - شماره موجود با onboarding تمام‌شده → داشبورد  
 - شماره موجود با ویزارد ناتمام → ادامه `/onboarding`  
 
@@ -35,15 +35,10 @@
 Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboarding?paid=1` یا `/billing?paid=1`. برای تست لوکال API باید از اینترنت در دسترس باشد (tunnel).  
 در پنل کسب‌وکار: صفحه **`/billing`** برای تمدید همان پلن یا ارتقا (مالک، از طریق `POST /api/payments/start`).
 
-**نسخه افزونه (منبع واحد):** `config/extension.json`  
-- همگام‌سازی: `npm run sync:ext-version`  
-- obfuscate + pack در ریشه: `WAchromeExtension-dist/` و `WAchromeExtension-dist.zip` → `npm run release:ext`  
-- افزایش patch + release: `npm run release:ext:bump`  
-- اجرای همه: `npm run start:all` (pack افزونه + API/Web/Workers + wa-connector)  
-- بدون کانکتور واتساپ: `node scripts/start-all.mjs --no-wa`  
-- فقط کانکتور: `npm run wa:dev`  
-- کپی ZIP برای پنل: `platform/web/public/downloads/iranexpedia-extension.zip`  
-- پنل نسخه را از `GET /api/extension/latest` می‌خواند.
+**اجرای لوکال:** `npm run start:all` از ریشه ریپو (API + Web + Workers + wa-connector + divar-connector).  
+- بدون واتساپ: `node scripts/start-all.mjs --no-wa`  
+- بدون دیوار: `node scripts/start-all.mjs --no-divar`  
+- فقط کانکتورها: `npm run wa:dev` / `npm run divar:dev`
 
 ## اجزا
 
@@ -124,16 +119,14 @@ npm run dev
 
 # http://127.0.0.1:8090/health
 
-# پنل → کانال‌ها → اتصال واتساپ (QR)
+# پنل → کانال‌ها → اتصال واتساپ (QR) یا دیوار (OTP)
 
+# 5) Divar connector
 
-
-# 5) افزونه (دیوار)
-
-# Chrome → Load unpacked → WAchromeExtension (یا dist)
-
-# پاپ‌آپ → توکن صندلی → دیوار
-
+cd platform/divar-connector
+pip install -r requirements.txt
+python main.py
+# http://127.0.0.1:8091/health
 ```
 
 
@@ -173,15 +166,13 @@ docker compose up -d db redis
 
 
 
-پلن‌ها (سقف **صندلی افزونه هم‌زمان** — کانال‌ها نامحدود):
+پلن‌ها (سقف **اعضای تیم** — کانال‌ها نامحدود):
 
-- **starter**: ۲ صندلی، AI suggest
+- **starter**: ۲ عضو، AI suggest
+- **growth**: ۵ عضو، AI auto-send
+- **scale**: ۲۰ عضو، AI auto-send
 
-- **growth**: ۵ صندلی، AI auto-send
-
-- **scale**: ۲۰ صندلی، AI auto-send
-
-هر نصب Chrome یک **توکن صندلی** یکتا می‌گیرد (منوی «صندلی افزونه»). بعد از اتصال روی همان نصب قفل می‌شود؛ مدیر می‌تواند ریست/حذف کند.
+کانال‌ها از داشبورد → **کانال‌ها** وصل می‌شوند (واتساپ QR / دیوار OTP). سرویس‌های `wa-connector` و `divar-connector` روی سرور باید روشن باشند.
 
 
 
@@ -193,11 +184,11 @@ docker compose up -d db redis
 
 2. مالک با OTP وارد `/login` می‌شود (یا سوپر ادمین «ورود به پنل» را می‌زند)  
 
-3. اکانت‌های کانال (واتساپ / دیوار) را در «کانال‌ها» ثبت می‌کند  
+3. اکانت‌های کانال (واتساپ QR / دیوار OTP) را در «کانال‌ها» وصل می‌کند  
 
-4. یک PC/VPS همیشه روشن = **کانکتور** (افزونه + تب‌های کانال)  
+4. یک PC/VPS همیشه روشن با `wa-connector` + `divar-connector`  
 
-5. اپراتورها فقط پنل ابری + در صورت نیاز افزونه با نقش agent  
+5. اپراتورها فقط پنل ابری  
 
 6. دانش FAQ آپلود → پیشنهاد/ارسال AI  
 

@@ -7,9 +7,8 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import ExtensionSeat, Organization, Payment, User
+from app.models import Organization, Payment, User
 from app.plans import plan_limits
-from app.services.seat_tokens import hash_token, new_raw_token
 
 SUBSCRIPTION_DAYS = 30
 
@@ -37,32 +36,6 @@ def extend_subscription(org: Organization, *, plan: str, days: int = SUBSCRIPTIO
     org.plan_expires_at = base + timedelta(days=days)
 
 
-def ensure_bootstrap_seat(db: Session, org: Organization, user: User | None) -> str | None:
-    """Create first extension seat if none; return plaintext token when newly created or existing plain."""
-    existing = (
-        db.query(ExtensionSeat)
-        .filter(ExtensionSeat.org_id == org.id, ExtensionSeat.status != "revoked")
-        .order_by(ExtensionSeat.created_at.asc())
-        .first()
-    )
-    if existing:
-        return getattr(existing, "token_plain", None) or None
-
-    raw = new_raw_token()
-    db.add(
-        ExtensionSeat(
-            org_id=org.id,
-            label="صندلی مالک",
-            token_prefix=raw[:12],
-            token_hash=hash_token(raw),
-            token_plain=raw,
-            status="available",
-            created_by_user_id=user.id if user else None,
-        )
-    )
-    return raw
-
-
 def apply_paid_plan(
     db: Session,
     org: Organization,
@@ -70,18 +43,16 @@ def apply_paid_plan(
     plan: str,
     purpose: str,
     user: User | None = None,
-    create_seat: bool = True,
+    create_seat: bool = False,
 ) -> str | None:
-    """Apply plan after successful payment. Returns bootstrap seat token if any."""
+    """Apply plan after successful payment. create_seat is ignored (extension removed)."""
+    _ = (user, create_seat)
     org.plan = plan
     extend_subscription(org, plan=plan)
     if purpose == "onboarding":
         org.onboarding_step = "ai_settings"
     db.add(org)
-    token = None
-    if create_seat:
-        token = ensure_bootstrap_seat(db, org, user)
-    return token
+    return None
 
 
 def mark_payment_paid(payment: Payment, *, ref_number: str = "", raw_verify: str = "") -> None:

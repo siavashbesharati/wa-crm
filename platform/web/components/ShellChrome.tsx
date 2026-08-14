@@ -2,13 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearSession, getSession, logoutOrg, ORG_KEY, api, isNetworkErrorMessage } from "@/lib/api";
-import {
-  EXTENSION_DOWNLOAD_NAME,
-  EXTENSION_DOWNLOAD_URL,
-  EXTENSION_VERSION_FALLBACK,
-  type ExtensionMeta
-} from "@/lib/extension";
+import { clearSession, getSession, logoutOrg, ORG_KEY, isNetworkErrorMessage } from "@/lib/api";
 import { getCachedOrgMe, loadOrgMe } from "@/lib/me-cache";
 import { useEffect, useState, type ReactNode } from "react";
 import { PageLoading } from "@/components/ui/Spinner";
@@ -19,7 +13,6 @@ const NAV = [
   { href: "/inbox", label: "اینباکس", ico: "✉" },
   { href: "/tasks", label: "وظایف", ico: "☑" },
   { href: "/channels", label: "کانال‌ها", ico: "☎" },
-  { href: "/seats", label: "صندلی افزونه", ico: "🔑" },
   { href: "/team", label: "تیم", ico: "☺" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
@@ -80,7 +73,6 @@ export default function ShellChrome({
   const [daysRemaining, setDaysRemaining] = useState<number | null>(
     initial.daysRemaining
   );
-  const [extVersion, setExtVersion] = useState(EXTENSION_VERSION_FALLBACK);
 
   useEffect(() => {
     if (!getSession()) {
@@ -137,33 +129,6 @@ export default function ShellChrome({
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [router]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const latest = await api<ExtensionMeta & { ok?: boolean }>("/extension/latest", {
-          auth: false
-        });
-        if (!cancelled && latest?.version) {
-          setExtVersion(latest.version);
-          return;
-        }
-      } catch {
-        /* fall through */
-      }
-      try {
-        const r = await fetch("/downloads/extension-meta.json", { cache: "no-store" });
-        const meta = r.ok ? ((await r.json()) as ExtensionMeta) : null;
-        if (!cancelled && meta?.version) setExtVersion(meta.version);
-      } catch {
-        /* keep fallback */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -275,20 +240,6 @@ export default function ShellChrome({
               <em>{billingSub}</em>
             </span>
           </Link>
-          <a
-            className="ext-download-btn"
-            href={EXTENSION_DOWNLOAD_URL}
-            download={EXTENSION_DOWNLOAD_NAME}
-            title={`دانلود افزونه نسخه ${extVersion}`}
-          >
-            <span className="ext-download-ico" aria-hidden>
-              ↓
-            </span>
-            <span className="label ext-download-meta">
-              <strong>دانلود افزونه</strong>
-              <em>نسخه {extVersion}</em>
-            </span>
-          </a>
           <button
             className="btn secondary"
             onClick={() => {

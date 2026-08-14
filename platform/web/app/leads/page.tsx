@@ -367,7 +367,7 @@ export default function LeadsPage() {
             {leads.length === 0 ? (
               <EmptyState
                 title="هنوز لیدی نیست"
-                text="افزونه را Reload کنید، تب واتساپ یا دیوار را باز بگذارید، یا با دکمه «افزودن لید» یک مخاطب بسازید."
+                text="از صفحه کانال‌ها واتساپ یا دیوار را وصل کنید، یا با دکمه «افزودن لید» یک مخاطب بسازید."
               />
             ) : (              <div style={{ overflow: "auto" }}>
                 <table className="leads-table">

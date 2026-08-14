@@ -20,8 +20,6 @@ def create_access_token(
     role: str,
     *,
     scope: str = "org",
-    seat_id: str = "",
-    install_id: str = "",
     access_minutes: int | None = None,
 ) -> str:
     mins = access_minutes if access_minutes is not None else settings.jwt_access_minutes
@@ -34,10 +32,6 @@ def create_access_token(
         "exp": exp,
         "type": "access",
     }
-    if seat_id:
-        payload["seat_id"] = seat_id
-    if install_id:
-        payload["install_id"] = install_id
     return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
 
 

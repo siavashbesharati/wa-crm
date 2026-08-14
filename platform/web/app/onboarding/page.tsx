@@ -1,13 +1,9 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, clearSession, getSession } from "@/lib/api";
-import {
-  EXTENSION_DOWNLOAD_NAME,
-  EXTENSION_DOWNLOAD_URL,
-  EXTENSION_VERSION_FALLBACK
-} from "@/lib/extension";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
@@ -37,7 +33,6 @@ type OnboardingState = {
   };
   user: { phone: string; display_name: string };
   plans: Plan[];
-  bootstrap_seat_token?: string | null;
 };
 
 const STEPS = [
@@ -93,7 +88,6 @@ function OnboardingPageInner() {
   const paidHandled = useRef(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [phase, setPhase] = useState<"form" | "creating-seat">("form");
   const [data, setData] = useState<OnboardingState | null>(null);
   const [payProvider, setPayProvider] = useState<"mock" | "zibal">("mock");
 
@@ -112,8 +106,6 @@ function OnboardingPageInner() {
     label: string;
     amount_irr: number;
   } | null>(null);
-  const [seatToken, setSeatToken] = useState<string | null>(null);
-  const [extVersion, setExtVersion] = useState(EXTENSION_VERSION_FALLBACK);
 
   const load = useCallback(async () => {
     if (!getSession()) {
@@ -133,7 +125,6 @@ function OnboardingPageInner() {
       setIndustry(res.org.industry || "");
       setCity(res.org.city || "");
       setSelectedPlan(res.org.plan || "starter");
-      if (res.bootstrap_seat_token) setSeatToken(res.bootstrap_seat_token);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
       clearSession();
@@ -148,11 +139,6 @@ function OnboardingPageInner() {
   }, [load]);
 
   useEffect(() => {
-    api<{ version?: string }>("/extension/latest", { auth: false })
-      .then((r) => {
-        if (r?.version) setExtVersion(r.version);
-      })
-      .catch(() => undefined);
     api<{ provider?: string }>("/payments/config", { auth: false })
       .then((r) => {
         const p = (r?.provider || "mock").toLowerCase();
@@ -228,14 +214,12 @@ function OnboardingPageInner() {
 
   async function pay() {
     setBusy(true);
-    setPhase("creating-seat");
     try {
       const res = await api<{
         step: string;
         paid?: boolean;
         provider?: string;
         payment_url?: string;
-        bootstrap_seat_token?: string | null;
         receipt?: { ref: string; label: string; amount_irr: number };
       }>("/orgs/onboarding/pay", {
         method: "POST",
@@ -251,21 +235,11 @@ function OnboardingPageInner() {
       }
 
       if (res.receipt) setReceipt(res.receipt);
-      if (res.bootstrap_seat_token) {
-        setSeatToken(res.bootstrap_seat_token);
-        try {
-          await navigator.clipboard.writeText(res.bootstrap_seat_token);
-        } catch {
-          /* ignore */
-        }
-      }
-      await new Promise((r) => setTimeout(r, 700));
-      toast.push("پرداخت موفق — صندلی افزونه ساخته شد", "ok");
+      toast.push("پرداخت موفق", "ok");
       setData((d) => (d ? { ...d, step: res.step } : d));
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
-      setPhase("form");
       setBusy(false);
     }
   }
@@ -367,7 +341,7 @@ function OnboardingPageInner() {
   const idx = stepIndex(data.step);
   const plans = data.plans || [];
   const selectedMeta = plans.find((p) => p.id === selectedPlan);
-  const progressPct = ((idx + (phase === "creating-seat" ? 0.5 : 0)) / (STEPS.length - 1)) * 100;
+  const progressPct = (idx / (STEPS.length - 1)) * 100;
 
   return (
     <div className="wizard-wrap">
@@ -405,362 +379,328 @@ function OnboardingPageInner() {
           ))}
         </ol>
 
-        {phase === "creating-seat" ? (
-          <div className="wizard-pane wizard-seat-creating">
-            <div className="wizard-pulse" aria-hidden />
-            <h2>در حال ساخت صندلی افزونه…</h2>
-            <p className="hint">توکن یکتا برای نصب Chrome شما آماده می‌شود.</p>
-          </div>
-        ) : (
-          <div key={data.step} className="wizard-pane">
-            {data.step === "profile" && (
-              <Card
-                title="۱. تکمیل پروفایل"
-                help={{
-                  title: "پروفایل",
-                  body: "نام کسب‌وکار و مشخصات پایه — روی فاکتور، داشبورد و پیام‌های سیستم دیده می‌شود."
-                }}
-              >
-                <div className="form-grid">
-                  <label className="full">
-                    نام کسب‌وکار
-                    <input
-                      value={orgName}
-                      onChange={(e) => setOrgName(e.target.value)}
-                      placeholder="مثلاً آژانس مسافرتی نمونه"
-                    />
-                  </label>
-                  <label>
-                    نام شما
-                    <input
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="اختیاری"
-                    />
-                  </label>
-                  <label>
-                    حوزه فعالیت
-                    <input
-                      value={industry}
-                      onChange={(e) => setIndustry(e.target.value)}
-                      placeholder="مثلاً گردشگری"
-                    />
-                  </label>
-                  <label>
-                    شهر
-                    <input
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="مثلاً تهران"
-                    />
-                  </label>
-                </div>
-                <div className="wizard-actions">
-                  <Button className="wizard-btn" loading={busy} onClick={saveProfile}>
-                    ذخیره و ادامه
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            {data.step === "plan" && (
-              <Card
-                title="۲. انتخاب پلن"
-                help={{
-                  title: "انتخاب پلن",
-                  body: "سقف صندلی افزونه و امکانات اشتراک را مشخص می‌کند. بعداً از صفحه صورتحساب قابل ارتقا است."
-                }}
-              >
-                <div className="plan-grid">
-                  {plans.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={`plan-tile ${selectedPlan === p.id ? "selected" : ""}`}
-                      onClick={() => setSelectedPlan(p.id)}
-                    >
-                      <strong>{p.label}</strong>
-                      <span className="hint">{p.price_label}</span>
-                      <ul>
-                        {(p.features && p.features.length > 0
-                          ? p.features
-                          : [
-                              `${p.max_seats} صندلی افزونه هم‌زمان`,
-                              "همه کانال‌ها (واتساپ، دیوار، …)",
-                              `AI auto-send: ${p.ai_auto_send ? "بله" : "خیر"}`
-                            ]
-                        ).map((f) => (
-                          <li key={f}>{f}</li>
-                        ))}
-                      </ul>
-                      {selectedPlan === p.id ? (
-                        <Badge tone="accent">انتخاب‌شده</Badge>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ marginTop: 16 }}>
-                  <Button className="wizard-btn" loading={busy} onClick={savePlan}>
-                    ادامه به پرداخت
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            {data.step === "payment" && (
-              <Card
-                title={
-                  payProvider === "zibal" && selectedMeta?.price_irr
-                    ? "۳. پرداخت با زیبال"
-                    : "۳. پرداخت"
-                }
-                help={{
-                  title: "پرداخت",
-                  body: "فعال‌سازی اشتراک انتخاب‌شده. بعد از موفقیت، صندلی افزونه ساخته می‌شود و مراحل AI شروع می‌شود."
-                }}
-              >
-                <p className="hint">
-                  بعد از پرداخت موفق، صندلی افزونه ساخته می‌شود و وارد تنظیمات AI می‌شوید.
-                  {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
-                    <>
-                      {" "}
-                      کارت تست: <code>4242</code> — شکست: <code>0000</code>
-                    </>
-                  ) : null}
-                  {payProvider === "zibal" && (selectedMeta?.price_irr || 0) > 0 ? (
-                    <> برای تست می‌توانید merchant <code>zibal</code> را در API تنظیم کنید.</>
-                  ) : null}
-                  {(selectedMeta?.price_irr || 0) <= 0 ? (
-                    <> این پلن رایگان است و نیاز به درگاه ندارد.</>
-                  ) : null}
-                </p>
-                <div className="form-grid">
-                  <label>
-                    پلن
-                    <select
-                      value={selectedPlan}
-                      onChange={(e) => setSelectedPlan(e.target.value)}
-                    >
-                      {plans.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label} — {p.price_label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
-                    <label>
-                      شماره کارت (mock)
-                      <input
-                        value={mockCard}
-                        onChange={(e) => setMockCard(e.target.value)}
-                        placeholder="4242"
-                      />
-                    </label>
-                  ) : null}
-                </div>
-                <div className="wizard-actions">
-                  <Button className="wizard-btn" loading={busy} onClick={pay}>
-                    {payProvider === "zibal" && (selectedMeta?.price_irr || 0) > 0
-                      ? "پرداخت با زیبال"
-                      : "پرداخت و ساخت صندلی"}
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            {data.step === "ai_settings" && (
-              <Card
-                title="۴. تنظیمات دستیار AI"
-                help={{
-                  title: "تنظیمات AI",
-                  body: "نقش دستیار مشخص می‌کند این کسب‌وکار چطور با مشتری صحبت کند. سیستم‌پرامپت کلی از سوپرادمین می‌آید؛ دانش اختصاصی را در مرحله بعد وارد می‌کنید.",
-                  tips: ["از نمونه‌های آماده استفاده کنید و بعد سفارشی کنید."]
-                }}
-              >
-                <div className="wizard-ai-intro">
-                  <p>
-                    <strong>نقش دستیار</strong> لحن و تخصص کسب‌وکار شماست (مثلاً مشاور فروش تور).
-                    دانش FAQ و قیمت‌ها را در مرحله بعد بارگذاری می‌کنید.
-                  </p>
-                </div>
-
-                <div className="form-grid">
-                  <label className="full">
-                    نقش دستیار
-                    <input
-                      value={agentRole}
-                      onChange={(e) => setAgentRole(e.target.value)}
-                      placeholder="مثلاً مشاور فروش تورهای گردشگری"
-                    />
-                  </label>
-                  <div className="full wizard-example-block">
-                    <div className="hint">نمونه‌های آماده — کلیک کنید تا پر شود:</div>
-                    <div className="wizard-example-chips">
-                      {AI_ROLE_EXAMPLES.map((ex) => (
-                        <button
-                          key={ex}
-                          type="button"
-                          className="wizard-example-chip"
-                          onClick={() => setAgentRole(ex)}
-                        >
-                          {ex}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Switch
-                    full
-                    label="فعال‌سازی پاسخ خودکار"
-                    hint="اگر روشن باشد، به پیام‌های جدید (مرحله «جدید») خودکار جواب می‌دهد."
-                    checked={autoSend}
-                    onChange={setAutoSend}
+        <div key={data.step} className="wizard-pane">
+          {data.step === "profile" && (
+            <Card
+              title="۱. تکمیل پروفایل"
+              help={{
+                title: "پروفایل",
+                body: "نام کسب‌وکار و مشخصات پایه — روی فاکتور، داشبورد و پیام‌های سیستم دیده می‌شود."
+              }}
+            >
+              <div className="form-grid">
+                <label className="full">
+                  نام کسب‌وکار
+                  <input
+                    value={orgName}
+                    onChange={(e) => setOrgName(e.target.value)}
+                    placeholder="مثلاً آژانس مسافرتی نمونه"
                   />
-                </div>
+                </label>
+                <label>
+                  نام شما
+                  <input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="اختیاری"
+                  />
+                </label>
+                <label>
+                  حوزه فعالیت
+                  <input
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    placeholder="مثلاً گردشگری"
+                  />
+                </label>
+                <label>
+                  شهر
+                  <input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="مثلاً تهران"
+                  />
+                </label>
+              </div>
+              <div className="wizard-actions">
+                <Button className="wizard-btn" loading={busy} onClick={saveProfile}>
+                  ذخیره و ادامه
+                </Button>
+              </div>
+            </Card>
+          )}
 
-                <div className="wizard-actions">
-                  <Button className="wizard-btn" loading={busy} onClick={saveAiSettings}>
-                    ذخیره و ادامه به دانش AI
-                  </Button>
-                </div>
-              </Card>
-            )}
+          {data.step === "plan" && (
+            <Card
+              title="۲. انتخاب پلن"
+              help={{
+                title: "انتخاب پلن",
+                body: "سقف اعضای تیم و امکانات اشتراک را مشخص می‌کند. بعداً از صفحه صورتحساب قابل ارتقا است."
+              }}
+            >
+              <div className="plan-grid">
+                {plans.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`plan-tile ${selectedPlan === p.id ? "selected" : ""}`}
+                    onClick={() => setSelectedPlan(p.id)}
+                  >
+                    <strong>{p.label}</strong>
+                    <span className="hint">{p.price_label}</span>
+                    <ul>
+                      {(p.features && p.features.length > 0
+                        ? p.features
+                        : [
+                            `${p.max_seats} اعضای تیم`,
+                            "همه کانال‌ها (واتساپ، دیوار، …)",
+                            `AI auto-send: ${p.ai_auto_send ? "بله" : "خیر"}`
+                          ]
+                      ).map((f) => (
+                        <li key={f}>{f}</li>
+                      ))}
+                    </ul>
+                    {selectedPlan === p.id ? (
+                      <Badge tone="accent">انتخاب‌شده</Badge>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <Button className="wizard-btn" loading={busy} onClick={savePlan}>
+                  ادامه به پرداخت
+                </Button>
+              </div>
+            </Card>
+          )}
 
-            {data.step === "knowledge" && (
-              <Card
-                title="۵. پایگاه دانش AI"
-                help={{
-                  title: "دانش AI",
-                  body: "FAQ و قیمت‌ها را بارگذاری کنید تا دستیار فقط بر اساس اطلاعات واقعی کسب‌وکار جواب بدهد."
-                }}
-              >
-                <div className="wizard-ai-intro">
-                  <p>
-                    دانش AI منبع حقیقت دستیار است: <strong>قیمت‌ها، FAQ، شرایط کنسلی</strong> و هر
-                    چیزی که باید دقیق بگوید. بدون دانش، پاسخ‌ها عمومی و کم‌دقت می‌شوند.
-                  </p>
-                  <ul className="wizard-ai-bullets">
-                    <li>هر سند به تکه‌های کوچک تبدیل و برای جستجو ایندکس می‌شود.</li>
-                    <li>می‌توانید بعداً از منوی «دانش AI» اسناد بیشتری اضافه کنید.</li>
-                    <li>حداقل یک سند در این مرحله لازم است.</li>
-                  </ul>
-                </div>
-
-                <div className="form-grid">
-                  <label className="full">
-                    عنوان سند
+          {data.step === "payment" && (
+            <Card
+              title={
+                payProvider === "zibal" && selectedMeta?.price_irr
+                  ? "۳. پرداخت با زیبال"
+                  : "۳. پرداخت"
+              }
+              help={{
+                title: "پرداخت",
+                body: "فعال‌سازی اشتراک انتخاب‌شده. بعد از موفقیت، مراحل تنظیمات AI شروع می‌شود."
+              }}
+            >
+              <p className="hint">
+                بعد از پرداخت موفق وارد تنظیمات AI می‌شوید.
+                {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
+                  <>
+                    {" "}
+                    کارت تست: <code>4242</code> — شکست: <code>0000</code>
+                  </>
+                ) : null}
+                {payProvider === "zibal" && (selectedMeta?.price_irr || 0) > 0 ? (
+                  <> برای تست می‌توانید merchant <code>zibal</code> را در API تنظیم کنید.</>
+                ) : null}
+                {(selectedMeta?.price_irr || 0) <= 0 ? (
+                  <> این پلن رایگان است و نیاز به درگاه ندارد.</>
+                ) : null}
+              </p>
+              <div className="form-grid">
+                <label>
+                  پلن
+                  <select
+                    value={selectedPlan}
+                    onChange={(e) => setSelectedPlan(e.target.value)}
+                  >
+                    {plans.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label} — {p.price_label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {payProvider === "mock" && (selectedMeta?.price_irr || 0) > 0 ? (
+                  <label>
+                    شماره کارت (mock)
                     <input
-                      value={kbTitle}
-                      onChange={(e) => setKbTitle(e.target.value)}
-                      placeholder={KB_TITLE_EXAMPLE}
+                      value={mockCard}
+                      onChange={(e) => setMockCard(e.target.value)}
+                      placeholder="4242"
                     />
                   </label>
-                  <label className="full">
-                    متن دانش (FAQ / قیمت / قوانین)
-                    <textarea
-                      rows={9}
-                      value={kbContent}
-                      onChange={(e) => setKbContent(e.target.value)}
-                      placeholder="سوال و جواب‌ها را اینجا بنویسید…"
-                    />
-                  </label>
-                  <div className="full wizard-example-block">
-                    <div className="wizard-example-head">
-                      <span className="hint">نمونه دانش آژانس مسافرتی</span>
+                ) : null}
+              </div>
+              <div className="wizard-actions">
+                <Button className="wizard-btn" loading={busy} onClick={pay}>
+                  {payProvider === "zibal" && (selectedMeta?.price_irr || 0) > 0
+                    ? "پرداخت با زیبال"
+                    : "پرداخت و ادامه"}
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {data.step === "ai_settings" && (
+            <Card
+              title="۴. تنظیمات دستیار AI"
+              help={{
+                title: "تنظیمات AI",
+                body: "نقش دستیار مشخص می‌کند این کسب‌وکار چطور با مشتری صحبت کند. سیستم‌پرامپت کلی از سوپرادمین می‌آید؛ دانش اختصاصی را در مرحله بعد وارد می‌کنید.",
+                tips: ["از نمونه‌های آماده استفاده کنید و بعد سفارشی کنید."]
+              }}
+            >
+              <div className="wizard-ai-intro">
+                <p>
+                  <strong>نقش دستیار</strong> لحن و تخصص کسب‌وکار شماست (مثلاً مشاور فروش تور).
+                  دانش FAQ و قیمت‌ها را در مرحله بعد بارگذاری می‌کنید.
+                </p>
+              </div>
+
+              <div className="form-grid">
+                <label className="full">
+                  نقش دستیار
+                  <input
+                    value={agentRole}
+                    onChange={(e) => setAgentRole(e.target.value)}
+                    placeholder="مثلاً مشاور فروش تورهای گردشگری"
+                  />
+                </label>
+                <div className="full wizard-example-block">
+                  <div className="hint">نمونه‌های آماده — کلیک کنید تا پر شود:</div>
+                  <div className="wizard-example-chips">
+                    {AI_ROLE_EXAMPLES.map((ex) => (
                       <button
+                        key={ex}
                         type="button"
-                        className="btn secondary"
-                        style={{ width: "auto", padding: "6px 12px" }}
-                        onClick={() => {
-                          setKbTitle(KB_TITLE_EXAMPLE);
-                          setKbContent(KB_CONTENT_EXAMPLE);
-                        }}
+                        className="wizard-example-chip"
+                        onClick={() => setAgentRole(ex)}
                       >
-                        اعمال نمونه
+                        {ex}
                       </button>
-                    </div>
-                    <pre className="wizard-example-pre">{KB_CONTENT_EXAMPLE}</pre>
+                    ))}
                   </div>
                 </div>
 
-                <div className="wizard-actions">
-                  <Button className="wizard-btn" loading={busy} onClick={saveKnowledge}>
-                    ذخیره دانش و ادامه
-                  </Button>
-                </div>
-              </Card>
-            )}
+                <Switch
+                  full
+                  label="فعال‌سازی پاسخ خودکار"
+                  hint="اگر روشن باشد، به پیام‌های جدید (مرحله «جدید») خودکار جواب می‌دهد."
+                  checked={autoSend}
+                  onChange={setAutoSend}
+                />
+              </div>
 
-            {data.step === "guides" && (
-              <Card
-                title="۶. راهنما و افزونه"
-                help={{
-                  title: "واتساپ و افزونه",
-                  body: "واتساپ را از داشبورد → کانال‌ها با QR سرور وصل کنید. افزونه فقط برای دیوار (و واتساپ قدیمی) لازم است."
-                }}
-              >
-                {receipt ? (
-                  <p className="hint">
-                    رسید: <strong>{receipt.ref}</strong> · {receipt.label}
-                  </p>
-                ) : null}
+              <div className="wizard-actions">
+                <Button className="wizard-btn" loading={busy} onClick={saveAiSettings}>
+                  ذخیره و ادامه به دانش AI
+                </Button>
+              </div>
+            </Card>
+          )}
 
-                {seatToken ? (
-                  <div className="wizard-token-box">
-                    <div className="hint">توکن صندلی شما (دیوار / افزونه):</div>
-                    <code>{seatToken}</code>
-                    <Button
-                      size="sm"
-                      className="wizard-btn"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(seatToken);
-                        toast.push("توکن کپی شد", "ok");
+          {data.step === "knowledge" && (
+            <Card
+              title="۵. پایگاه دانش AI"
+              help={{
+                title: "دانش AI",
+                body: "FAQ و قیمت‌ها را بارگذاری کنید تا دستیار فقط بر اساس اطلاعات واقعی کسب‌وکار جواب بدهد."
+              }}
+            >
+              <div className="wizard-ai-intro">
+                <p>
+                  دانش AI منبع حقیقت دستیار است: <strong>قیمت‌ها، FAQ، شرایط کنسلی</strong> و هر
+                  چیزی که باید دقیق بگوید. بدون دانش، پاسخ‌ها عمومی و کم‌دقت می‌شوند.
+                </p>
+                <ul className="wizard-ai-bullets">
+                  <li>هر سند به تکه‌های کوچک تبدیل و برای جستجو ایندکس می‌شود.</li>
+                  <li>می‌توانید بعداً از منوی «دانش AI» اسناد بیشتری اضافه کنید.</li>
+                  <li>حداقل یک سند در این مرحله لازم است.</li>
+                </ul>
+              </div>
+
+              <div className="form-grid">
+                <label className="full">
+                  عنوان سند
+                  <input
+                    value={kbTitle}
+                    onChange={(e) => setKbTitle(e.target.value)}
+                    placeholder={KB_TITLE_EXAMPLE}
+                  />
+                </label>
+                <label className="full">
+                  متن دانش (FAQ / قیمت / قوانین)
+                  <textarea
+                    rows={9}
+                    value={kbContent}
+                    onChange={(e) => setKbContent(e.target.value)}
+                    placeholder="سوال و جواب‌ها را اینجا بنویسید…"
+                  />
+                </label>
+                <div className="full wizard-example-block">
+                  <div className="wizard-example-head">
+                    <span className="hint">نمونه دانش آژانس مسافرتی</span>
+                    <button
+                      type="button"
+                      className="btn secondary"
+                      style={{ width: "auto", padding: "6px 12px" }}
+                      onClick={() => {
+                        setKbTitle(KB_TITLE_EXAMPLE);
+                        setKbContent(KB_CONTENT_EXAMPLE);
                       }}
                     >
-                      کپی توکن
-                    </Button>
+                      اعمال نمونه
+                    </button>
                   </div>
-                ) : (
-                  <p className="hint">
-                    توکن را از منوی «صندلی افزونه» ببینید یا یک صندلی جدید بسازید.
-                  </p>
-                )}
-
-                <ol className="guide-list">
-                  <li>
-                    برای واتساپ: بعد از ورود به داشبورد → <strong>کانال‌ها</strong> → اتصال QR
-                    (سرویس wa-connector باید روشن باشد).
-                  </li>
-                  <li>
-                    برای دیوار: افزونه را دانلود و در{" "}
-                    <code>chrome://extensions</code> با Load unpacked نصب کنید.
-                  </li>
-                  <li>توکن بالا را در پاپ‌آپ افزونه وارد کنید (روی این نصب قفل می‌شود).</li>
-                  <li>
-                    تب <strong>divar.ir/chat</strong> را باز بگذارید.
-                  </li>
-                  <li>
-                    برای دستگاه بعدی از داشبورد → صندلی افزونه توکن جدید بسازید. شماره پنل:{" "}
-                    <strong>{data.user.phone}</strong>
-                  </li>
-                </ol>
-                <div className="wizard-actions">
-                  <a
-                    className="btn wizard-btn"
-                    href={EXTENSION_DOWNLOAD_URL}
-                    download={EXTENSION_DOWNLOAD_NAME}
-                  >
-                    دانلود افزونه v{extVersion}
-                  </a>
-                  <Button className="wizard-btn" loading={busy} onClick={finish}>
-                    ورود به داشبورد
-                  </Button>
+                  <pre className="wizard-example-pre">{KB_CONTENT_EXAMPLE}</pre>
                 </div>
-              </Card>
-            )}
-          </div>
-        )}
+              </div>
+
+              <div className="wizard-actions">
+                <Button className="wizard-btn" loading={busy} onClick={saveKnowledge}>
+                  ذخیره دانش و ادامه
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {data.step === "guides" && (
+            <Card
+              title="۶. اتصال کانال‌ها"
+              help={{
+                title: "کانال‌های سرور",
+                body: "واتساپ را با QR و دیوار را با OTP از صفحه کانال‌ها به سرور وصل کنید."
+              }}
+            >
+              {receipt ? (
+                <p className="hint">
+                  رسید: <strong>{receipt.ref}</strong> · {receipt.label}
+                </p>
+              ) : null}
+
+              <ol className="guide-list">
+                <li>
+                  بعد از ورود به داشبورد به صفحه{" "}
+                  <Link href="/channels">
+                    <strong>کانال‌ها</strong>
+                  </Link>{" "}
+                  بروید.
+                </li>
+                <li>
+                  برای واتساپ: «اتصال واتساپ جدید (QR)» را بزنید و QR را با موبایل اسکن کنید
+                  (سرویس wa-connector باید روشن باشد).
+                </li>
+                <li>
+                  برای دیوار: «اتصال دیوار جدید (OTP)» را بزنید، شماره را وارد کنید و کد تأیید را
+                  ثبت کنید (سرویس divar-connector باید روشن باشد).
+                </li>
+                <li>
+                  شماره پنل شما: <strong>{data.user.phone}</strong>
+                </li>
+              </ol>
+              <div className="wizard-actions">
+                <Button className="wizard-btn" loading={busy} onClick={finish}>
+                  ورود به داشبورد
+                </Button>
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );

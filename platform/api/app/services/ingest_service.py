@@ -1,4 +1,4 @@
-"""Shared message ingest used by extension JWT route and server connectors."""
+"""Shared message ingest used by JWT panel routes and server connectors."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def process_message_ingest(
     """
     Persist inbound/outbound channel messages and run bot/AI post-handlers.
 
-    When allow_* flags are False (public /messages/ingest), server-owned
-    accounts reject extension ingest so only the matching sidecar feeds them.
+    Public JWT ingest must not feed baileys/divar_api accounts unless the
+    matching server connector sets allow_* flags.
     """
     from app.routers import messages as messages_router
 
@@ -34,7 +34,7 @@ def process_message_ingest(
     if not acc:
         raise HTTPException(status_code=404, detail="اکانت کانال یافت نشد")
 
-    connector = (getattr(acc, "connector_type", None) or "extension").strip().lower()
+    connector = (getattr(acc, "connector_type", None) or "baileys").strip().lower()
     channel = str(getattr(acc.channel, "value", acc.channel) or "")
 
     if (

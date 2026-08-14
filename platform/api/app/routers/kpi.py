@@ -97,7 +97,6 @@ def rollup(auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRol
 def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
     from app.models import (
         ChannelAccount,
-        ExtensionSeat,
         KnowledgeDoc,
         Membership,
         User,
@@ -138,13 +137,10 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
         .scalar()
         or 0
     )
-    seats_used = (
-        db.query(func.count(ExtensionSeat.id))
-        .filter(ExtensionSeat.org_id == org_id, ExtensionSeat.status != "revoked")
-        .scalar()
-        or 0
+    team_used = (
+        db.query(func.count(Membership.id)).filter(Membership.org_id == org_id).scalar() or 0
     )
-    metrics["seats_used"] = float(seats_used)
+    metrics["seats_used"] = float(team_used)
     from app.plans import plan_limits
 
     metrics["seats_max"] = float(int(plan_limits(auth.org.plan).get("max_seats") or 0))

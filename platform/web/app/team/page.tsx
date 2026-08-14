@@ -65,11 +65,11 @@ export default function TeamPage() {
               title={org.name}
               help={{
                 title: "سازمان",
-                body: "نام کسب‌وکار و پلن فعلی. سقف صندلی افزونه از پلن می‌آید."
+                body: "نام کسب‌وکار و پلن فعلی. سقف اعضای تیم از پلن می‌آید."
               }}
             >
               <div className="hint">
-                پلن {org.plan} — حداکثر {String(org.limits.max_seats)} صندلی افزونه هم‌زمان
+                پلن {org.plan} — حداکثر {String(org.limits.max_seats)} اعضای تیم
                 (کانال‌ها نامحدود)
               </div>
               <div className="row-actions" style={{ marginTop: 12 }}>

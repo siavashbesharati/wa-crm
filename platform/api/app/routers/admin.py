@@ -335,7 +335,7 @@ def create_business(
             min_confidence=float(defaults.get("default_min_confidence") or 0.55),
         )
     )
-    # Channels are created by the extension via seat token, not pre-seeded.
+    # Channel accounts are created from the panel (Baileys QR / Divar OTP).
     db.commit()
     db.refresh(org)
     return _business_out(db, org)

@@ -181,7 +181,7 @@ export default function SuperPlansPage() {
             title={editingId ? `ویرایش: ${editingId}` : "پلن جدید"}
             help={{
               title: "تعریف پلن",
-              body: "قیمت، سقف صندلی، امکانات و برچسب نمایشی پلن‌هایی که کسب‌وکارها در آنبوردینگ/صورتحساب می‌بینند."
+              body: "قیمت، سقف اعضای تیم، امکانات و برچسب نمایشی پلن‌هایی که کسب‌وکارها در آنبوردینگ/صورتحساب می‌بینند."
             }}
           >
             <div className="form-grid">
@@ -222,7 +222,7 @@ export default function SuperPlansPage() {
                 />
               </label>
               <label>
-                سقف صندلی افزونه
+                سقف اعضای تیم
                 <input
                   type="number"
                   value={form.max_seats}
@@ -278,7 +278,7 @@ export default function SuperPlansPage() {
                   rows={5}
                   value={featuresText}
                   onChange={(e) => setFeaturesText(e.target.value)}
-                  placeholder={"۵ صندلی افزونه\nAI auto-send\nپشتیبانی اولویت‌دار"}
+                  placeholder={"۵ اعضای تیم\nAI auto-send\nپشتیبانی اولویت‌دار"}
                 />
               </label>
             </div>
@@ -328,7 +328,7 @@ export default function SuperPlansPage() {
                       <code>{p.id}</code> · {p.price_label || `${p.price_irr} ریال`}
                     </span>
                     <ul>
-                      <li>{p.max_seats} صندلی</li>
+                      <li>{p.max_seats} اعضای تیم</li>
                       <li>AI suggest: {p.ai_suggest ? "بله" : "خیر"}</li>
                       <li>AI auto-send: {p.ai_auto_send ? "بله" : "خیر"}</li>
                       <li>نگهداری: {p.message_retention_days} روز</li>

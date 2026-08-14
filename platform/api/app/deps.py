@@ -6,7 +6,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ExtensionSeat, MemberRole, Membership, Organization, User
+from app.models import MemberRole, Membership, Organization, User
 from app.plans import plan_limits
 from app.services.security import decode_access_token, get_membership, get_user
 
@@ -16,7 +16,6 @@ class AuthContext:
     user: User
     org: Organization
     membership: Membership
-    seat: ExtensionSeat | None = None
 
     @property
     def role(self) -> MemberRole:
@@ -69,23 +68,7 @@ def get_auth(
     if getattr(org, "status", "active") == "suspended":
         raise HTTPException(status_code=403, detail="این کسب‌وکار موقتاً غیرفعال است")
 
-    seat = None
-    seat_id = payload.get("seat_id") or ""
-    if seat_id:
-        seat = db.get(ExtensionSeat, seat_id)
-        if not seat or seat.org_id != org.id:
-            raise HTTPException(status_code=403, detail="توکن افزونه نامعتبر است")
-        if seat.status == "revoked":
-            raise HTTPException(status_code=403, detail="این توکن توسط مدیر لغو شده است")
-        install_id = str(payload.get("install_id") or "")
-        if seat.status == "locked" and seat.bound_install_id and install_id:
-            if seat.bound_install_id != install_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="این توکن روی نصب دیگری قفل شده است",
-                )
-
-    return AuthContext(user=user, org=org, membership=membership, seat=seat)
+    return AuthContext(user=user, org=org, membership=membership)
 
 
 def get_super_auth(

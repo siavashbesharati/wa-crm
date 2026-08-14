@@ -416,7 +416,7 @@ export default function HomePage() {
               <em>دانش AI: {fmt(Number(m.knowledge_docs || 0))} سند</em>
             </div>
             <div className="dash-kpi">
-              <small>صندلی افزونه</small>
+              <small>اعضای تیم</small>
               <strong>
                 {fmt(seatsUsed)}/{fmt(seatsMax)}
               </strong>
@@ -449,7 +449,7 @@ export default function HomePage() {
               }}
             >
               {channels.length === 0 ? (
-                <EmptyState title="کانالی ثبت نشده" text="از منوی کانال‌ها یا افزونه شروع کنید." />
+                <EmptyState title="کانالی ثبت نشده" text="از منوی کانال‌ها شروع کنید." />
               ) : (
                 <Donut
                   segments={channels.map((c, i) => ({

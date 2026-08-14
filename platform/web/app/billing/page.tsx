@@ -191,7 +191,7 @@ function BillingPageInner() {
               <Badge tone="accent">{current?.label || org.plan}</Badge>
               {" · "}
               {current?.price_label || "—"} · سقف{" "}
-              {String(org.limits.max_seats)} صندلی افزونه
+              {String(org.limits.max_seats)} اعضای تیم
             </div>
             <p className="hint" style={{ marginTop: 8 }}>
               {typeof org.days_remaining === "number"
@@ -219,7 +219,7 @@ function BillingPageInner() {
             title="انتخاب پلن"
             help={{
               title: "انتخاب پلن",
-              body: "پلن را عوض کنید یا تمدید کنید. پرداخت از طریق درگاه انجام می‌شود و سقف صندلی/امکانات به‌روز می‌گردد."
+              body: "پلن را عوض کنید یا تمدید کنید. پرداخت از طریق درگاه انجام می‌شود و سقف اعضا/امکانات به‌روز می‌گردد."
             }}
           >
             <div className="plan-grid">
@@ -237,7 +237,7 @@ function BillingPageInner() {
                     {(p.features && p.features.length > 0
                       ? p.features
                       : [
-                          `${p.max_seats} صندلی افزونه هم‌زمان`,
+                          `${p.max_seats} اعضای تیم`,
                           "همه کانال‌ها (واتساپ، دیوار، …)",
                           `AI auto-send: ${p.ai_auto_send ? "بله" : "خیر"}`
                         ]
@@ -329,9 +329,6 @@ function BillingPageInner() {
           ) : null}
 
           <div className="row-actions">
-            <Link className="btn secondary" href="/seats">
-              صندلی افزونه
-            </Link>
             <Link className="btn secondary" href="/support">
               پشتیبانی
             </Link>

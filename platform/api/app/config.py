@@ -77,7 +77,6 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = _load_or_create_jwt_secret()
     jwt_access_minutes: int = 60 * 24 * 7  # web CRM — 7 days
-    jwt_access_minutes_seat: int = 60 * 24 * 7  # extension seat JWT — 7 days
     jwt_refresh_days: int = 90
     # Shared secret for platform/wa-connector → /internal/wa/*
     wa_connector_key: str = _load_or_create_wa_connector_key()

@@ -18,13 +18,11 @@ from app.routers import (
     channels,
     divar_connector,
     divar_pair,
-    extension,
     kpi,
     leads,
     messages,
     orgs,
     payments,
-    seats,
     support,
     tasks,
     wa_connector,
@@ -56,7 +54,6 @@ app.add_middleware(
     allow_origin_regex=(
         r"https://web\.whatsapp\.com|"
         r"https://([a-z0-9-]+\.)?divar\.ir|"
-        r"chrome-extension://.*|"
         r"http://(localhost|127\.0\.0\.1)(:\d+)?"
     ),
     allow_credentials=True,
@@ -68,7 +65,6 @@ ROUTERS = [
     admin.router,
     auth.router,
     orgs.router,
-    seats.router,
     leads.router,
     tasks.router,
     channels.router,
@@ -78,7 +74,6 @@ ROUTERS = [
     messages.router,
     ai.router,
     kpi.router,
-    extension.router,
     payments.router,
     support.router,
     wa_connector.router,

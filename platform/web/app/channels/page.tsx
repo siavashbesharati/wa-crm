@@ -329,7 +329,7 @@ export default function ChannelsPage() {
   return (
     <Shell
       title="کانال‌ها"
-      sub="واتساپ (Baileys / QR) و دیوار (OTP سرور) — بدون وابستگی اجباری به افزونه"
+      sub="واتساپ (Baileys / QR) و دیوار (OTP سرور)"
     >
       {loading ? (
         <PageLoading />
@@ -339,10 +339,9 @@ export default function ChannelsPage() {
             title="اتصال واتساپ سرور"
             help={{
               title: "Baileys",
-              body: "شماره واتساپ کسب‌وکار را با اسکن QR به سرور وصل کنید. افزونه Chrome برای واتساپ لازم نیست.",
+              body: "شماره واتساپ کسب‌وکار را با اسکن QR به سرور وصل کنید.",
               tips: [
-                "سرویس platform/wa-connector باید در حال اجرا باشد.",
-                "همان شماره را هم‌زمان روی افزونه و Baileys وصل نکنید."
+                "سرویس platform/wa-connector باید در حال اجرا باشد."
               ]
             }}
           >
@@ -377,8 +376,7 @@ export default function ChannelsPage() {
               title: "Divar API",
               body: "با OTP شماره دیوار را به سرور وصل کنید. پیام‌ها از API رسمی چت همگام می‌شوند.",
               tips: [
-                "سرویس platform/divar-connector باید اجرا باشد.",
-                "همان حساب را هم‌زمان روی افزونه و کانکتور سرور وصل نکنید."
+                "سرویس platform/divar-connector باید اجرا باشد."
               ]
             }}
           >
@@ -449,10 +447,9 @@ export default function ChannelsPage() {
             title="اکانت‌های من"
             help={{
               title: "کانال‌ها",
-              body: "اکانت‌های واتساپ و دیوار (سرور یا افزونه).",
+              body: "اکانت‌های واتساپ و دیوار متصل به سرور.",
               tips: [
-                "واتساپ Baileys / دیوار divar_api: وضعیت از سرور.",
-                "افزونه فقط اگر هنوز اکانت extension دارید لازم است."
+                "واتساپ Baileys / دیوار divar_api: وضعیت از سرور."
               ]
             }}
           >
@@ -476,10 +473,10 @@ export default function ChannelsPage() {
                 <tbody>
                   {accounts.map((a) => {
                     const on = isOn(a.status, a.pairing_state);
-                    const ctype = a.connector_type || "extension";
+                    const ctype = a.connector_type || "baileys";
                     const isBaileys = ctype === "baileys";
                     const isDivarApi = ctype === "divar_api";
-                    const typeLabel = isBaileys || isDivarApi ? "سرور" : "افزونه";
+                    const typeLabel = isBaileys || isDivarApi ? "سرور" : "دیگر";
                     return (
                       <tr key={a.id}>
                         <td>

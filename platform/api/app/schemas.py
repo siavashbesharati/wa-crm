@@ -31,7 +31,6 @@ class TokenOut(BaseModel):
 class TokenRefreshIn(BaseModel):
     refresh_token: str = Field(min_length=16)
     org_id: str = ""
-    install_id: str = ""
 
 
 class LogoutIn(BaseModel):
@@ -100,7 +99,7 @@ class ChannelAccountIn(BaseModel):
     label: str = ""
     external_id: str = ""
     phone: str = ""  # WA alias for external_id
-    connector_type: str = "extension"  # extension | baileys | divar_api
+    connector_type: str = "baileys"  # baileys | divar_api
 
 
 class ChannelAccountOut(BaseModel):
@@ -110,7 +109,7 @@ class ChannelAccountOut(BaseModel):
     external_id: str
     phone: str  # WA alias
     status: str
-    connector_type: str = "extension"
+    connector_type: str = "baileys"
     pairing_state: str = "disconnected"
     wa_jid: str = ""
 

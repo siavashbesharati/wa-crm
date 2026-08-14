@@ -61,22 +61,8 @@ def get_onboarding(
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
-    from app.models import ExtensionSeat
-
+    _ = db
     step = _step(auth.org)
-    bootstrap_seat_token = None
-    if step in ("guides", "ai_settings", "knowledge"):
-        seat = (
-            db.query(ExtensionSeat)
-            .filter(
-                ExtensionSeat.org_id == auth.org.id,
-                ExtensionSeat.status != "revoked",
-            )
-            .order_by(ExtensionSeat.created_at.asc())
-            .first()
-        )
-        if seat:
-            bootstrap_seat_token = getattr(seat, "token_plain", None) or None
     return {
         "step": step,
         "needs_onboarding": step != "done",
@@ -88,7 +74,6 @@ def get_onboarding(
         },
         "role": auth.role.value,
         "plans": list_plans_public(),
-        "bootstrap_seat_token": bootstrap_seat_token,
     }
 
 
@@ -188,13 +173,12 @@ def onboarding_pay(
             db.commit()
             raise HTTPException(status_code=402, detail="پرداخت ناموفق (mock)")
 
-        token = apply_paid_plan(
+        apply_paid_plan(
             db,
             auth.org,
             plan=plan,
             purpose="onboarding",
             user=auth.user,
-            create_seat=True,
         )
         ref = "MOCK-" + auth.org.id[:8].upper()
         if amount > 0:
@@ -224,7 +208,6 @@ def onboarding_pay(
             "mock": True,
             "step": "ai_settings",
             "org": _org_out(auth.org),
-            "bootstrap_seat_token": token,
             "receipt": receipt_for(plan, ref=ref, amount_irr=amount),
         }
 
