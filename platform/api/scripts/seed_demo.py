@@ -123,6 +123,14 @@ def main() -> None:
                     embedding=embed_text(part),
                 )
             )
+        db.flush()
+        try:
+            from app.services import pinecone_kb
+
+            if pinecone_kb.is_configured(db):
+                pinecone_kb.upsert_doc_from_db(db, org_id=org.id, doc_id=doc.id)
+        except Exception:  # noqa: BLE001
+            pass
 
     if not db.query(OkrObjective).filter(OkrObjective.org_id == org.id).first():
         db.add(

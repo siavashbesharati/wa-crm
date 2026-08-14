@@ -297,10 +297,24 @@ def onboarding_knowledge(
 
     if _step(auth.org) in ("knowledge", "ai_settings"):
         auth.org.onboarding_step = "guides"
-    db.add(auth.org)
+        db.add(auth.org)
     db.commit()
-    enqueue("embed", {"doc_id": doc.id, "org_id": auth.org.id})
-    return {"ok": True, "step": _step(auth.org), "doc_id": doc.id}
+
+    pinecone_ok = False
+    try:
+        from app.services import pinecone_kb
+
+        if pinecone_kb.is_configured(db):
+            pinecone_kb.upsert_doc_from_db(db, org_id=auth.org.id, doc_id=doc.id)
+            pinecone_ok = True
+    except Exception:  # noqa: BLE001
+        pinecone_ok = False
+
+    enqueue(
+        "embed",
+        {"doc_id": doc.id, "org_id": auth.org.id, "pinecone_ok": pinecone_ok},
+    )
+    return {"ok": True, "step": _step(auth.org), "doc_id": doc.id, "pinecone": pinecone_ok}
 
 
 @router.post("/onboarding/complete")

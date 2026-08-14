@@ -309,10 +309,31 @@ def main() -> None:
         if kpi_job:
             handle_kpi(kpi_job)
             continue
-        # drain embed (no-op — embeddings computed at upload)
+        # drain embed — retry Pinecone upsert when upload-time push failed
         embed_job = dequeue("embed")
         if embed_job:
-            safe_print(f"[worker] embed ack doc={embed_job.get('doc_id')}")
+            doc_id = str(embed_job.get("doc_id") or "")
+            org_id = str(embed_job.get("org_id") or "")
+            already_ok = bool(embed_job.get("pinecone_ok"))
+            if already_ok:
+                safe_print(f"[worker] embed ack (pinecone ok) doc={doc_id}")
+                continue
+            if not doc_id or not org_id:
+                safe_print(f"[worker] embed skip incomplete job={embed_job}")
+                continue
+            db = SessionLocal()
+            try:
+                from app.services import pinecone_kb
+
+                if not pinecone_kb.is_configured(db):
+                    safe_print(f"[worker] embed skip (no pinecone key) doc={doc_id}")
+                else:
+                    n = pinecone_kb.upsert_doc_from_db(db, org_id=org_id, doc_id=doc_id)
+                    safe_print(f"[worker] pinecone upsert doc={doc_id} chunks={n}")
+            except Exception as exc:  # noqa: BLE001
+                safe_print(f"[worker] pinecone upsert failed doc={doc_id}: {exc}")
+            finally:
+                db.close()
             continue
         time.sleep(1)
 

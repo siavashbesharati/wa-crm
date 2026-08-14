@@ -90,16 +90,98 @@ def put_policy(
 
 @router.get("/knowledge")
 def list_docs(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    from app.models import KnowledgeChunk
+    from sqlalchemy import func
+
     docs = (
         db.query(KnowledgeDoc)
         .filter(KnowledgeDoc.org_id == auth.org.id)
         .order_by(KnowledgeDoc.created_at.desc())
         .all()
     )
+    counts = dict(
+        db.query(KnowledgeChunk.doc_id, func.count(KnowledgeChunk.id))
+        .filter(KnowledgeChunk.org_id == auth.org.id)
+        .group_by(KnowledgeChunk.doc_id)
+        .all()
+    )
     return [
-        {"id": d.id, "title": d.title, "source": d.source, "created_at": d.created_at.isoformat()}
+        {
+            "id": d.id,
+            "title": d.title,
+            "source": d.source,
+            "created_at": d.created_at.isoformat(),
+            "chunk_count": int(counts.get(d.id) or 0),
+        }
         for d in docs
     ]
+
+
+def _knowledge_detail(db: Session, *, org_id: str, doc: KnowledgeDoc) -> dict:
+    from app.models import KnowledgeChunk
+    from app.services import pinecone_kb
+
+    chunks = (
+        db.query(KnowledgeChunk)
+        .filter(KnowledgeChunk.org_id == org_id, KnowledgeChunk.doc_id == doc.id)
+        .order_by(KnowledgeChunk.created_at.asc())
+        .all()
+    )
+    content = "\n\n".join((c.content or "").strip() for c in chunks if (c.content or "").strip())
+    pinecone_on = pinecone_kb.is_configured(db)
+    pinecone_map: dict = {}
+    if pinecone_on and chunks:
+        pinecone_map = pinecone_kb.fetch_chunk_status(
+            org_id=org_id,
+            chunk_ids=[c.id for c in chunks],
+            db=db,
+        )
+
+    chunk_out = []
+    for c in chunks:
+        emb = c.embedding if isinstance(c.embedding, list) else []
+        pc = pinecone_map.get(c.id) or {}
+        chunk_out.append(
+            {
+                "id": c.id,
+                "content": c.content or "",
+                "char_count": len(c.content or ""),
+                "local_embedding_dim": len(emb),
+                "local_embedding_preview": [round(float(x), 4) for x in emb[:8]],
+                "in_pinecone": bool(pc.get("in_pinecone")),
+                "pinecone_vector_dim": pc.get("vector_dim"),
+                "pinecone_vector_preview": pc.get("vector_preview") or [],
+                "pinecone_text_preview": (pc.get("chunk_text") or "")[:200],
+            }
+        )
+
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "source": doc.source,
+        "created_at": doc.created_at.isoformat() if doc.created_at else "",
+        "content": content,
+        "chunk_count": len(chunk_out),
+        "pinecone_configured": pinecone_on,
+        "pinecone_indexed_count": sum(1 for c in chunk_out if c["in_pinecone"]),
+        "chunks": chunk_out,
+    }
+
+
+@router.get("/knowledge/{doc_id}")
+def get_knowledge(
+    doc_id: str,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    doc = (
+        db.query(KnowledgeDoc)
+        .filter(KnowledgeDoc.id == doc_id, KnowledgeDoc.org_id == auth.org.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="سند یافت نشد")
+    return _knowledge_detail(db, org_id=auth.org.id, doc=doc)
 
 
 @router.post("/knowledge")
@@ -109,6 +191,7 @@ def upload_knowledge(
     db: Session = Depends(get_db),
 ):
     from app.models import KnowledgeChunk
+    from app.services import pinecone_kb
 
     doc = KnowledgeDoc(org_id=auth.org.id, title=body.title, source="upload")
     db.add(doc)
@@ -123,8 +206,117 @@ def upload_knowledge(
             )
         )
     db.commit()
-    enqueue("embed", {"doc_id": doc.id, "org_id": auth.org.id})
-    return {"ok": True, "doc_id": doc.id}
+
+    pinecone_ok = False
+    if pinecone_kb.is_configured(db):
+        try:
+            pinecone_kb.upsert_doc_from_db(db, org_id=auth.org.id, doc_id=doc.id)
+            pinecone_ok = True
+        except Exception:  # noqa: BLE001
+            pinecone_ok = False
+
+    # Worker retries Pinecone upsert when immediate push failed (or key was missing)
+    enqueue(
+        "embed",
+        {"doc_id": doc.id, "org_id": auth.org.id, "pinecone_ok": pinecone_ok},
+    )
+    return {"ok": True, "doc_id": doc.id, "pinecone": pinecone_ok}
+
+
+@router.put("/knowledge/{doc_id}")
+def update_knowledge(
+    doc_id: str,
+    body: KnowledgeIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    """Replace document text, rebuild chunks, and reindex Pinecone."""
+    from app.models import KnowledgeChunk
+    from app.services import pinecone_kb
+
+    title = (body.title or "").strip()
+    content = (body.content or "").strip()
+    if len(title) < 2:
+        raise HTTPException(status_code=400, detail="عنوان لازم است")
+    if len(content) < 10:
+        raise HTTPException(status_code=400, detail="متن دانش خیلی کوتاه است")
+
+    doc = (
+        db.query(KnowledgeDoc)
+        .filter(KnowledgeDoc.id == doc_id, KnowledgeDoc.org_id == auth.org.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="سند یافت نشد")
+
+    # Remove old vectors before chunk ids change
+    try:
+        pinecone_kb.delete_doc(org_id=auth.org.id, doc_id=doc.id, db=db)
+    except Exception:  # noqa: BLE001
+        pass
+
+    db.query(KnowledgeChunk).filter(
+        KnowledgeChunk.org_id == auth.org.id, KnowledgeChunk.doc_id == doc.id
+    ).delete(synchronize_session=False)
+
+    doc.title = title
+    db.add(doc)
+    for part in chunk_text(content):
+        db.add(
+            KnowledgeChunk(
+                org_id=auth.org.id,
+                doc_id=doc.id,
+                content=part,
+                embedding=embed_text(part),
+            )
+        )
+    db.commit()
+    db.refresh(doc)
+
+    pinecone_ok = False
+    if pinecone_kb.is_configured(db):
+        try:
+            pinecone_kb.upsert_doc_from_db(db, org_id=auth.org.id, doc_id=doc.id)
+            pinecone_ok = True
+        except Exception:  # noqa: BLE001
+            pinecone_ok = False
+
+    enqueue(
+        "embed",
+        {"doc_id": doc.id, "org_id": auth.org.id, "pinecone_ok": pinecone_ok},
+    )
+    detail = _knowledge_detail(db, org_id=auth.org.id, doc=doc)
+    return {"ok": True, "pinecone": pinecone_ok, "doc": detail}
+
+
+@router.delete("/knowledge/{doc_id}")
+def delete_knowledge(
+    doc_id: str,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin)),
+    db: Session = Depends(get_db),
+):
+    from app.models import KnowledgeChunk
+    from app.services import pinecone_kb
+
+    doc = (
+        db.query(KnowledgeDoc)
+        .filter(KnowledgeDoc.id == doc_id, KnowledgeDoc.org_id == auth.org.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="سند یافت نشد")
+
+    try:
+        pinecone_kb.delete_doc(org_id=auth.org.id, doc_id=doc.id, db=db)
+    except Exception:  # noqa: BLE001
+        pass
+
+    db.query(KnowledgeChunk).filter(
+        KnowledgeChunk.org_id == auth.org.id, KnowledgeChunk.doc_id == doc.id
+    ).delete(synchronize_session=False)
+    db.delete(doc)
+    db.commit()
+    return {"ok": True, "deleted": True}
 
 
 # Back-compat export for workers that imported retrieve from here

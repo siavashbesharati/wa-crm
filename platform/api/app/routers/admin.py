@@ -180,6 +180,8 @@ class AiDefaultsIn(BaseModel):
     # legacy aliases
     openai_model: str = ""
     openai_base_url: str = ""
+    # Pinecone RAG
+    pinecone_api_key: str = ""
 
 
 def _mask_key(key: str) -> str:
@@ -196,16 +198,20 @@ def _ai_defaults_public(data: dict) -> dict:
     provider = (data.get("provider") or "openai_compatible").strip().lower()
     api_key = (data.get("api_key") or "").strip()
     gemini_key = (data.get("gemini_api_key") or "").strip()
+    pinecone_key = (data.get("pinecone_api_key") or "").strip()
     configured = llm_is_configured(data)
     active_key = gemini_key if provider == "gemini" else api_key
     return {
         **data,
         "api_key": "",
         "gemini_api_key": "",
+        "pinecone_api_key": "",
         "api_key_masked": _mask_key(api_key),
         "api_key_configured": bool(api_key),
         "gemini_api_key_masked": _mask_key(gemini_key),
         "gemini_api_key_configured": bool(gemini_key),
+        "pinecone_api_key_masked": _mask_key(pinecone_key),
+        "pinecone_api_key_configured": bool(pinecone_key),
         "llm_configured": configured,
         "active_key_masked": _mask_key(active_key),
         "presets": openai_compat.PROVIDER_PRESETS,
@@ -464,6 +470,11 @@ def put_ai_defaults(
     new_gemini_key = (body.gemini_api_key or "").strip()
     gemini_key = new_gemini_key if new_gemini_key else (current.get("gemini_api_key") or "")
 
+    new_pinecone_key = (body.pinecone_api_key or "").strip()
+    pinecone_key = (
+        new_pinecone_key if new_pinecone_key else (current.get("pinecone_api_key") or "")
+    )
+
     base_url = (body.base_url or body.openai_base_url or "").strip() or (
         current.get("base_url") or openai_compat.DEFAULT_BASE_URL
     )
@@ -492,6 +503,7 @@ def put_ai_defaults(
         "notes": (body.notes or "").strip(),
         "gemini_api_key": gemini_key,
         "gemini_model": gemini_model,
+        "pinecone_api_key": pinecone_key,
         # keep legacy mirrors in sync
         "openai_model": model,
         "openai_base_url": base_url.rstrip("/"),
@@ -507,6 +519,25 @@ def put_ai_defaults(
     db.commit()
     out = _get_ai_defaults(db)
     return {**_ai_defaults_public(out), "saved": True}
+
+
+@router.post("/ai/reindex-knowledge")
+def reindex_knowledge(
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    """Upsert all SQLite knowledge chunks into Pinecone (one-shot backfill)."""
+    from app.services import pinecone_kb
+
+    if not pinecone_kb.is_configured(db):
+        raise HTTPException(status_code=400, detail="کلید Pinecone تنظیم نشده است")
+    try:
+        result = pinecone_kb.reindex_all(db)
+    except pinecone_kb.PineconeNotConfigured as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"خطای Pinecone: {exc}") from exc
+    return {"ok": True, **result}
 
 
 class AiPlaygroundIn(BaseModel):

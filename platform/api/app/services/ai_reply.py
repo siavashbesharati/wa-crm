@@ -59,6 +59,7 @@ def get_platform_ai_settings(db: Session) -> dict:
         "gemini_model": getattr(settings, "gemini_model", "") or gemini.DEFAULT_MODEL,
         "openai_model": getattr(settings, "openai_model", "") or "",
         "openai_base_url": getattr(settings, "openai_base_url", "") or "",
+        "pinecone_api_key": getattr(settings, "pinecone_api_key", "") or "",
     }
     row = db.get(PlatformSetting, AI_DEFAULTS_KEY)
     if row and isinstance(row.value, dict):
@@ -66,7 +67,7 @@ def get_platform_ai_settings(db: Session) -> dict:
             if v is None:
                 continue
             # Never wipe stored secrets with empty strings from partial merges
-            if k in ("api_key", "gemini_api_key", "openai_api_key") and not str(v).strip():
+            if k in ("api_key", "gemini_api_key", "openai_api_key", "pinecone_api_key") and not str(v).strip():
                 continue
             base[k] = v
 
@@ -199,6 +200,32 @@ def generate_llm_text(
 def retrieve_knowledge(
     db: Session, org_id: str, query: str, k: int = 4
 ) -> list[tuple[KnowledgeChunk, float]]:
+    """Top-k knowledge chunks for RAG. Prefer Pinecone when configured."""
+    from types import SimpleNamespace
+
+    from app.services import pinecone_kb
+
+    if pinecone_kb.is_configured(db):
+        try:
+            hits = pinecone_kb.search(org_id=org_id, query=query, k=k, db=db)
+            out: list[tuple[KnowledgeChunk, float]] = []
+            for h in hits:
+                # Ephemeral stand-in with .content for prompt formatters
+                chunk = SimpleNamespace(
+                    id=h.id,
+                    content=h.content,
+                    doc_id=h.doc_id,
+                    org_id=org_id,
+                    embedding=[],
+                )
+                out.append((chunk, float(h.score)))  # type: ignore[arg-type]
+            if out:
+                return out
+        except Exception as exc:  # noqa: BLE001
+            from app.services.stdio_utf8 import safe_print
+
+            safe_print(f"[ai_reply] Pinecone search failed, SQLite fallback: {exc}")
+
     qv = embed_text(query)
     chunks = db.query(KnowledgeChunk).filter(KnowledgeChunk.org_id == org_id).all()
     scored = [(c, cosine(qv, c.embedding or [])) for c in chunks]

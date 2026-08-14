@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     # Platform owner phone (must match OTP login for /super)
     super_admin_phone: str = "09120674032"
     embedding_dim: int = 384
+    # Pinecone serverless + hosted multilingual-e5 (RAG knowledge base)
+    pinecone_api_key: str = ""
+    pinecone_index: str = "iranexpedia-kb"
+    pinecone_cloud: str = "aws"
+    pinecone_region: str = "us-east-1"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"

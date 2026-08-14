@@ -30,6 +30,8 @@ type AiDefaults = {
   gemini_api_key_masked?: string;
   gemini_api_key_configured?: boolean;
   gemini_model: string;
+  pinecone_api_key_masked?: string;
+  pinecone_api_key_configured?: boolean;
   llm_configured?: boolean;
   active_key_masked?: string;
   presets?: Record<string, Preset>;
@@ -42,6 +44,8 @@ export default function SuperAiPage() {
   const [form, setForm] = useState<AiDefaults | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [pineconeKeyInput, setPineconeKeyInput] = useState("");
+  const [reindexBusy, setReindexBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -58,6 +62,7 @@ export default function SuperAiPage() {
         });
         setApiKeyInput("");
         setGeminiKeyInput("");
+        setPineconeKeyInput("");
       } catch (e) {
         toast.push(e instanceof Error ? e.message : "خطا", "err");
       } finally {
@@ -99,7 +104,8 @@ export default function SuperAiPage() {
           auto_send_default: form.auto_send_default,
           notes: form.notes,
           gemini_api_key: geminiKeyInput.trim(),
-          gemini_model: form.gemini_model
+          gemini_model: form.gemini_model,
+          pinecone_api_key: pineconeKeyInput.trim()
         })
       });
       setForm({
@@ -108,11 +114,33 @@ export default function SuperAiPage() {
       });
       setApiKeyInput("");
       setGeminiKeyInput("");
+      setPineconeKeyInput("");
       toast.push("تنظیمات AI ذخیره شد", "ok");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function reindexKnowledge() {
+    setReindexBusy(true);
+    try {
+      const res = await api<{
+        ok: boolean;
+        docs?: number;
+        chunks_upserted?: number;
+        failed_docs?: number;
+      }>("/admin/ai/reindex-knowledge", { method: "POST", platform: true });
+      toast.push(
+        `ایندکس شد: ${res.chunks_upserted ?? 0} تکه از ${res.docs ?? 0} سند` +
+          (res.failed_docs ? ` (${res.failed_docs} خطا)` : ""),
+        "ok"
+      );
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در ایندکس Pinecone", "err");
+    } finally {
+      setReindexBusy(false);
     }
   }
 
@@ -313,6 +341,49 @@ export default function SuperAiPage() {
               </div>
             </Card>
           )}
+
+          <Card
+            title="پایگاه دانش Pinecone"
+            help={{
+              title: "Pinecone",
+              body: "جستجوی برداری دانش با مدل multilingual-e5 روی app.pinecone.io. ایندکس iranexpedia-kb به‌صورت خودکار ساخته می‌شود.",
+              tips: [
+                "کلید را از کنسول Pinecone کپی کنید.",
+                "بعد از اولین ذخیره، پایگاه دانش قدیمی را با «ایندکس مجدد» بفرستید."
+              ]
+            }}
+          >
+            <div className="form-grid">
+              <label className="full">
+                کلید Pinecone{" "}
+                {form.pinecone_api_key_configured ? (
+                  <span className="hint">
+                    (فعلی: <code>{form.pinecone_api_key_masked}</code>)
+                  </span>
+                ) : null}
+                <input
+                  type="password"
+                  value={pineconeKeyInput}
+                  onChange={(e) => setPineconeKeyInput(e.target.value)}
+                  placeholder="pcsk_…"
+                  autoComplete="off"
+                />
+              </label>
+              <div className="full" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button
+                  variant="secondary"
+                  loading={reindexBusy}
+                  disabled={!form.pinecone_api_key_configured}
+                  onClick={() => void reindexKnowledge()}
+                >
+                  ایندکس مجدد همه دانش‌ها
+                </Button>
+                {!form.pinecone_api_key_configured ? (
+                  <span className="hint">ابتدا کلید را ذخیره کنید</span>
+                ) : null}
+              </div>
+            </div>
+          </Card>
 
           <Card
             title="سیستم‌پرامپت و پیش‌فرض‌ها"
