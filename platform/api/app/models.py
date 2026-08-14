@@ -345,6 +345,8 @@ class Message(Base):
     wa_message_id: Mapped[str] = mapped_column(String(120), default="")
     media_type: Mapped[str] = mapped_column(String(40), default="")  # text|image|audio|document|video
     media_url: Mapped[str] = mapped_column(Text, default="")
+    # pending | sent | delivered | read | played (WhatsApp ack ladder)
+    delivery_status: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
 
 

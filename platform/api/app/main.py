@@ -191,6 +191,10 @@ def _ensure_sqlite_columns() -> None:
                 conn.execute(text("ALTER TABLE messages ADD COLUMN media_type VARCHAR(40) DEFAULT ''"))
             if "media_url" not in cols:
                 conn.execute(text("ALTER TABLE messages ADD COLUMN media_url TEXT DEFAULT ''"))
+            if "delivery_status" not in cols:
+                conn.execute(
+                    text("ALTER TABLE messages ADD COLUMN delivery_status VARCHAR(20) DEFAULT ''")
+                )
 
 
 _mount_routers()

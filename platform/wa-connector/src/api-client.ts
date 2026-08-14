@@ -79,11 +79,26 @@ export const api = {
       "POST",
       `/internal/wa/jobs/claim?account_id=${encodeURIComponent(accountId)}&limit=${limit}`
     ),
-  completeJob: (jobId: string, ok: boolean, error = "") =>
+  completeJob: (
+    jobId: string,
+    ok: boolean,
+    error = "",
+    externalMessageId = ""
+  ) =>
     request(
       "POST",
-      `/internal/wa/jobs/${jobId}/complete?ok=${ok ? "true" : "false"}&error=${encodeURIComponent(error)}`
+      `/internal/wa/jobs/${jobId}/complete?ok=${ok ? "true" : "false"}&error=${encodeURIComponent(
+        error
+      )}&external_message_id=${encodeURIComponent(externalMessageId)}`
     ),
+  reportMessageStatus: (
+    accountId: string,
+    payload: { external_message_id: string; status: string | number }
+  ) => request("POST", `/internal/wa/sessions/${accountId}/message-status`, payload),
+  reportPresence: (
+    accountId: string,
+    payload: { chat_jid: string; state: string; ttl_sec?: number }
+  ) => request("POST", `/internal/wa/sessions/${accountId}/presence`, payload),
   getPairCommand: (accountId: string) =>
     request<{ account_id: string; pairing_state: string; status: string; wa_jid: string }>(
       "GET",

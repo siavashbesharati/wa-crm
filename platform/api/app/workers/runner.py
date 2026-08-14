@@ -325,6 +325,7 @@ def handle_auto_reply(payload: dict) -> dict:
                 direction=MessageDirection.outbound,
                 sender_type=SenderType.ai,
                 body=reply,
+                delivery_status="pending",
             )
         )
         try:

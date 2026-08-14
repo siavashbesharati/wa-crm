@@ -345,9 +345,13 @@ def complete_job(
     job_id: str,
     ok: bool = True,
     error: str = "",
+    external_message_id: str = "",
     _: None = Depends(require_connector_key),
     db: Session = Depends(get_db),
 ):
+    from app.models import Message, MessageDirection
+    from app.services.delivery_status import merge_delivery_status
+
     job = db.get(OutboundJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
@@ -358,6 +362,31 @@ def complete_job(
     job.error = error or ""
     job.updated_at = datetime.utcnow()
     db.add(job)
+
+    ext = (external_message_id or "").strip()
+    if ok and job.lead_id:
+        # Attach WA id + mark sent on the most recent matching outbound message
+        q = (
+            db.query(Message)
+            .filter(
+                Message.org_id == job.org_id,
+                Message.account_id == job.account_id,
+                Message.lead_id == job.lead_id,
+                Message.direction == MessageDirection.outbound,
+                Message.body == (job.body or ""),
+            )
+            .order_by(Message.created_at.desc())
+        )
+        msg = q.first()
+        if msg:
+            if ext:
+                wa_id = ext if ext.startswith("wa:") else f"wa:{ext}"
+                msg.wa_message_id = wa_id
+            msg.delivery_status = merge_delivery_status(
+                getattr(msg, "delivery_status", "") or "", "sent"
+            )
+            db.add(msg)
+
     db.commit()
     trace_event(
         job_trace_id(job_id),
@@ -367,8 +396,136 @@ def complete_job(
         error=error or "",
         target=job.target_name,
         connector="baileys",
+        external_message_id=ext,
     )
     return {"ok": True}
+
+
+@router.post("/sessions/{account_id}/message-status")
+def message_status(
+    account_id: str,
+    body: dict,
+    _: None = Depends(require_connector_key),
+    db: Session = Depends(get_db),
+):
+    """Baileys messages.update → delivery_status ladder."""
+    from app.models import Message
+    from app.services.delivery_status import merge_delivery_status, normalize_delivery_status
+    from app.services.sse_hub import publish_org_event
+
+    acc = _baileys_account(db, account_id)
+    ext = str(body.get("external_message_id") or body.get("wa_message_id") or "").strip()
+    if not ext:
+        return {"ok": False, "reason": "missing_id"}
+    if not ext.startswith("wa:"):
+        ext = f"wa:{ext}"
+    status = normalize_delivery_status(body.get("status"))
+    if not status:
+        return {"ok": False, "reason": "bad_status"}
+
+    msg = (
+        db.query(Message)
+        .filter(Message.org_id == acc.org_id, Message.wa_message_id == ext)
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+    if not msg:
+        # try without wa: prefix variants already normalized
+        return {"ok": False, "reason": "message_not_found"}
+
+    prev = getattr(msg, "delivery_status", "") or ""
+    nxt = merge_delivery_status(prev, status)
+    if nxt != prev:
+        msg.delivery_status = nxt
+        db.add(msg)
+        db.commit()
+        try:
+            publish_org_event(
+                acc.org_id,
+                "message_status",
+                {
+                    "message_id": msg.id,
+                    "lead_id": msg.lead_id,
+                    "delivery_status": nxt,
+                    "wa_message_id": ext,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": True, "delivery_status": nxt, "message_id": msg.id}
+
+
+@router.post("/sessions/{account_id}/presence")
+def presence_update(
+    account_id: str,
+    body: dict,
+    _: None = Depends(require_connector_key),
+    db: Session = Depends(get_db),
+):
+    """Baileys presence.update → typing indicator for matching lead."""
+    from app.models import Lead, LeadAccountLink
+    from app.services.chat_presence import set_presence
+    from app.services.sse_hub import publish_org_event
+
+    acc = _baileys_account(db, account_id)
+    chat_jid = str(body.get("chat_jid") or body.get("external_chat_id") or "").strip()
+    state = str(body.get("state") or "").strip().lower()
+    if not chat_jid:
+        return {"ok": False, "reason": "missing_chat"}
+
+    # Match lead by external_chat_id on link or lead
+    link = (
+        db.query(LeadAccountLink)
+        .filter(
+            LeadAccountLink.org_id == acc.org_id,
+            LeadAccountLink.account_id == acc.id,
+            LeadAccountLink.external_chat_id == chat_jid,
+        )
+        .first()
+    )
+    lead = None
+    if link:
+        lead = db.get(Lead, link.lead_id)
+    if not lead:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == acc.org_id, Lead.external_chat_id == chat_jid)
+            .first()
+        )
+    if not lead:
+        # try phone-form jid without device / suffix variants
+        bare = chat_jid.split("@")[0].split(":")[0]
+        if bare:
+            lead = (
+                db.query(Lead)
+                .filter(Lead.org_id == acc.org_id, Lead.phone == bare)
+                .first()
+            )
+    if not lead:
+        return {"ok": False, "reason": "lead_not_found"}
+
+    row = set_presence(
+        org_id=acc.org_id,
+        lead_id=lead.id,
+        state=state,
+        account_id=acc.id,
+        external_chat_id=chat_jid,
+        ttl_sec=float(body.get("ttl_sec") or 6),
+    )
+    try:
+        publish_org_event(
+            acc.org_id,
+            "presence",
+            {
+                "lead_id": lead.id,
+                "state": row.get("state"),
+                "typing": bool(row.get("typing")),
+                "account_id": acc.id,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, **row}
 
 
 @router.get("/sessions/{account_id}/pair-command")

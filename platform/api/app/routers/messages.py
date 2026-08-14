@@ -366,6 +366,7 @@ def process_message_ingest(
         wa_message_id=ext_msg_id,
         media_type=(getattr(body, "media_type", None) or "").strip(),
         media_url=(getattr(body, "media_url", None) or "").strip(),
+        delivery_status="sent" if body.direction == "outbound" else "",
     )
     db.add(msg)
 
@@ -434,6 +435,8 @@ def _to_out(m: Message) -> MessageOut:
         created_at=m.created_at,
         media_type=getattr(m, "media_type", "") or "",
         media_url=getattr(m, "media_url", "") or "",
+        delivery_status=getattr(m, "delivery_status", "") or "",
+        wa_message_id=getattr(m, "wa_message_id", "") or "",
     )
 
 
@@ -987,6 +990,21 @@ def get_reply_trace(
     return {"trace_id": trace_id, "since": since, "events": events}
 
 
+@router.get("/presence")
+def get_chat_presence(
+    lead_id: str,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """Typing / recording state for an open inbox thread."""
+    from app.services.chat_presence import get_presence
+
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.org_id == auth.org.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="لید یافت نشد")
+    return get_presence(org_id=auth.org.id, lead_id=lead.id)
+
+
 @router.get("/inbox", response_model=list[MessageOut])
 def inbox(
     lead_id: str | None = None,
@@ -1115,6 +1133,7 @@ def send_message(body: SendMessageIn, auth: AuthContext = Depends(get_auth), db:
                 sender_type=SenderType(body.sender_type),
                 body=body.body,
                 agent_id=auth.user.id if body.sender_type == "agent" else None,
+                delivery_status="pending",
             )
         )
 

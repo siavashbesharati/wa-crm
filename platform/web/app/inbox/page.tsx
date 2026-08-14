@@ -46,6 +46,8 @@ type Message = {
   sender_type: string;
   created_at: string;
   media_type?: string;
+  delivery_status?: string;
+  wa_message_id?: string;
 };
 
 type ChannelFilter = "all" | "whatsapp" | "divar";
@@ -123,6 +125,39 @@ function senderLabel(type: string, outbound: boolean) {
   return "مشتری";
 }
 
+function DeliveryTicks({ status }: { status?: string }) {
+  const s = (status || "").toLowerCase();
+  if (!s || s === "pending") {
+    return (
+      <span className="msg-ticks pending" title="در صف ارسال" aria-label="در صف ارسال">
+        ✓
+      </span>
+    );
+  }
+  if (s === "sent") {
+    return (
+      <span className="msg-ticks sent" title="ارسال شد" aria-label="ارسال شد">
+        ✓
+      </span>
+    );
+  }
+  if (s === "delivered") {
+    return (
+      <span className="msg-ticks delivered" title="تحویل شد" aria-label="تحویل شد">
+        ✓✓
+      </span>
+    );
+  }
+  if (s === "read" || s === "played") {
+    return (
+      <span className="msg-ticks read" title="دیده شد" aria-label="دیده شد">
+        ✓✓
+      </span>
+    );
+  }
+  return null;
+}
+
 function isRiskLead(lead: Thread["lead"]) {
   const tags = lead.tags || [];
   const sentiment = lead.ai_meta?.sentiment;
@@ -151,6 +186,8 @@ export default function InboxPage() {
   const [allowSuggest, setAllowSuggest] = useState(true);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [draft, setDraft] = useState<SuggestDraft | null>(null);
+  const [typing, setTyping] = useState(false);
+  const [typingKind, setTypingKind] = useState<"composing" | "recording" | "">("");
   const { busy, run } = useMutation();
   const toast = useToast();
   const scroller = useRef<HTMLDivElement>(null);
@@ -211,7 +248,11 @@ export default function InboxPage() {
   async function openThread(t: Thread, opts?: { quiet?: boolean }) {
     setActive(t);
     setDraft(null);
-    if (!opts?.quiet) setOpening(true);
+    if (!opts?.quiet) {
+      setOpening(true);
+      setTyping(false);
+      setTypingKind("");
+    }
     try {
       setMessages(await api<Message[]>(`/messages/inbox?lead_id=${t.lead.id}`));
       if (!opts?.quiet) window.setTimeout(() => inputRef.current?.focus(), 80);
@@ -221,6 +262,56 @@ export default function InboxPage() {
       setOpening(false);
     }
   }
+
+  // Live poll: delivery receipts + contact typing while a thread is open
+  useEffect(() => {
+    if (!active?.lead.id) return;
+    let cancelled = false;
+    const leadId = active.lead.id;
+    const tick = async () => {
+      try {
+        const [msgs, presence] = await Promise.all([
+          api<Message[]>(`/messages/inbox?lead_id=${leadId}`),
+          api<{ typing?: boolean; state?: string }>(
+            `/messages/presence?lead_id=${encodeURIComponent(leadId)}`
+          ).catch(() => ({ typing: false, state: "paused" }))
+        ]);
+        if (cancelled) return;
+        setMessages((prev) => {
+          // Avoid scroll jump if only delivery_status changed
+          if (
+            prev.length === msgs.length &&
+            prev.every(
+              (m, i) =>
+                m.id === msgs[i]?.id &&
+                m.body === msgs[i]?.body &&
+                m.delivery_status === msgs[i]?.delivery_status
+            )
+          ) {
+            return prev;
+          }
+          return msgs;
+        });
+        const isTyping = !!presence.typing;
+        setTyping(isTyping);
+        setTypingKind(
+          isTyping && presence.state === "recording"
+            ? "recording"
+            : isTyping
+              ? "composing"
+              : ""
+        );
+      } catch {
+        /* ignore poll errors */
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [active?.lead.id]);
 
   async function send() {
     if (!active || !text.trim()) return;
@@ -441,6 +532,18 @@ export default function InboxPage() {
                     {isRiskLead(active.lead) ? (
                       <div className="chat-risk-banner">این گفتگو ریسک دارد یا نیاز به کارشناس دارد.</div>
                     ) : null}
+                    {typing ? (
+                      <div className="chat-typing" aria-live="polite">
+                        <span className="chat-typing-dots" aria-hidden>
+                          <i />
+                          <i />
+                          <i />
+                        </span>
+                        {typingKind === "recording"
+                          ? "در حال ضبط صدا…"
+                          : "در حال نوشتن…"}
+                      </div>
+                    ) : null}
                     {suggestedStage && suggestedStage !== active.lead.stage ? (
                       <div className="chat-stage-suggest">
                         <span>پیشنهاد مرحله: {suggestedStage}</span>
@@ -477,6 +580,12 @@ export default function InboxPage() {
                                 {senderLabel(m.sender_type, outbound)}
                                 {" · "}
                                 {formatTime(m.created_at)}
+                                {outbound ? (
+                                  <>
+                                    {" · "}
+                                    <DeliveryTicks status={m.delivery_status} />
+                                  </>
+                                ) : null}
                               </span>
                             </div>
                           </div>

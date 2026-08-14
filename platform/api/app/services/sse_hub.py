@@ -111,3 +111,10 @@ def publish_job_ready(
     if org_id:
         n += sse_hub.publish(f"org:{org_id}", "job_ready", payload)
     return n
+
+
+def publish_org_event(org_id: str, event: str, data: dict[str, Any] | None = None) -> int:
+    oid = (org_id or "").strip()
+    if not oid:
+        return 0
+    return sse_hub.publish(f"org:{oid}", event, data or {})

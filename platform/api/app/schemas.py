@@ -333,6 +333,8 @@ class MessageOut(BaseModel):
     created_at: datetime
     media_type: str = ""
     media_url: str = ""
+    delivery_status: str = ""
+    wa_message_id: str = ""
 
 
 class MessageIngestOut(MessageOut):

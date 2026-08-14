@@ -482,6 +482,7 @@ def run_auto_reply_for_lead(
             direction=MessageDirection.outbound,
             sender_type=SenderType.ai,
             body=result["reply"],
+            delivery_status="pending",
         )
     )
     db.commit()

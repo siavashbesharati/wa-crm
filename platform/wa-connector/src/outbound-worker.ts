@@ -28,9 +28,9 @@ export async function claimAndSend(session: SessionHandle): Promise<number> {
     const jid = resolveJid(job);
     try {
       if (!jid) throw new Error(`no jid for job ${job.id} target=${job.target_name}`);
-      await session.sendText(jid, job.body || "");
-      await api.completeJob(job.id, true);
-      log.info({ accountId: session.accountId, jobId: job.id, jid }, "sent");
+      const waId = await session.sendText(jid, job.body || "");
+      await api.completeJob(job.id, true, "", waId || "");
+      log.info({ accountId: session.accountId, jobId: job.id, jid, waId }, "sent");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.error({ err, jobId: job.id }, "send failed");

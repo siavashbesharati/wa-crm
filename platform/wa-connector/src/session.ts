@@ -22,7 +22,7 @@ export type SessionHandle = {
   sock: WASocket | null;
   connected: boolean;
   stop: () => Promise<void>;
-  sendText: (jid: string, text: string) => Promise<void>;
+  sendText: (jid: string, text: string) => Promise<string>;
   listGroups: () => Promise<Array<{ jid: string; subject: string; size: number }>>;
   groupParticipants: (
     jid: string
@@ -148,6 +148,51 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
         await handleInbound(accountId, sock!, msg);
       }
     });
+
+    sock.ev.on("messages.update", async (updates) => {
+      for (const u of updates) {
+        try {
+          const id = u.key?.id;
+          if (!id || u.key?.fromMe === false) {
+            // Still process fromMe receipts; inbound read of our msgs has fromMe true
+          }
+          if (!id) continue;
+          // Only care about status on our outbound messages
+          if (u.key?.fromMe === false) continue;
+          const status = (u.update as { status?: number | string } | undefined)?.status;
+          if (status === undefined || status === null) continue;
+          await api.reportMessageStatus(accountId, {
+            external_message_id: `wa:${id}`,
+            status,
+          });
+        } catch (err) {
+          log.warn({ err, accountId }, "message status report failed");
+        }
+      }
+    });
+
+    sock.ev.on("presence.update", async (update) => {
+      try {
+        const chatJid = (update.id || "").trim();
+        if (!chatJid || isJidBroadcast(chatJid)) return;
+        const presences = update.presences || {};
+        let state = "paused";
+        for (const info of Object.values(presences)) {
+          const p = (info as { lastKnownPresence?: string } | undefined)?.lastKnownPresence || "";
+          if (p === "composing" || p === "recording") {
+            state = p;
+            break;
+          }
+        }
+        await api.reportPresence(accountId, {
+          chat_jid: chatJid,
+          state,
+          ttl_sec: state === "paused" ? 1 : 8,
+        });
+      } catch (err) {
+        log.warn({ err, accountId }, "presence report failed");
+      }
+    });
   };
 
   await boot();
@@ -172,7 +217,14 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
     },
     sendText: async (jid: string, text: string) => {
       if (!sock || !connected) throw new Error("socket not connected");
-      await sock.sendMessage(jid, { text });
+      try {
+        await sock.presenceSubscribe(jid);
+      } catch {
+        /* optional */
+      }
+      const sent = await sock.sendMessage(jid, { text });
+      const mid = sent?.key?.id || "";
+      return mid;
     },
     listGroups: async () => {
       if (!sock || !connected) return [];
@@ -264,9 +316,21 @@ async function handleInbound(accountId: string, sock: WASocket, msg: WAMessage) 
       transcribedBody: transcribed || undefined,
     });
     if (!payload) return;
+    // Subscribe so we receive composing updates for this chat
+    try {
+      if (!fromMeJid(msg) && jid) {
+        await sock.presenceSubscribe(jid);
+      }
+    } catch {
+      /* optional */
+    }
     // fromMe outbound: store history, AI skipped by direction
     await api.ingest(accountId, payload);
   } catch (err) {
     log.error({ err, accountId }, "inbound handle failed");
   }
+}
+
+function fromMeJid(msg: WAMessage): boolean {
+  return !!msg.key?.fromMe;
 }
