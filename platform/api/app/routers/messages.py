@@ -66,16 +66,21 @@ def _sanitize_lead_phone(
     source_channel: str,
     chat_type: str,
 ) -> str:
-    """Never store WhatsApp display names in Lead.phone."""
+    """Never store WhatsApp display names or @lid ids in Lead.phone."""
     if (chat_type or "").strip().lower() == "group":
         return ""
     ch = (source_channel or "").strip().lower()
     raw = (phone or "").strip()
+    ext = (external_chat_id or "").strip()
+    # Reject LID local-part stored as "phone"
+    if ext.endswith("@lid") and raw:
+        lid_local = ext.split("@")[0].split(":")[0]
+        if raw.replace("+", "") == lid_local:
+            return ""
     if raw and _looks_like_phone(raw):
         return re.sub(r"[\s\-()]", "", raw)
     if raw and ch == "divar" and raw != (chat_name or "").strip():
         return raw
-    ext = (external_chat_id or "").strip()
     if ext and _looks_like_phone(ext):
         return re.sub(r"[\s\-()]", "", ext)
     if ext and ch == "divar" and (_is_divar_style_id(ext) or ext != (chat_name or "").strip()):

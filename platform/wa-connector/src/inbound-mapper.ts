@@ -1,4 +1,5 @@
 import type { proto, WAMessage } from "@whiskeysockets/baileys";
+import { phoneFromJid, resolveChatIdentity } from "./jid.js";
 
 function extractText(msg: proto.IMessage | null | undefined): string {
   if (!msg) return "";
@@ -24,12 +25,6 @@ function mediaTypeOf(msg: proto.IMessage | null | undefined): string {
   return "text";
 }
 
-function phoneFromJid(jid: string): string {
-  const user = jid.split("@")[0] || "";
-  // strip device suffix 123:45
-  return user.split(":")[0] || "";
-}
-
 export type IngestPayload = {
   account_id: string;
   chat_name: string;
@@ -51,7 +46,14 @@ export function mapBaileysMessage(
   waMsg: WAMessage,
   opts?: { mediaUrl?: string; transcribedBody?: string }
 ): IngestPayload | null {
-  const key = waMsg.key;
+  const key = waMsg.key as typeof waMsg.key & {
+    senderPn?: string;
+    senderLid?: string;
+    participantPn?: string;
+    participantLid?: string;
+    remoteJidAlt?: string;
+    participantAlt?: string;
+  };
   if (!key?.remoteJid || !key.id) return null;
   // Ignore status / broadcast
   if (key.remoteJid === "status@broadcast") return null;
@@ -64,19 +66,20 @@ export function mapBaileysMessage(
   // Skip empty non-media protocol noise
   if (!text && mType === "text") return null;
 
+  const identity = resolveChatIdentity(key, isGroup);
   const pushName = (waMsg.pushName || "").trim();
   const chatName = isGroup
     ? pushName || remoteJid
-    : pushName || phoneFromJid(remoteJid);
+    : pushName || identity.phone || phoneFromJid(identity.externalChatId) || remoteJid;
 
   return {
     account_id: accountId,
     chat_name: chatName || remoteJid,
     body: text || (mType !== "text" ? `[${mType}]` : ""),
     direction: fromMe ? "outbound" : "inbound",
-    phone: isGroup ? "" : phoneFromJid(remoteJid),
-    group_id: isGroup ? remoteJid : "",
-    external_chat_id: remoteJid,
+    phone: identity.phone,
+    group_id: identity.groupId,
+    external_chat_id: identity.externalChatId,
     chat_type: isGroup ? "group" : "pv",
     external_message_id: `wa:${key.id}`,
     sender_type: fromMe ? "agent" : "customer",

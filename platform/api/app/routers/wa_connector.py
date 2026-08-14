@@ -132,6 +132,29 @@ def clear_auth(
     return {"ok": True}
 
 
+def _digits_phone(value: str) -> str:
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    return digits if digits.isdigit() and 8 <= len(digits) <= 15 else ""
+
+
+def _phone_from_pair_payload(external_id: str, wa_jid: str) -> str:
+    """Accept only real WhatsApp phone numbers — never @lid local parts."""
+    wa = (wa_jid or "").strip()
+    if "@s.whatsapp.net" in wa or wa.endswith("@c.us"):
+        local = wa.split("@")[0].split(":")[0]
+        phone = _digits_phone(local)
+        if phone:
+            return phone
+    ext = _digits_phone(external_id)
+    if not ext:
+        return ""
+    if wa.endswith("@lid"):
+        lid_local = wa.split("@")[0].split(":")[0]
+        if ext == lid_local:
+            return ""
+    return ext
+
+
 @router.put("/sessions/{account_id}/pair-state")
 def put_pair_state(
     account_id: str,
@@ -145,11 +168,9 @@ def put_pair_state(
     acc.qr_payload = body.qr_payload or ""
     if body.wa_jid:
         acc.wa_jid = body.wa_jid
-        if not acc.external_id:
-            phone = body.wa_jid.split("@")[0]
-            acc.external_id = phone
-    if body.external_id:
-        acc.external_id = body.external_id
+    phone = _phone_from_pair_payload(body.external_id or "", body.wa_jid or "")
+    if phone:
+        acc.external_id = phone
     if body.status:
         acc.status = body.status
     elif body.pairing_state == "connected":
@@ -165,6 +186,8 @@ def put_pair_state(
         "account_id": acc.id,
         "pairing_state": acc.pairing_state,
         "status": acc.status,
+        "external_id": acc.external_id,
+        "wa_jid": acc.wa_jid,
     }
 
 

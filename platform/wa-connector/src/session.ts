@@ -13,6 +13,7 @@ import { api } from "./api-client.js";
 import { loadAuthState } from "./auth-state.js";
 import { mapBaileysMessage } from "./inbound-mapper.js";
 import { maybeTranscribeAudio } from "./media.js";
+import { phoneFromConnectedUser, phoneFromJid, preferPnJid, stripDevice } from "./jid.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -76,17 +77,41 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
       }
       if (connection === "open") {
         connected = true;
-        const jid = sock?.user?.id || "";
-        const phone = (jid.split(":")[0] || "").split("@")[0] || "";
+        const user = sock?.user as
+          | { id?: string; lid?: string; jid?: string; phoneNumber?: string }
+          | undefined;
+        const me = state.creds.me as
+          | { id?: string; lid?: string; jid?: string; phoneNumber?: string }
+          | undefined;
+        // creds.me.id is usually the PN jid; sock.user.id is often @lid now
+        let phone =
+          phoneFromConnectedUser(me) ||
+          phoneFromConnectedUser(user) ||
+          phoneFromJid(me?.id) ||
+          phoneFromJid(user?.jid);
+        const waJid =
+          preferPnJid(me?.id, me?.jid, user?.jid, user?.id) ||
+          (phone ? `${phone}@s.whatsapp.net` : "");
+        if (!phone) phone = phoneFromJid(waJid);
         await api.putPairState(accountId, {
           pairing_state: "connected",
           qr_payload: "",
-          wa_jid: jid.includes("@") ? jid.replace(/:\d+@/, "@") : jid,
+          wa_jid: waJid,
           external_id: phone,
           status: "online",
         });
         await api.heartbeat(accountId);
-        log.info({ accountId, jid }, "WhatsApp connected");
+        log.info(
+          {
+            accountId,
+            waJid,
+            phone: phone || "(unknown)",
+            userId: user?.id,
+            userJid: user?.jid,
+            meId: me?.id,
+          },
+          "WhatsApp connected"
+        );
       }
       if (connection === "close") {
         connected = false;
