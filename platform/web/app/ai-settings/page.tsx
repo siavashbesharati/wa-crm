@@ -152,7 +152,7 @@ export default function AiSettingsPage() {
               سیستم‌پرامپت در این صفحه قابل ویرایش نیست. پایین، نقش دستیار این کسب‌وکار را
               تنظیم کنید — یا با{" "}
               <Link href="/pir-kharabat" style={{ fontWeight: 600 }}>
-                پیر خرابات
+                آقای پشمک
               </Link>{" "}
               ویزارد پروفایل را کامل کنید تا نقش و دستور پاسخ‌گویی خودکار نوشته شود.
             </p>
@@ -164,7 +164,7 @@ export default function AiSettingsPage() {
               <div className="hint" style={{ margin: "4px 0 8px" }}>
                 مثلاً «مشاور فروش تورهای خارجی» — با ذخیره، بلافاصله روی پاسخ‌های بعدی اعمال
                 می‌شود. پیکربندی سریع:{" "}
-                <Link href="/pir-kharabat">پیکربندی با پیر خرابات</Link>
+                <Link href="/pir-kharabat">پیکربندی با آقای پشمک</Link>
               </div>
               <input
                 value={policy.agent_role || ""}

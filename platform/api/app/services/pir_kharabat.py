@@ -1,4 +1,4 @@
-"""پیر خرابات — per-org business coach (wizard prompts + internal chat)."""
+"""آقای پشمک — per-org business coach (wizard prompts + internal chat)."""
 
 from __future__ import annotations
 
@@ -22,6 +22,10 @@ from app.services.ai_reply import generate_llm_text, get_platform_ai_settings, r
 COACH_HISTORY_LIMIT = 50
 COACH_CONTEXT_MSG_CHARS = 600
 
+# Floating mascot thresholds
+EXHAUST_OPEN_TASKS = 8
+IMPORTANT_LEAD_TAGS = frozenset({"churn_risk", "detractor", "complaint", "needs_human"})
+
 GOAL_LABELS_FA = {
     "lead": "جذب لید",
     "booking": "رزرو / فروش",
@@ -38,7 +42,8 @@ TONE_HINTS = {
 
 def coach_system_prompt() -> str:
     return (
-        "تو «پیر خرابات» هستی — مربی و مشاور خردمند برای تیم فروش و پشتیبانی یک کسب‌وکار ایرانی. "
+        "تو «آقای پشمک» هستی — مربی و مشاور خردمند (با شخصیت گربه ایرانی بامزه و جدی) "
+        "برای تیم فروش و پشتیبانی یک کسب‌وکار ایرانی. "
         "فقط به تیم داخلی مشاوره بده؛ هرگز وانمود نکن که پیام واتساپ یا دیوار می‌فرستی. "
         "پاسخ‌ها را به فارسی، کوتاه، عملی و قابل‌اجرا بنویس. "
         "در صورت نیاز پیشنهاد بده: بهبود دستور AI، افزودن دانش، ایده کمپین، پیگیری لیدهای در خطر. "
@@ -171,7 +176,7 @@ def build_org_context(db: Session, org: Organization, profile: OrgCoachProfile |
         f"نام سازمان: {org.name}",
         f"پلن: {getattr(org, 'plan', '')}",
         "",
-        "### پروفایل پیر خرابات",
+        "### پروفایل آقای پشمک",
         f"حوزه: {pdata.get('niche') or '—'}",
         f"مخاطب: {pdata.get('audience') or '—'}",
         f"لحن: {pdata.get('tone') or '—'}",
@@ -268,7 +273,7 @@ def run_coach_turn(
     for m in history:
         if m.id == user_msg.id:
             continue
-        role = "کاربر" if m.role == "user" else "پیر خرابات"
+        role = "کاربر" if m.role == "user" else "آقای پشمک"
         body = (m.body or "")[:COACH_CONTEXT_MSG_CHARS]
         hist_lines.append(f"{role}: {body}")
 
@@ -293,7 +298,7 @@ def run_coach_turn(
         f"### تاریخچه گفتگوی مربی\n"
         f"{chr(10).join(hist_lines) if hist_lines else '(خالی)'}\n\n"
         f"### سوال کاربر تیم\n{text}\n\n"
-        "پاسخ پیر خرابات:"
+        "پاسخ آقای پشمک:"
     )
 
     platform = get_platform_ai_settings(db)
@@ -328,4 +333,52 @@ def run_coach_turn(
         "message": assistant,
         "provider": provider,
         "model": model,
+    }
+
+
+def _lead_is_important(lead: Lead) -> bool:
+    tags = set(lead.tags or [])
+    if tags.intersection(IMPORTANT_LEAD_TAGS - {"needs_human"}):
+        return True
+    meta = getattr(lead, "ai_meta", None) or {}
+    if meta.get("escalation"):
+        return True
+    sentiment = str(meta.get("sentiment") or "").lower()
+    if "needs_human" in tags and sentiment == "negative":
+        return True
+    if sentiment == "negative" and tags.intersection({"churn_risk", "detractor", "complaint"}):
+        return True
+    return False
+
+
+def compute_mascot_mood(db: Session, org_id: str) -> dict[str, Any]:
+    """Pick floating-cat pose from open tasks + important leads.
+
+    Priority: alert > exhaust > happy > normal
+    """
+    open_tasks = (
+        db.query(Task)
+        .filter(
+            Task.org_id == org_id,
+            Task.status.in_((TaskStatus.open, TaskStatus.in_progress)),
+        )
+        .count()
+    )
+    leads = db.query(Lead).filter(Lead.org_id == org_id).limit(400).all()
+    important = sum(1 for lead in leads if _lead_is_important(lead))
+
+    if important > 0:
+        mood = "alert"
+    elif open_tasks >= EXHAUST_OPEN_TASKS:
+        mood = "exhaust"
+    elif open_tasks == 0:
+        mood = "happy"
+    else:
+        mood = "normal"
+
+    return {
+        "mood": mood,
+        "open_tasks": open_tasks,
+        "important_leads": important,
+        "exhaust_threshold": EXHAUST_OPEN_TASKS,
     }

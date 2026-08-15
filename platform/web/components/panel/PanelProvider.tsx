@@ -14,6 +14,7 @@ import { usePathname, useRouter } from "next/navigation";
 import ShellChrome from "@/components/ShellChrome";
 import { PageLoading } from "@/components/ui/Spinner";
 import { ChannelHealthWatch } from "@/components/channels/ChannelHealthWatch";
+import { AghaPashmakFloat } from "@/components/AghaPashmakFloat";
 
 export type PanelMeta = {
   title: string;
@@ -42,6 +43,7 @@ const PANEL_PREFIXES = [
   "/team",
   "/knowledge",
   "/ai-settings",
+  "/pir-kharabat",
   "/kpi",
   "/billing",
   "/support",
@@ -109,6 +111,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
           "/team": "تیم",
           "/knowledge": "دانش AI",
           "/ai-settings": "تنظیمات AI",
+          "/pir-kharabat": "آقای پشمک",
           "/kpi": "KPI / OKR",
           "/billing": "اشتراک و پرداخت",
           "/support": "پشتیبانی"
@@ -164,6 +167,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
       >
         {showNavShimmer ? <PageLoading /> : children}
       </ShellChrome>
+      <AghaPashmakFloat />
       <ChannelHealthWatch />
     </PanelContext.Provider>
   );

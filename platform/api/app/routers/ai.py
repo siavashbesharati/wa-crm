@@ -519,6 +519,14 @@ def get_pir_profile(auth: AuthContext = Depends(get_auth), db: Session = Depends
     return _pir_profile_out(row)
 
 
+@router.get("/pir/mood")
+def get_pir_mood(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    """Floating «آقای پشمک» pose: normal | happy | exhaust | alert."""
+    from app.services.pir_kharabat import compute_mascot_mood
+
+    return compute_mascot_mood(db, auth.org.id)
+
+
 @router.put("/pir/profile")
 def put_pir_profile(
     body: PirProfileIn,
