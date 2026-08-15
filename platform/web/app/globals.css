@@ -4687,7 +4687,40 @@ a.btn.wizard-btn:hover {
   display: none;
 }
 .pir-thinking {
-  opacity: 0.7;
+  opacity: 0.85;
+}
+.pir-typing-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.pir-typewriter {
+  min-height: 1.2em;
+}
+.pir-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-inline-start: 2px;
+  vertical-align: text-bottom;
+  background: color-mix(in srgb, var(--pir-ink, #1c1410) 75%, transparent);
+  animation: pir-caret-blink 0.9s steps(1) infinite;
+}
+@keyframes pir-caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pir-caret {
+    animation: none;
+    opacity: 0;
+  }
 }
 .pir-chat-composer {
   display: flex;

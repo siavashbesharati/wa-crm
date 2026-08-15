@@ -47,7 +47,11 @@ def coach_system_prompt() -> str:
         "فقط به تیم داخلی مشاوره بده؛ هرگز وانمود نکن که پیام واتساپ یا دیوار می‌فرستی. "
         "پاسخ‌ها را به فارسی، کوتاه، عملی و قابل‌اجرا بنویس. "
         "در صورت نیاز پیشنهاد بده: بهبود دستور AI، افزودن دانش، ایده کمپین، پیگیری لیدهای در خطر. "
-        "اگر داده کافی نداری، صادقانه بگو چه چیزی کم است."
+        "اگر داده کافی نداری، صادقانه بگو چه چیزی کم است. "
+        "اگر بخش «### گزارش تحلیلی» در ورودی هست، رتبه‌بندی‌ها و نام‌ها را فقط از همان اعداد بگو؛ "
+        "رتبه یا آمار جعل نکن. متریک‌ها را کوتاه ذکر کن و یک توصیه عملی بده. "
+        "برای لیدهای داغ/پتانسیل خرید، حتماً نام واقعی لیدها را از گزارش بگو؛ "
+        "به «برو کانبان را ببین» اکتفا نکن مگر گزارش صریحاً خالی باشد."
     )
 
 
@@ -292,9 +296,19 @@ def run_coach_turn(
     except Exception:  # noqa: BLE001
         kb_bits = ""
 
+    analytics_bits = ""
+    try:
+        from app.services.org_analytics import analytics_for_message
+
+        report = analytics_for_message(db, org.id, text)
+        if report:
+            analytics_bits = "\n\n" + report
+    except Exception:  # noqa: BLE001
+        analytics_bits = ""
+
     system = coach_system_prompt()
     user_prompt = (
-        f"{ctx}{kb_bits}\n\n"
+        f"{ctx}{kb_bits}{analytics_bits}\n\n"
         f"### تاریخچه گفتگوی مربی\n"
         f"{chr(10).join(hist_lines) if hist_lines else '(خالی)'}\n\n"
         f"### سوال کاربر تیم\n{text}\n\n"

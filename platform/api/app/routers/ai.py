@@ -527,6 +527,30 @@ def get_pir_mood(auth: AuthContext = Depends(get_auth), db: Session = Depends(ge
     return compute_mascot_mood(db, auth.org.id)
 
 
+@router.get("/pir/analytics/{kind}")
+def get_pir_analytics(
+    kind: str,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    """Smoke/debug: org-scoped rankings for آقای پشمک analytics tools."""
+    from app.services import org_analytics as oa
+
+    key = (kind or "").strip().lower()
+    if key not in oa.ANALYTICS_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"kind باید یکی از این‌ها باشد: {', '.join(sorted(oa.ANALYTICS_KINDS))}",
+        )
+    results = oa.run_analytics(db, auth.org.id, [key])
+    return {
+        "kind": key,
+        "org_id": auth.org.id,
+        "rows": results.get(key) or [],
+        "report": oa.format_analytics_report(results),
+    }
+
+
 @router.put("/pir/profile")
 def put_pir_profile(
     body: PirProfileIn,

@@ -41,9 +41,12 @@ const GOALS: { key: string; label: string }[] = [
 ];
 
 const STARTERS = [
+  "کدام اپراتور کارآمدتر است؟",
+  "فروشنده برتر کیست؟",
+  "خریداران برتر چه کسانی‌اند؟",
+  "امروز چه لیدهایی پتانسیل خرید بیشتری دارند؟",
   "چطور پاسخ‌های ربات را بهتر کنیم؟",
-  "برای لیدهای سرد یک ایده کمپین بده",
-  "چه دانشی باید به پایگاه دانش اضافه کنیم؟"
+  "برای لیدهای سرد یک ایده کمپین بده"
 ];
 
 const emptyProfile = (): PirProfile => ({
@@ -79,6 +82,34 @@ function UserInitialAvatar({ name }: { name: string }) {
   );
 }
 
+function TypewriterText({ text, active }: { text: string; active: boolean }) {
+  const [shown, setShown] = useState(active ? "" : text);
+
+  useEffect(() => {
+    if (!active) {
+      setShown(text);
+      return;
+    }
+    setShown("");
+    if (!text) return;
+    let i = 0;
+    const step = Math.max(1, Math.ceil(text.length / 80));
+    const id = window.setInterval(() => {
+      i = Math.min(text.length, i + step);
+      setShown(text.slice(0, i));
+      if (i >= text.length) window.clearInterval(id);
+    }, 28);
+    return () => window.clearInterval(id);
+  }, [text, active]);
+
+  return (
+    <p className={active && shown.length < text.length ? "pir-typewriter" : undefined}>
+      {shown}
+      {active && shown.length < text.length ? <span className="pir-caret" aria-hidden /> : null}
+    </p>
+  );
+}
+
 export default function PirPageClient() {
   const searchParams = useSearchParams();
   const wantChat = searchParams.get("chat") === "1";
@@ -90,6 +121,7 @@ export default function PirPageClient() {
   const [text, setText] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [typingId, setTypingId] = useState<string | null>(null);
   const [userName, setUserName] = useState(
     () => getCachedOrgMe()?.user?.display_name || getCachedOrgMe()?.user?.phone || "کاربر"
   );
@@ -194,18 +226,18 @@ export default function PirPageClient() {
         method: "POST",
         body: JSON.stringify({ message: msg })
       });
+      const assistant =
+        res.message ||
+        ({
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          body: res.reply,
+          created_at: new Date().toISOString()
+        } satisfies CoachMsg);
+      setTypingId(assistant.id);
       setMessages((m) => {
         const without = m.filter((x) => x.id !== optimistic.id);
-        return [
-          ...without,
-          { ...optimistic, id: `u-${Date.now()}` },
-          res.message || {
-            id: `a-${Date.now()}`,
-            role: "assistant",
-            body: res.reply,
-            created_at: new Date().toISOString()
-          }
-        ];
+        return [...without, { ...optimistic, id: `u-${Date.now()}` }, assistant];
       });
     } catch (e) {
       setMessages((m) => m.filter((x) => x.id !== optimistic.id));
@@ -470,7 +502,7 @@ export default function PirPageClient() {
                         <div className="pir-bubble-head">
                           <PashmakAvatar size={22} />
                         </div>
-                        <p>{m.body}</p>
+                        <TypewriterText text={m.body} active={typingId === m.id} />
                       </div>
                     </div>
                   ) : (
@@ -491,7 +523,14 @@ export default function PirPageClient() {
                     <div className="pir-bubble-head">
                       <PashmakAvatar size={22} />
                     </div>
-                    <p>در حال اندیشیدن…</p>
+                    <p className="pir-typing-row">
+                      در حال اندیشیدن
+                      <span className="chat-typing-dots" aria-hidden>
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    </p>
                   </div>
                 </div>
               ) : null}
