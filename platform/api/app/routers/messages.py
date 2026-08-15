@@ -1020,6 +1020,35 @@ def _maybe_auto_reply(
         reason=(auto_reply or {}).get("reason"),
         job_id=(auto_reply or {}).get("job_id"),
     )
+    try:
+        from app.database import SessionLocal
+        from app.services.follow_up_seq import (
+            mark_follow_up_plan,
+            schedule_follow_up,
+            should_schedule_after_auto_reply,
+        )
+
+        if should_schedule_after_auto_reply(auto_reply):
+            planned = schedule_follow_up(
+                org_id=org_id,
+                lead_id=lead.id,
+                trigger_message_id=msg.id,
+                step=0,
+                reason=str((auto_reply or {}).get("reason") or "no_reply"),
+            )
+            if planned:
+                db = SessionLocal()
+                try:
+                    row = db.get(Lead, lead.id)
+                    if row:
+                        mark_follow_up_plan(row, planned, status="scheduled")
+                        db.add(row)
+                        db.commit()
+                        lead.ai_meta = row.ai_meta
+                finally:
+                    db.close()
+    except Exception:  # noqa: BLE001
+        pass
     return auto_reply
 
 

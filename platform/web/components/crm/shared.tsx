@@ -24,6 +24,14 @@ export type Lead = {
     last_enriched_at?: string;
     confidence?: number;
     escalation?: boolean;
+    buying_intent?: number;
+    memory?: { summary?: string; updated_at?: string };
+    follow_up_plan?: {
+      status?: string;
+      step?: number;
+      run_at_ts?: number;
+      reason?: string;
+    };
   };
   assignee_id: string | null;
   bot_paused?: boolean;

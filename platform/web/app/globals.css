@@ -2027,6 +2027,42 @@ a.btn.wizard-btn:hover {
   white-space: pre-wrap;
   color: var(--text);
 }
+.lead-memory-card .lead-memory-body,
+.lead-handoff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lead-memory-summary {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.65;
+  color: var(--text);
+}
+.lead-memory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lead-handoff-pack {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  color: var(--text);
+  max-height: 220px;
+  overflow: auto;
+  direction: rtl;
+  text-align: right;
+}
 .lead-modal-form {
   padding-top: 4px;
 }

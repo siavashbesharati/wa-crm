@@ -70,6 +70,7 @@ export function AghaPashmakFloat() {
   const onCoachPage =
     pathname === "/aghaye-pashmak" || pathname.startsWith("/aghaye-pashmak/");
   const [mood, setMood] = useState<PashmakMood>("normal");
+  const [tipOverride, setTipOverride] = useState<string | null>(null);
   const [pos, setPos] = useState<Pos | null>(null);
   const [dragging, setDragging] = useState(false);
   const rootRef = useRef<HTMLButtonElement>(null);
@@ -87,8 +88,19 @@ export function AghaPashmakFloat() {
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await api<{ mood?: string }>("/ai/pir/mood");
-        if (!cancelled && isMood(res.mood)) setMood(res.mood);
+        const res = await api<{
+          mood?: string;
+          tip?: string | null;
+          hot_lead?: { name?: string; buying_intent?: number } | null;
+        }>("/ai/pir/mood");
+        if (cancelled) return;
+        if (isMood(res.mood)) setMood(res.mood);
+        const custom =
+          (res.tip || "").trim() ||
+          (res.hot_lead?.name
+            ? `لید داغ: ${res.hot_lead.name}`
+            : "");
+        setTipOverride(custom || null);
       } catch {
         /* keep last mood */
       }
@@ -189,7 +201,7 @@ export function AghaPashmakFloat() {
   if (onCoachPage) return null;
 
   const src = MOOD_IMG[mood];
-  const tip = MOOD_TIP[mood];
+  const tip = tipOverride || MOOD_TIP[mood];
 
   return (
     <button

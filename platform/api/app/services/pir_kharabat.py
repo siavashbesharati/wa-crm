@@ -25,6 +25,7 @@ COACH_CONTEXT_MSG_CHARS = 600
 # Floating mascot thresholds
 EXHAUST_OPEN_TASKS = 8
 IMPORTANT_LEAD_TAGS = frozenset({"churn_risk", "detractor", "complaint", "needs_human"})
+HOT_SALES_TAGS = frozenset({"ready_to_buy", "high_intent", "qualified"})
 
 GOAL_LABELS_FA = {
     "lead": "جذب لید",
@@ -387,8 +388,27 @@ def _lead_is_important(lead: Lead) -> bool:
     return False
 
 
+def _buying_intent_of(lead: Lead) -> float:
+    meta = getattr(lead, "ai_meta", None) or {}
+    if not isinstance(meta, dict):
+        return 0.0
+    try:
+        return float(meta.get("buying_intent") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _lead_is_hot_sales(lead: Lead) -> bool:
+    if lead.bot_paused:
+        return False
+    tags = {str(t).lower() for t in (lead.tags or [])}
+    if tags.intersection(HOT_SALES_TAGS):
+        return True
+    return _buying_intent_of(lead) >= 75.0
+
+
 def compute_mascot_mood(db: Session, org_id: str) -> dict[str, Any]:
-    """Pick floating-cat pose from open tasks + important leads.
+    """Pick floating-cat pose from open tasks + important/hot leads.
 
     Priority: alert > exhaust > happy > normal
     """
@@ -402,8 +422,11 @@ def compute_mascot_mood(db: Session, org_id: str) -> dict[str, Any]:
     )
     leads = db.query(Lead).filter(Lead.org_id == org_id).limit(400).all()
     important = sum(1 for lead in leads if _lead_is_important(lead))
+    hot_leads = [lead for lead in leads if _lead_is_hot_sales(lead)]
+    hot_leads.sort(key=lambda L: (-_buying_intent_of(L), -(float(L.lead_score or 0))))
+    top_hot = hot_leads[0] if hot_leads else None
 
-    if important > 0:
+    if important > 0 or top_hot is not None:
         mood = "alert"
     elif open_tasks >= EXHAUST_OPEN_TASKS:
         mood = "exhaust"
@@ -412,9 +435,28 @@ def compute_mascot_mood(db: Session, org_id: str) -> dict[str, Any]:
     else:
         mood = "normal"
 
+    hot_payload = None
+    if top_hot is not None:
+        hot_payload = {
+            "lead_id": top_hot.id,
+            "name": (top_hot.name or "").strip() or "لید داغ",
+            "buying_intent": _buying_intent_of(top_hot),
+            "lead_score": float(top_hot.lead_score or 0),
+            "stage": top_hot.stage or "",
+        }
+
+    tip = None
+    if mood == "alert" and important > 0:
+        tip = "لید پرریسک نیاز به کارشناس"
+    elif mood == "alert" and hot_payload:
+        tip = f"لید داغ: {hot_payload['name']}"
+
     return {
         "mood": mood,
         "open_tasks": open_tasks,
         "important_leads": important,
+        "hot_leads": len(hot_leads),
+        "hot_lead": hot_payload,
+        "tip": tip,
         "exhaust_threshold": EXHAUST_OPEN_TASKS,
     }

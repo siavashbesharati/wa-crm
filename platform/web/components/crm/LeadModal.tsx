@@ -62,6 +62,10 @@ function LeadDetailView({
   const meta = lead.ai_meta || {};
   const suggested = (meta.suggested_stage || "").trim();
   const sentiment = meta.sentiment || "";
+  const buyingIntent =
+    typeof meta.buying_intent === "number" ? meta.buying_intent : null;
+  const memorySummary = (meta.memory?.summary || "").trim();
+  const followPlan = meta.follow_up_plan;
   const risk =
     sentiment === "negative" ||
     !!meta.escalation ||
@@ -69,6 +73,24 @@ function LeadDetailView({
       ["churn_risk", "detractor", "complaint"].includes(t)
     ) ||
     ((lead.tags || []).includes("needs_human") && sentiment === "negative");
+
+  const handoffPack = [
+    `نام: ${lead.name || "—"}`,
+    phone ? `تلفن: ${phone}` : null,
+    `مرحله: ${lead.stage || "—"}`,
+    `امتیاز AI: ${Math.round(score)}`,
+    buyingIntent != null ? `قصد خرید: ${Math.round(buyingIntent)}٪` : null,
+    sentiment ? `احساس: ${SENTIMENT_LABELS_FA[sentiment] || sentiment}` : null,
+    (lead.tags || []).length
+      ? `برچسب‌ها: ${(lead.tags || []).map(tagLabel).join("، ")}`
+      : null,
+    assignee ? `مسئول: ${memberLabel(assignee)}` : "مسئول: بدون ارجاع",
+    lead.bot_paused ? "وضعیت ربات: متوقف" : "وضعیت ربات: فعال",
+    memorySummary ? `خلاصه AI: ${memorySummary}` : null,
+    lead.notes ? `یادداشت:\n${lead.notes.slice(0, 600)}` : null
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return (
     <div className="lead-modal-view">
@@ -126,6 +148,59 @@ function LeadDetailView({
           <span className="lead-info-tile-label">امتیاز AI</span>
           <span className="lead-info-tile-value">{Math.round(score)}</span>
         </div>
+        <div className="lead-info-tile">
+          <span className="lead-info-tile-label">قصد خرید</span>
+          <span className="lead-info-tile-value">
+            {buyingIntent != null ? `${Math.round(buyingIntent)}٪` : "—"}
+          </span>
+        </div>
+      </div>
+
+      {(memorySummary || buyingIntent != null || followPlan?.status) && (
+        <div className="lead-modal-section lead-memory-card">
+          <span className="lead-modal-section-label">حافظه AI</span>
+          <div className="lead-memory-body">
+            {memorySummary ? (
+              <p className="lead-memory-summary">{memorySummary}</p>
+            ) : (
+              <p className="lead-memory-summary hint">هنوز خلاصه‌ای ثبت نشده.</p>
+            )}
+            <div className="lead-memory-meta">
+              {buyingIntent != null ? (
+                <Badge tone={buyingIntent >= 70 ? "accent" : "default"}>
+                  قصد خرید {Math.round(buyingIntent)}٪
+                </Badge>
+              ) : null}
+              {followPlan?.status ? (
+                <Badge tone="accent">
+                  پیگیری خودکار:{" "}
+                  {followPlan.status === "scheduled"
+                    ? "زمان‌بندی‌شده"
+                    : followPlan.status === "sent"
+                      ? "ارسال شد"
+                      : followPlan.status.startsWith("cancelled")
+                        ? "لغو شد"
+                        : followPlan.status}
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="lead-modal-section lead-handoff-card">
+        <span className="lead-modal-section-label">بسته ارجاع به کارشناس</span>
+        <pre className="lead-handoff-pack">{handoffPack}</pre>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            void navigator.clipboard?.writeText(handoffPack);
+          }}
+        >
+          کپی برای کارشناس
+        </Button>
       </div>
 
       {sentiment || suggested ? (

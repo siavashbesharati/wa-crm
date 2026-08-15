@@ -110,3 +110,24 @@ def dequeue(name: str) -> dict | None:
         raw = client.rpop(name)
         return json.loads(raw) if raw else None
     return _file_queue().pop(name)
+
+
+def dequeue_due(name: str, *, now_ts: float | None = None, max_scan: int = 80) -> dict | None:
+    """Pop the first job whose run_at_ts <= now; requeue not-yet-due items."""
+    import time
+
+    now = float(now_ts if now_ts is not None else time.time())
+    scanned = 0
+    while scanned < max_scan:
+        item = dequeue(name)
+        if not item:
+            return None
+        scanned += 1
+        try:
+            run_at = float(item.get("run_at_ts") or 0)
+        except (TypeError, ValueError):
+            run_at = 0.0
+        if run_at <= now:
+            return item
+        enqueue(name, item)
+    return None

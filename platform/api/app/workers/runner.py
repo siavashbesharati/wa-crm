@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.routers.kpi import rollup
 from app.services.ai_reply import generate_reply
-from app.services.queue import dequeue
+from app.services.queue import dequeue, dequeue_due
 from app.services.reply_trace import link_job_trace, trace_event
 
 _LOCK_DIR = Path(__file__).resolve().parents[2] / "data" / "locks"
@@ -451,6 +451,7 @@ def handle_lead_enrich(payload: dict) -> dict:
             payload={
                 "tags_added": applied.get("tags_added"),
                 "lead_score": applied.get("lead_score"),
+                "buying_intent": applied.get("buying_intent"),
                 "sentiment": applied.get("sentiment"),
                 "suggested_stage": applied.get("suggested_stage"),
                 "stage_applied": applied.get("stage_applied"),
@@ -472,9 +473,34 @@ def handle_lead_enrich(payload: dict) -> dict:
                 },
             )
         db.commit()
+
+        # Hot-lead org signal for floating mascot / live UI
+        try:
+            intent = float(applied.get("buying_intent") or 0)
+            tags = set(applied.get("tags") or lead.tags or [])
+            hot = intent >= 75.0 or bool({"ready_to_buy", "high_intent"}.intersection(tags))
+            if hot and not applied.get("escalated"):
+                from app.services.sse_hub import publish_org_event
+
+                publish_org_event(
+                    org.id,
+                    "hot_lead",
+                    {
+                        "lead_id": lead.id,
+                        "name": (lead.name or "").strip() or "لید",
+                        "buying_intent": intent,
+                        "lead_score": applied.get("lead_score"),
+                        "tags": sorted(tags.intersection({"ready_to_buy", "high_intent", "qualified"})),
+                        "stage": lead.stage or "",
+                    },
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
         safe_print(
             f"[worker] lead_enrich ok lead={lead.id} score={applied.get('lead_score')} "
-            f"tags={applied.get('tags_added')} escalated={applied.get('escalated')}"
+            f"intent={applied.get('buying_intent')} tags={applied.get('tags_added')} "
+            f"escalated={applied.get('escalated')}"
         )
         return {"status": "ok", **applied}
     except Exception as e:  # noqa: BLE001
@@ -660,6 +686,40 @@ def handle_campaign_send(payload: dict) -> dict:
         db.close()
 
 
+def handle_follow_up(payload: dict) -> dict:
+    """Delayed silent-follow-up after unanswered inbound."""
+    db = SessionLocal()
+    try:
+        from app.services.follow_up_seq import handle_follow_up_job
+        from app.services.ai_events import record_ai_event
+
+        result = handle_follow_up_job(db, payload)
+        if result.get("status") == "queued":
+            record_ai_event(
+                db,
+                org_id=str(payload.get("org_id") or ""),
+                event_type="follow_up_queued",
+                lead_id=str(payload.get("lead_id") or ""),
+                payload={
+                    "job_id": result.get("job_id"),
+                    "step": result.get("step"),
+                    "next_step": result.get("next_step"),
+                },
+            )
+        db.commit()
+        safe_print(
+            f"[worker] follow_up {result.get('status')} lead={payload.get('lead_id')} "
+            f"step={payload.get('step')} reason={result.get('reason', '')}"
+        )
+        return result
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        safe_print(f"[worker] follow_up error: {e}")
+        return {"status": "error", "reason": str(e)}
+    finally:
+        db.close()
+
+
 def handle_kpi(payload: dict) -> None:
     # Lightweight recompute without HTTP auth context
     from app.deps import AuthContext
@@ -691,6 +751,10 @@ def main() -> None:
         enrich_job = dequeue("lead_enrich")
         if enrich_job:
             handle_lead_enrich(enrich_job)
+            continue
+        follow_job = dequeue_due("follow_up")
+        if follow_job:
+            handle_follow_up(follow_job)
             continue
         camp_job = dequeue("campaign_send")
         if camp_job:

@@ -90,8 +90,48 @@ def _clamp_confidence(value: Any) -> float:
     return round(max(0.0, min(1.0, n)), 3)
 
 
+def _clamp_intent(value: Any) -> float:
+    """Buying-intent percent 0–100 (distinct from general lead_score)."""
+    return _clamp_score(value)
+
+
 def _looks_like_buy_intent(text: str) -> bool:
     return bool(_BUY_INTENT_RE.search(text or ""))
+
+
+def estimate_buying_intent(
+    *,
+    message: str = "",
+    tags: list[str] | None = None,
+    lead_score: float = 0.0,
+    llm_intent: Any = None,
+) -> float:
+    """Prefer LLM value when present; otherwise derive from tags/score/text cues."""
+    if llm_intent is not None and str(llm_intent).strip() != "":
+        try:
+            return _clamp_intent(llm_intent)
+        except (TypeError, ValueError):
+            pass
+    score = 25.0
+    tagset = {str(t).lower() for t in (tags or [])}
+    if "ready_to_buy" in tagset:
+        score = max(score, 88.0)
+    elif "high_intent" in tagset:
+        score = max(score, 75.0)
+    elif "price_sensitive" in tagset or "info_seeking" in tagset:
+        score = max(score, 55.0)
+    elif "qualified" in tagset:
+        score = max(score, 60.0)
+    if "low_intent" in tagset or "unqualified" in tagset:
+        score = min(score, 30.0)
+    if _looks_like_buy_intent(message):
+        score = max(score, 70.0)
+        if re.search(r"خرید|بخرم|سفارش|رزرو", message or ""):
+            score = max(score, 82.0)
+    # Blend lightly with lead_score so they stay related but not identical
+    ls = _clamp_score(lead_score)
+    blended = score * 0.7 + ls * 0.3
+    return _clamp_intent(blended)
 
 
 def _looks_like_hard_escalation(text: str) -> bool:
@@ -111,6 +151,12 @@ def sanitize_enrichment(
     escalation = bool(parsed.get("escalation"))
     score = _clamp_score(parsed.get("lead_score"))
     msg = (message or "").strip()
+    buying_intent = estimate_buying_intent(
+        message=msg,
+        tags=tags_add,
+        lead_score=score,
+        llm_intent=parsed.get("buying_intent"),
+    )
 
     buyish = _looks_like_buy_intent(msg)
     hard = _looks_like_hard_escalation(msg)
@@ -128,6 +174,7 @@ def sanitize_enrichment(
             if t not in tags_remove:
                 tags_remove.append(t)
         score = max(score, 70.0)
+        buying_intent = max(buying_intent, 75.0)
         if not parsed.get("suggested_stage"):
             parsed["suggested_stage"] = "پیگیری"
 
@@ -160,6 +207,12 @@ def sanitize_enrichment(
     parsed["confidence"] = confidence
     parsed["escalation"] = escalation
     parsed["lead_score"] = score
+    parsed["buying_intent"] = estimate_buying_intent(
+        message=msg,
+        tags=parsed["tags_add"],
+        lead_score=score,
+        llm_intent=buying_intent,
+    )
     return parsed
 
 
@@ -175,6 +228,7 @@ def parse_enrichment(raw: dict[str, Any] | None, *, message: str = "") -> dict[s
     suggested = normalize_stage(str(data.get("suggested_stage") or ""))
     confidence = _clamp_confidence(data.get("confidence"))
     escalation = bool(data.get("escalation"))
+    buying_intent = data.get("buying_intent")
 
     task_out = None
     task = data.get("task")
@@ -203,6 +257,7 @@ def parse_enrichment(raw: dict[str, Any] | None, *, message: str = "") -> dict[s
         "task": task_out,
         "escalation": escalation,
         "confidence": confidence,
+        "buying_intent": buying_intent,
     }
     return sanitize_enrichment(parsed, message=message)
 
@@ -233,11 +288,14 @@ def build_enrich_prompts(*, lead: Lead, history_text: str, message: str) -> tupl
         '  "note": "خلاصه کوتاه فارسی برای یادداشت CRM",\n'
         '  "sentiment": "positive|neutral|negative",\n'
         '  "lead_score": 0-100,\n'
+        '  "buying_intent": 0-100,\n'
         f'  "suggested_stage": یکی از [{stages}],\n'
         '  "task": null یا {"title":"...","message":"...","due_hours":24},\n'
         '  "escalation": false,\n'
         '  "confidence": 0-1\n'
         "}\n"
+        "buying_intent = احتمال خرید همین گفتگو (جدا از lead_score کلی).\n"
+        "ready_to_buy≈۸۵–۹۵، high_intent≈۷۰–۸۵، سوال قیمت≈۵۵–۷۰، کنجکاوی≈۳۰–۵۰.\n"
         f"فقط از این برچسب‌ها استفاده کن: {allowed}\n"
         "اگر پیگیری فوری لازم نیست task را null بگذار."
     )
@@ -429,7 +487,17 @@ def apply_enrichment_to_lead(
         lead.stage = suggested
         stage_applied = True
 
+    buying_intent = estimate_buying_intent(
+        message="",
+        tags=new_tags,
+        lead_score=score,
+        llm_intent=enrichment.get("buying_intent"),
+    )
+
     meta = dict(lead.ai_meta or {}) if isinstance(lead.ai_meta, dict) else {}
+    prev_mem = meta.get("memory") if isinstance(meta.get("memory"), dict) else {}
+    prev_summary = str(prev_mem.get("summary") or "").strip()
+    mem_summary = (note or prev_summary)[:400]
     meta.update(
         {
             "sentiment": enrichment.get("sentiment") or "neutral",
@@ -438,6 +506,11 @@ def apply_enrichment_to_lead(
             "last_message_id": message_id or "",
             "confidence": confidence,
             "escalation": bool(enrichment.get("escalation")),
+            "buying_intent": buying_intent,
+            "memory": {
+                "summary": mem_summary,
+                "updated_at": datetime.utcnow().isoformat() + "Z",
+            },
         }
     )
     lead.ai_meta = meta
@@ -498,6 +571,7 @@ def apply_enrichment_to_lead(
         "tags": new_tags,
         "tags_added": [t for t in new_tags if t not in tags_before],
         "lead_score": score,
+        "buying_intent": buying_intent,
         "suggested_stage": suggested or "",
         "stage_applied": stage_applied,
         "stage": lead.stage,
