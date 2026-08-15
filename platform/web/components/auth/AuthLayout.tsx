@@ -42,6 +42,18 @@ export function AuthLayout({
             </p>
             <h1 className="auth-brand-title">{brand}</h1>
             <p className="auth-brand-copy">{tagline}</p>
+            {variant === "business" ? (
+              <div className="auth-mascot" aria-hidden>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/characters/pashmak-login.png"
+                  alt=""
+                  className="auth-mascot-img"
+                  width={320}
+                  height={320}
+                />
+              </div>
+            ) : null}
             <ul className="auth-points">
               {points.map((item) => (
                 <li key={item}>{item}</li>
