@@ -41,12 +41,12 @@ const GOALS: { key: string; label: string }[] = [
 ];
 
 const STARTERS = [
+  "خلاصه امروز را بده",
   "کدام اپراتور کارآمدتر است؟",
-  "فروشنده برتر کیست؟",
-  "خریداران برتر چه کسانی‌اند؟",
   "امروز چه لیدهایی پتانسیل خرید بیشتری دارند؟",
-  "چطور پاسخ‌های ربات را بهتر کنیم؟",
-  "برای لیدهای سرد یک ایده کمپین بده"
+  "کدام نیاز به مداخله انسانی یا ریسک از دست رفتن داره؟",
+  "برای داغ‌ترین لید وظیفه بساز",
+  "پیش‌نویس پیام برای داغ‌ترین لید"
 ];
 
 const emptyProfile = (): PirProfile => ({
@@ -229,6 +229,9 @@ export default function PirPageClient() {
     if (!msg || chatBusy) return;
     setText("");
     setChatBusy(true);
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
     const optimistic: CoachMsg = {
       id: `local-${Date.now()}`,
       role: "user",
@@ -561,24 +564,47 @@ export default function PirPageClient() {
                 void sendChat();
               }}
             >
-              <textarea
-                ref={inputRef}
-                rows={1}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={`پیام به ${PASHMAK_NAME}…`}
-                dir="auto"
-                disabled={chatBusy}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void sendChat();
-                  }
-                }}
-              />
-              <Button type="submit" loading={chatBusy} disabled={!text.trim()}>
-                بفرست
-              </Button>
+              <div className="pir-composer-shell">
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    const el = e.target;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+                  }}
+                  placeholder="هر چیزی بپرسید…"
+                  dir="rtl"
+                  disabled={chatBusy}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendChat();
+                    }
+                  }}
+                />
+                <button
+                  type="submit"
+                  className="pir-composer-send"
+                  disabled={chatBusy || !text.trim()}
+                  aria-label="بفرست"
+                >
+                  {chatBusy ? <span className="pir-composer-send-spin" aria-hidden /> : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        d="M12 19V5M12 5l-6 6M12 5l6 6"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <p className="pir-composer-hint">Enter ارسال · Shift+Enter خط جدید</p>
             </form>
           </section>
         )}

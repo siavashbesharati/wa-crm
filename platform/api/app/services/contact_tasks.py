@@ -52,8 +52,14 @@ def create_task_for_contact(
     source: str = "manual",
     source_message_id: str = "",
     conversation_excerpt: str = "",
+    commit: bool = True,
 ) -> Task:
-    """Create a follow-up task attached to a contact. Used by UI and AI agent."""
+    """Create a follow-up task attached to a contact. Used by UI and AI agent.
+
+    Always scoped to org_id — lead must belong to the same organization.
+    """
+    if not (org_id or "").strip():
+        raise HTTPException(status_code=400, detail="org_id لازم است")
     lead = get_org_lead(db, org_id, lead_id)
     src = (source or "manual").strip().lower() or "manual"
     if src not in TASK_SOURCES:
@@ -88,8 +94,11 @@ def create_task_for_contact(
         source_message_id=(source_message_id or "").strip(),
     )
     db.add(task)
-    db.commit()
-    db.refresh(task)
+    if commit:
+        db.commit()
+        db.refresh(task)
+    else:
+        db.flush()
     return task
 
 

@@ -551,6 +551,34 @@ def get_pir_analytics(
     }
 
 
+@router.get("/pir/agent/brief")
+def get_pir_agent_brief(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    """Morning brief for the authenticated org only (no cross-tenant data)."""
+    from app.services.pashmak_agent import build_morning_brief, format_brief_report
+
+    brief = build_morning_brief(db, auth.org.id)
+    return {"org_id": auth.org.id, "brief": brief, "report": format_brief_report(brief)}
+
+
+@router.post("/pir/agent/run")
+def post_pir_agent_run(
+    body: PirChatIn,
+    auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
+    db: Session = Depends(get_db),
+):
+    """Run agent tools for a natural-language command — always scoped to auth.org.id."""
+    from app.services.pashmak_agent import run_agent_for_message
+
+    message = (body.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="پیام لازم است")
+    report = run_agent_for_message(
+        db, org_id=auth.org.id, message=message, user_id=auth.user.id
+    )
+    db.commit()
+    return {"org_id": auth.org.id, "report": report or "اقدام تشخیص داده نشد."}
+
+
 @router.put("/pir/profile")
 def put_pir_profile(
     body: PirProfileIn,

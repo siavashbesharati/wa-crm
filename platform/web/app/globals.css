@@ -4725,22 +4725,99 @@ a.btn.wizard-btn:hover {
 }
 .pir-chat-composer {
   display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  padding: 8px 4px 4px;
-  border-top: 1px solid color-mix(in srgb, var(--pir-dust) 18%, transparent);
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  padding: 10px 4px 6px;
+  border-top: none;
   background: transparent;
   flex-shrink: 0;
 }
-.pir-chat-composer textarea {
+.pir-composer-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  padding: 10px 10px 10px 12px;
+  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--pir-dust, #8a7460) 28%, transparent);
+  background: #f4f4f4;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, #000 4%, transparent),
+    0 8px 24px color-mix(in srgb, #000 4%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.pir-composer-shell:focus-within {
+  background: #fff;
+  border-color: color-mix(in srgb, var(--pir-ink, #1c1410) 35%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--pir-ink, #1c1410) 8%, transparent),
+    0 8px 24px color-mix(in srgb, #000 6%, transparent);
+}
+.pir-chat-composer textarea,
+.pir-composer-shell textarea {
   flex: 1;
-  min-height: 40px;
-  max-height: 96px;
+  min-height: 24px;
+  max-height: 200px;
+  height: 24px;
   resize: none;
-  padding: 10px 12px;
-  font-size: 13.5px;
-  line-height: 1.4;
+  overflow-y: auto;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 2px 4px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #0d0d0d;
   direction: rtl;
+  text-align: right;
+  font-family: inherit;
+}
+.pir-composer-shell textarea::placeholder {
+  color: #8e8e8e;
+}
+.pir-composer-shell textarea:disabled {
+  opacity: 0.65;
+}
+.pir-composer-send {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  color: #fff;
+  background: #0d0d0d;
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+.pir-composer-send:hover:not(:disabled) {
+  background: #2a2a2a;
+  transform: translateY(-1px);
+}
+.pir-composer-send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+.pir-composer-send-spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
+.pir-composer-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--pir-dust, #8a7460);
+  line-height: 1.3;
 }
 .pir-info-modal {
   display: flex;
