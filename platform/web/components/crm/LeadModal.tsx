@@ -15,7 +15,8 @@ import { ChannelBadge } from "@/components/channels/brand";
 import {
   STAGES,
   STAGE_DOT,
-  leadIdentity,
+  leadPhone,
+  leadContactId,
   LtrText,
   initials,
   memberLabel,
@@ -54,7 +55,8 @@ function LeadDetailView({
   onResumeBot?: () => void;
   resumingBot?: boolean;
 }) {
-  const identity = leadIdentity(lead);
+  const phone = leadPhone(lead);
+  const contactId = leadContactId(lead);
   const isGroup = lead.chat_type === "group";
   const score = typeof lead.lead_score === "number" ? lead.lead_score : 0;
   const meta = lead.ai_meta || {};
@@ -97,9 +99,15 @@ function LeadDetailView({
 
       <div className="lead-info-tiles">
         <div className="lead-info-tile">
-          <span className="lead-info-tile-label">شناسه / تلفن</span>
+          <span className="lead-info-tile-label">تلفن</span>
           <LtrText className="lead-info-tile-value ltr-block">
-            {identity !== "-" ? identity : "—"}
+            {phone || "—"}
+          </LtrText>
+        </div>
+        <div className="lead-info-tile">
+          <span className="lead-info-tile-label">شناسه مخاطب</span>
+          <LtrText className="lead-info-tile-value ltr-block">
+            {isGroup ? lead.group_id || "—" : contactId || "—"}
           </LtrText>
         </div>
         <div className="lead-info-tile">
@@ -405,6 +413,11 @@ export function LeadModal({
           body: JSON.stringify({
             name: editForm.name.trim(),
             phone: editForm.chat_type === "group" ? "" : editForm.phone.trim(),
+            wa_lid: editForm.chat_type === "group" ? "" : editForm.contact_id.trim(),
+            external_chat_id:
+              editForm.chat_type === "group"
+                ? null
+                : editForm.contact_id.trim() || null,
             group_id: editForm.chat_type === "group" ? editForm.group_id.trim() : "",
             chat_type: editForm.chat_type,
             stage: editForm.stage,
@@ -550,16 +563,28 @@ export function LeadModal({
                 />
               </label>
             ) : (
-              <label>
-                تلفن
-                <input
-                  className="ltr-text"
-                  dir="ltr"
-                  value={editForm.phone}
-                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                  placeholder="+989..."
-                />
-              </label>
+              <>
+                <label>
+                  تلفن
+                  <input
+                    className="ltr-text"
+                    dir="ltr"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    placeholder="+989..."
+                  />
+                </label>
+                <label>
+                  شناسه مخاطب
+                  <input
+                    className="ltr-text"
+                    dir="ltr"
+                    value={editForm.contact_id}
+                    onChange={(e) => setEditForm({ ...editForm, contact_id: e.target.value })}
+                    placeholder="…@lid یا شناسه چت"
+                  />
+                </label>
+              </>
             )}
             <label>
               مرحله

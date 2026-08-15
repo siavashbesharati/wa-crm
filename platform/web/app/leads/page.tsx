@@ -18,7 +18,8 @@ import {
   STAGES,
   STAGE_DOT,
   CHANNEL_LABELS,
-  leadIdentity,
+  leadPhone,
+  leadContactId,
   LtrText,
   tasksBoardHref,
   tasksByTagHref,
@@ -521,15 +522,15 @@ export default function LeadsPage() {
                     </select>
                   </label>
                   <label className="leads-toolbar-field leads-toolbar-grow">
-                    <span>شناسه / تلفن</span>
+                    <span>تلفن / شناسه</span>
                     <input
                       className="ltr-text"
                       dir="ltr"
                       type="text"
                       value={identityFilter}
                       onChange={(e) => setIdentityFilter(e.target.value)}
-                      placeholder="جستجوی شماره یا JID…"
-                      aria-label="فیلتر شناسه یا تلفن"
+                      placeholder="جستجوی شماره یا شناسه مخاطب…"
+                      aria-label="فیلتر تلفن یا شناسه مخاطب"
                     />
                   </label>
                   {hasActiveFilters ? (
@@ -545,7 +546,8 @@ export default function LeadsPage() {
                       <tr>
                         <th>نام</th>
                         <th>نوع</th>
-                        <th>شناسه</th>
+                        <th>تلفن</th>
+                        <th>شناسه مخاطب</th>
                         <th>کانال</th>
                         <th>مرحله</th>
                         <th>ارجاع</th>
@@ -661,7 +663,14 @@ export default function LeadsPage() {
                                 )}
                               </td>
                               <td>
-                                <LtrText>{leadIdentity(l)}</LtrText>
+                                <LtrText>{leadPhone(l) || "—"}</LtrText>
+                              </td>
+                              <td>
+                                <LtrText className="muted-cell">
+                                  {l.chat_type === "group"
+                                    ? l.group_id || "—"
+                                    : leadContactId(l) || "—"}
+                                </LtrText>
                               </td>
                               <td>
                                 {l.source_channel ? (

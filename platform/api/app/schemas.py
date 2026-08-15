@@ -201,6 +201,7 @@ class LeadIn(BaseModel):
     phone: str = ""
     group_id: str = ""
     external_chat_id: str = ""
+    wa_lid: str = ""
     post_token: str = ""
     source_channel: str = ""
     chat_type: str = "pv"
@@ -241,6 +242,7 @@ class LeadPatchIn(BaseModel):
     phone: str | None = None
     group_id: str | None = None
     external_chat_id: str | None = None
+    wa_lid: str | None = None
     post_token: str | None = None
     source_channel: str | None = None
     chat_type: str | None = None

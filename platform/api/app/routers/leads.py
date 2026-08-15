@@ -18,10 +18,21 @@ _PHONE_RE = re.compile(r"^\+?\d{8,15}$")
 
 
 def _sanitize_phone(value: str | None, *, chat_type: str = "pv") -> str:
+    """Keep only real phone digits — never WhatsApp @lid / chat JIDs."""
     if (chat_type or "").strip().lower() == "group":
         return ""
     t = re.sub(r"[\s\-()]", "", str(value or "").strip())
     if not t:
+        return ""
+    low = t.lower()
+    # Contact id / chat jid must not live in phone
+    if (
+        "@lid" in low
+        or "@c.us" in low
+        or "@s.whatsapp.net" in low
+        or "@g.us" in low
+        or low.endswith("@lid")
+    ):
         return ""
     if _PHONE_RE.match(t):
         return t
@@ -30,26 +41,38 @@ def _sanitize_phone(value: str | None, *, chat_type: str = "pv") -> str:
         return ""
     if not any(ch.isdigit() for ch in t) and len(t) < 20:
         return ""
-    return str(value or "").strip()
+    # Reject anything that still looks like a jid local-part dump
+    if "@" in t:
+        return ""
+    return t
 
 
-def _delete_lead_related(db: Session, *, org_id: str, lead_id: str) -> None:
-    """Remove dependent rows before deleting the lead (SQLite has no ON DELETE CASCADE)."""
-    db.query(OutboundJob).filter(
-        OutboundJob.org_id == org_id, OutboundJob.lead_id == lead_id
-    ).delete(synchronize_session=False)
-    db.query(Message).filter(Message.org_id == org_id, Message.lead_id == lead_id).delete(
-        synchronize_session=False
-    )
-    db.query(LeadAccountLink).filter(
-        LeadAccountLink.org_id == org_id, LeadAccountLink.lead_id == lead_id
-    ).delete(synchronize_session=False)
-    db.query(Task).filter(Task.org_id == org_id, Task.lead_id == lead_id).update(
-        {Task.lead_id: None}, synchronize_session=False
-    )
+def _heal_lead_phone_vs_contact_id(lead: Lead) -> bool:
+    """If phone holds a @lid/jid, move it to wa_lid and clear phone. Returns True if changed."""
+    changed = False
+    phone = (lead.phone or "").strip()
+    low = phone.lower()
+    if phone and (
+        "@lid" in low
+        or "@c.us" in low
+        or "@s.whatsapp.net" in low
+        or low.endswith("@lid")
+    ):
+        from app.services.lead_identity import is_lid_jid, normalize_lid
+
+        if is_lid_jid(phone) or phone.endswith("@lid") or "@lid" in low:
+            lid = normalize_lid(phone) or phone
+            if lid and not (getattr(lead, "wa_lid", None) or "").strip():
+                lead.wa_lid = lid
+            if not (lead.external_chat_id or "").strip():
+                lead.external_chat_id = lid
+        lead.phone = ""
+        changed = True
+    return changed
 
 
 def _to_out(lead: Lead) -> LeadOut:
+    _heal_lead_phone_vs_contact_id(lead)
     return LeadOut(
         id=lead.id,
         name=lead.name,
@@ -71,6 +94,22 @@ def _to_out(lead: Lead) -> LeadOut:
         last_message_at=lead.last_message_at,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
+    )
+
+
+def _delete_lead_related(db: Session, *, org_id: str, lead_id: str) -> None:
+    """Remove dependent rows before deleting the lead (SQLite has no ON DELETE CASCADE)."""
+    db.query(OutboundJob).filter(
+        OutboundJob.org_id == org_id, OutboundJob.lead_id == lead_id
+    ).delete(synchronize_session=False)
+    db.query(Message).filter(Message.org_id == org_id, Message.lead_id == lead_id).delete(
+        synchronize_session=False
+    )
+    db.query(LeadAccountLink).filter(
+        LeadAccountLink.org_id == org_id, LeadAccountLink.lead_id == lead_id
+    ).delete(synchronize_session=False)
+    db.query(Task).filter(Task.org_id == org_id, Task.lead_id == lead_id).update(
+        {Task.lead_id: None}, synchronize_session=False
     )
 
 
@@ -116,6 +155,7 @@ def list_leads(
             | (Lead.phone.ilike(like))
             | (Lead.notes.ilike(like))
             | (Lead.external_chat_id.ilike(like))
+            | (Lead.wa_lid.ilike(like))
         )
     rows = query.limit(500).all()
     stage_rank = {s: i for i, s in enumerate(STAGES)}
@@ -128,6 +168,13 @@ def list_leads(
         )
 
     rows.sort(key=sort_key)
+    healed = False
+    for r in rows:
+        if _heal_lead_phone_vs_contact_id(r):
+            db.add(r)
+            healed = True
+    if healed:
+        db.commit()
     return [_to_out(r) for r in rows]
 
 
@@ -152,11 +199,22 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
     if chat_type != "group":
         chat_type = "pv"
     phone = _sanitize_phone(body.phone, chat_type=chat_type)
+    from app.services.lead_identity import normalize_lid
+
+    wa_lid = normalize_lid(body.wa_lid or "") or (body.wa_lid or "").strip()
+    if not wa_lid and external_chat_id and "@lid" in (external_chat_id or "").lower():
+        wa_lid = normalize_lid(external_chat_id) or external_chat_id
     lead = None
     if external_chat_id:
         lead = (
             db.query(Lead)
             .filter(Lead.org_id == auth.org.id, Lead.external_chat_id == external_chat_id)
+            .first()
+        )
+    if not lead and wa_lid:
+        lead = (
+            db.query(Lead)
+            .filter(Lead.org_id == auth.org.id, Lead.wa_lid == wa_lid)
             .first()
         )
     if not lead and phone:
@@ -188,6 +246,8 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             lead.group_id = body.group_id
         if external_chat_id:
             lead.external_chat_id = external_chat_id
+        if wa_lid:
+            lead.wa_lid = wa_lid
         if body.post_token:
             lead.post_token = body.post_token
         if body.source_channel:
@@ -213,6 +273,7 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
             phone=phone,
             group_id=body.group_id,
             external_chat_id=external_chat_id,
+            wa_lid=wa_lid or "",
             post_token=body.post_token or "",
             source_channel=body.source_channel or "",
             chat_type=chat_type,
@@ -320,10 +381,20 @@ def patch_lead(
     if "phone" in data and data["phone"] is not None:
         ct = data.get("chat_type") or lead.chat_type or "pv"
         data["phone"] = _sanitize_phone(str(data["phone"]).strip(), chat_type=str(ct))
+    if "wa_lid" in data and data["wa_lid"] is not None:
+        from app.services.lead_identity import normalize_lid
+
+        raw_lid = str(data["wa_lid"] or "").strip()
+        data["wa_lid"] = normalize_lid(raw_lid) or raw_lid
+    if "external_chat_id" in data:
+        ext = data["external_chat_id"]
+        if ext is not None:
+            data["external_chat_id"] = str(ext).strip() or None
     if "notes" in data and data["notes"] is not None:
         data["notes"] = str(data["notes"])
     for key, value in data.items():
         setattr(lead, key, value)
+    _heal_lead_phone_vs_contact_id(lead)
     lead.updated_at = datetime.utcnow()
     db.add(lead)
     db.commit()

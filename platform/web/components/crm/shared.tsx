@@ -62,8 +62,27 @@ export const CHANNEL_LABELS: Record<string, string> = {
   divar: "دیوار"
 };
 
+export function leadPhone(l: Lead) {
+  const p = (l.phone || "").trim();
+  if (!p) return "";
+  // Never treat WhatsApp contact ids as phone in the UI
+  if (p.includes("@lid") || p.includes("@c.us") || p.includes("@s.whatsapp.net")) return "";
+  return p;
+}
+
+export function leadContactId(l: Lead) {
+  const lid = (l.wa_lid || "").trim();
+  if (lid) return lid;
+  const ext = (l.external_chat_id || "").trim();
+  if (ext) return ext;
+  const p = (l.phone || "").trim();
+  if (p.includes("@lid") || p.includes("@c.us") || p.includes("@s.whatsapp.net")) return p;
+  return "";
+}
+
+/** @deprecated Prefer leadPhone / leadContactId — kept for list fallbacks */
 export function leadIdentity(l: Lead) {
-  return l.phone || l.external_chat_id || l.group_id || "-";
+  return leadPhone(l) || leadContactId(l) || l.group_id || "-";
 }
 
 export function LtrText({

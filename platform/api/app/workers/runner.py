@@ -245,7 +245,12 @@ def handle_auto_reply(payload: dict) -> dict:
             return _auto_reply_result("skipped", "outside_business_hours")
 
         conf = float(result.get("confidence") or 0)
-        if not meets_min_confidence(policy, conf):
+        # Intentional provider-fallback copy must still go out when auto_send is on.
+        # Otherwise WA shows read+typing and never delivers the configured fallback text.
+        is_fallback = bool(result.get("fallback_reason")) or str(
+            result.get("provider") or ""
+        ).strip().lower() == "fallback"
+        if not is_fallback and not meets_min_confidence(policy, conf):
             record_ai_event(
                 db,
                 org_id=org.id,
@@ -275,6 +280,18 @@ def handle_auto_reply(payload: dict) -> dict:
                 f"conf={conf} min={policy.min_confidence} lead={lead.id}"
             )
             return _auto_reply_result("skipped", "below_min_confidence")
+
+        if is_fallback:
+            safe_print(
+                f"[worker] auto_reply using fallback text "
+                f"reason={result.get('fallback_reason')!r} lead={lead.id}"
+            )
+            trace_event(
+                trace_id,
+                "auto_reply_fallback_send",
+                reason=result.get("fallback_reason") or "fallback",
+                confidence=conf,
+            )
 
         # Prefer the same channel account that received the inbound message
         link = (

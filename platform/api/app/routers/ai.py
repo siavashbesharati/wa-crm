@@ -442,7 +442,11 @@ def run_auto_reply_for_lead(
 
     if not within_business_hours(policy):
         return {"sent": False, "reason": "outside_business_hours"}
-    if not meets_min_confidence(policy, float(result.get("confidence") or 0)):
+    conf = float(result.get("confidence") or 0)
+    is_fallback = bool(result.get("fallback_reason")) or str(
+        result.get("provider") or ""
+    ).strip().lower() == "fallback"
+    if not is_fallback and not meets_min_confidence(policy, conf):
         return {"sent": False, "reason": "below_min_confidence", "confidence": result.get("confidence")}
 
     from app.models import LeadAccountLink, MessageDirection, OutboundJob, OutboundStatus, SenderType

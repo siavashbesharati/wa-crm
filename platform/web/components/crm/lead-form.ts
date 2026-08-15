@@ -3,6 +3,7 @@ import { STAGES, type Lead } from "./shared";
 export type EditForm = {
   name: string;
   phone: string;
+  contact_id: string;
   group_id: string;
   chat_type: string;
   stage: string;
@@ -22,6 +23,7 @@ export function emptyForm(): EditForm {
   return {
     name: "",
     phone: "",
+    contact_id: "",
     group_id: "",
     chat_type: "pv",
     stage: STAGES[0],
@@ -33,9 +35,13 @@ export function emptyForm(): EditForm {
 }
 
 export function toEditForm(l: Lead): EditForm {
+  const phone = (l.phone || "").trim();
+  const phoneLooksLikeId =
+    phone.includes("@lid") || phone.includes("@c.us") || phone.includes("@s.whatsapp.net");
   return {
     name: l.name || "",
-    phone: l.phone || "",
+    phone: phoneLooksLikeId ? "" : phone,
+    contact_id: (l.wa_lid || l.external_chat_id || (phoneLooksLikeId ? phone : "") || "").trim(),
     group_id: l.group_id || "",
     chat_type: l.chat_type === "group" ? "group" : "pv",
     stage: l.stage || STAGES[0],
