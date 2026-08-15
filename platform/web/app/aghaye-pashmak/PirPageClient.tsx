@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { PageLoading } from "@/components/ui/Spinner";
 import { PASHMAK_AVATAR, PASHMAK_NAME } from "@/components/AghaPashmakFloat";
 import { api } from "@/lib/api";
+import { getCachedOrgMe, loadOrgMe } from "@/lib/me-cache";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 
@@ -67,6 +69,16 @@ function PashmakAvatar({ size = 36 }: { size?: number }) {
   );
 }
 
+function UserInitialAvatar({ name }: { name: string }) {
+  const label = (name || "ک").trim();
+  const initial = label.slice(0, 1);
+  return (
+    <span className="pir-user-avatar" title={label} aria-hidden>
+      {initial}
+    </span>
+  );
+}
+
 export default function PirPageClient() {
   const searchParams = useSearchParams();
   const wantChat = searchParams.get("chat") === "1";
@@ -77,6 +89,10 @@ export default function PirPageClient() {
   const [messages, setMessages] = useState<CoachMsg[]>([]);
   const [text, setText] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [userName, setUserName] = useState(
+    () => getCachedOrgMe()?.user?.display_name || getCachedOrgMe()?.user?.phone || "کاربر"
+  );
   const { busy, run } = useMutation();
   const toast = useToast();
   const scroller = useRef<HTMLDivElement>(null);
@@ -85,10 +101,14 @@ export default function PirPageClient() {
   async function load() {
     setLoading(true);
     try {
-      const [p, thread] = await Promise.all([
+      const [p, thread, me] = await Promise.all([
         api<PirProfile>("/ai/pir/profile"),
-        api<{ messages: CoachMsg[] }>("/ai/pir/messages").catch(() => ({ messages: [] }))
+        api<{ messages: CoachMsg[] }>("/ai/pir/messages").catch(() => ({ messages: [] })),
+        loadOrgMe().catch(() => getCachedOrgMe())
       ]);
+      if (me?.user) {
+        setUserName(me.user.display_name || me.user.phone || "کاربر");
+      }
       setProfile({
         ...emptyProfile(),
         ...p,
@@ -201,7 +221,10 @@ export default function PirPageClient() {
       () => api("/ai/pir/messages", { method: "DELETE" }),
       { success: "گفتگو پاک شد" }
     );
-    if (ok) setMessages([]);
+    if (ok) {
+      setMessages([]);
+      setInfoOpen(false);
+    }
   }
 
   if (loading) {
@@ -212,38 +235,36 @@ export default function PirPageClient() {
     );
   }
 
+  const goalLabels = profile.goals
+    .map((g) => GOALS.find((x) => x.key === g)?.label || g)
+    .filter(Boolean)
+    .join("، ");
+
   return (
-    <Shell title={PASHMAK_NAME} sub="مربی خردمند تیم فروش — نه ربات مشتری">
-      <div className="pir-page">
-        <header className="pir-hero">
-          <div className="pir-hero-brand-row">
-            <PashmakAvatar size={64} />
-            <p className="pir-brand">{PASHMAK_NAME}</p>
-          </div>
-          <p className="pir-lead">
-            پروفایل کسب‌وکارتان را بسازید تا دستور AI مشتری نوشته شود؛ سپس از مربی برای کمپین،
-            دانش و بهبود پاسخ‌ها بپرسید.
-          </p>
-          <p className="pir-disclaimer">
-            {PASHMAK_NAME} فقط به تیم شما مشاوره می‌دهد؛ پیام مشتری نمی‌فرستد.
-          </p>
-          {mode === "chat" ? (
-            <div className="pir-hero-actions">
-              <Button type="button" size="sm" variant="secondary" onClick={() => setMode("wizard")}>
-                ویرایش پروفایل
-              </Button>
-              <Link href="/ai-settings" className="pir-link">
-                تنظیمات AI
-              </Link>
+    <Shell title={PASHMAK_NAME} sub="مربی خردمند تیم فروش">
+      <div className={`pir-page${mode === "chat" ? " pir-page--chat" : ""}`}>
+        {mode !== "chat" ? (
+          <header className="pir-hero">
+            <div className="pir-hero-brand-row">
+              <PashmakAvatar size={56} />
+              <p className="pir-brand">{PASHMAK_NAME}</p>
             </div>
-          ) : profile.wizard_completed ? (
-            <div className="pir-hero-actions">
-              <Button type="button" size="sm" variant="secondary" onClick={() => setMode("chat")}>
-                بازگشت به گفتگو
-              </Button>
-            </div>
-          ) : null}
-        </header>
+            <p className="pir-lead">
+              پروفایل کسب‌وکارتان را بسازید تا دستور AI مشتری نوشته شود؛ سپس از مربی برای کمپین،
+              دانش و بهبود پاسخ‌ها بپرسید.
+            </p>
+            <p className="pir-disclaimer">
+              {PASHMAK_NAME} فقط به تیم شما مشاوره می‌دهد؛ پیام مشتری نمی‌فرستد.
+            </p>
+            {profile.wizard_completed ? (
+              <div className="pir-hero-actions">
+                <Button type="button" size="sm" variant="secondary" onClick={() => setMode("chat")}>
+                  بازگشت به گفتگو
+                </Button>
+              </div>
+            ) : null}
+          </header>
+        ) : null}
 
         {mode === "wizard" ? (
           <section className="pir-wizard" aria-label="ویزارد پروفایل">
@@ -408,19 +429,30 @@ export default function PirPageClient() {
           </section>
         ) : (
           <section className="pir-chat" aria-label={`گفتگو با ${PASHMAK_NAME}`}>
-            <div className="pir-chat-toolbar">
-              <div className="pir-chat-toolbar-brand">
-                <PashmakAvatar size={40} />
+            <button
+              type="button"
+              className="pir-chat-head"
+              onClick={() => setInfoOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={infoOpen}
+              aria-label={`${PASHMAK_NAME} — مشاهده جزئیات و اقدامات`}
+            >
+              <span className="pir-chat-head-avatar">
+                <PashmakAvatar size={42} />
+              </span>
+              <span className="pir-chat-head-meta">
                 <strong>{PASHMAK_NAME}</strong>
-              </div>
-              <Button type="button" size="sm" variant="ghost" loading={busy} onClick={() => void clearChat()}>
-                پاک کردن گفتگو
-              </Button>
-            </div>
+                <span>مربی تیم · ضربه بزنید برای جزئیات</span>
+              </span>
+              <span className="pir-chat-head-cta" aria-hidden>
+                جزئیات
+                <span className="pir-chat-head-chevron">‹</span>
+              </span>
+            </button>
             <div className="pir-chat-thread" ref={scroller}>
               {messages.length === 0 ? (
                 <div className="pir-chat-empty">
-                  <PashmakAvatar size={72} />
+                  <PashmakAvatar size={56} />
                   <p>از {PASHMAK_NAME} بپرسید…</p>
                   <div className="pir-starters">
                     {STARTERS.map((s) => (
@@ -436,7 +468,7 @@ export default function PirPageClient() {
                     <div key={m.id} className="pir-msg-row assistant">
                       <div className="pir-bubble assistant" dir="auto">
                         <div className="pir-bubble-head">
-                          <PashmakAvatar size={28} />
+                          <PashmakAvatar size={22} />
                         </div>
                         <p>{m.body}</p>
                       </div>
@@ -444,6 +476,9 @@ export default function PirPageClient() {
                   ) : (
                     <div key={m.id} className="pir-msg-row user">
                       <div className="pir-bubble user" dir="auto">
+                        <div className="pir-bubble-head">
+                          <UserInitialAvatar name={userName} />
+                        </div>
                         <p>{m.body}</p>
                       </div>
                     </div>
@@ -454,7 +489,7 @@ export default function PirPageClient() {
                 <div className="pir-msg-row assistant">
                   <div className="pir-bubble assistant pir-thinking" dir="auto">
                     <div className="pir-bubble-head">
-                      <PashmakAvatar size={28} />
+                      <PashmakAvatar size={22} />
                     </div>
                     <p>در حال اندیشیدن…</p>
                   </div>
@@ -470,10 +505,10 @@ export default function PirPageClient() {
             >
               <textarea
                 ref={inputRef}
-                rows={2}
+                rows={1}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder={`سوال از ${PASHMAK_NAME}…`}
+                placeholder={`پیام به ${PASHMAK_NAME}…`}
                 dir="auto"
                 disabled={chatBusy}
                 onKeyDown={(e) => {
@@ -484,12 +519,76 @@ export default function PirPageClient() {
                 }}
               />
               <Button type="submit" loading={chatBusy} disabled={!text.trim()}>
-                بپرس
+                بفرست
               </Button>
             </form>
           </section>
         )}
       </div>
+
+      <Modal
+        open={infoOpen}
+        title={PASHMAK_NAME}
+        onClose={() => setInfoOpen(false)}
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setInfoOpen(false)}>
+              بستن
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              loading={busy}
+              onClick={() => void clearChat()}
+            >
+              پاک کردن گفتگو
+            </Button>
+          </>
+        }
+      >
+        <div className="pir-info-modal">
+          <div className="pir-info-hero">
+            <PashmakAvatar size={72} />
+            <div>
+              <strong>{PASHMAK_NAME}</strong>
+              <p>مربی هوشمند داخلی — فقط برای تیم شما، نه مشتری.</p>
+            </div>
+          </div>
+          <dl className="pir-info-facts">
+            <div>
+              <dt>حوزه</dt>
+              <dd dir="auto">{profile.niche || "—"}</dd>
+            </div>
+            <div>
+              <dt>لحن</dt>
+              <dd dir="auto">{profile.tone || "—"}</dd>
+            </div>
+            <div>
+              <dt>اهداف</dt>
+              <dd dir="auto">{goalLabels || "—"}</dd>
+            </div>
+          </dl>
+          <div className="pir-info-actions">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setInfoOpen(false);
+                setMode("wizard");
+              }}
+            >
+              ویرایش پروفایل
+            </Button>
+            <Link
+              href="/ai-settings"
+              className="btn secondary"
+              onClick={() => setInfoOpen(false)}
+            >
+              تنظیمات AI
+            </Link>
+          </div>
+        </div>
+      </Modal>
     </Shell>
   );
 }

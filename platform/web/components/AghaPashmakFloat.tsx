@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 
-const CHAT_HREF = "/pir-kharabat?chat=1";
+const CHAT_HREF = "/aghaye-pashmak?chat=1";
 
 export type PashmakMood = "normal" | "happy" | "exhaust" | "alert";
 
@@ -32,7 +32,8 @@ function isMood(v: string | undefined): v is PashmakMood {
 /** Floating «آقای پشمک» mascot — bottom-left; pose follows CRM load. */
 export function AghaPashmakFloat() {
   const pathname = usePathname();
-  const onCoachPage = pathname === "/pir-kharabat" || pathname.startsWith("/pir-kharabat/");
+  const onCoachPage =
+    pathname === "/aghaye-pashmak" || pathname.startsWith("/aghaye-pashmak/");
   const [mood, setMood] = useState<PashmakMood>("normal");
 
   useEffect(() => {

@@ -1,21 +1,25 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import Shell from "@/components/Shell";
 import { PageLoading } from "@/components/ui/Spinner";
-import { PASHMAK_NAME } from "@/components/AghaPashmakFloat";
-import PirPageClient from "./PirPageClient";
 
-export default function Page() {
+function RedirectInner() {
+  const router = useRouter();
+  const search = useSearchParams();
+  useEffect(() => {
+    const q = search.toString();
+    router.replace(q ? `/aghaye-pashmak?${q}` : "/aghaye-pashmak");
+  }, [router, search]);
+  return <PageLoading />;
+}
+
+/** Legacy URL → /aghaye-pashmak */
+export default function LegacyPirRedirect() {
   return (
-    <Suspense
-      fallback={
-        <Shell title={PASHMAK_NAME} sub="مربی هوشمند کسب‌وکار">
-          <PageLoading />
-        </Shell>
-      }
-    >
-      <PirPageClient />
+    <Suspense fallback={<PageLoading />}>
+      <RedirectInner />
     </Suspense>
   );
 }
