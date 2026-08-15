@@ -449,7 +449,11 @@ def compute_mascot_mood(db: Session, org_id: str) -> dict[str, Any]:
     if mood == "alert" and important > 0:
         tip = "لید پرریسک نیاز به کارشناس"
     elif mood == "alert" and hot_payload:
-        tip = f"لید داغ: {hot_payload['name']}"
+        name = str(hot_payload.get("name") or "")
+        if "@" in name or "g.us" in name or name.replace("+", "").isdigit():
+            tip = "لید داغ!"
+        else:
+            tip = f"لید داغ: {name}"
 
     return {
         "mood": mood,

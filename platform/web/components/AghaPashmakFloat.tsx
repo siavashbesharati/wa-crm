@@ -63,6 +63,16 @@ function clampPos(p: Pos, elW: number, elH: number): Pos {
   };
 }
 
+function shortLeadLabel(name?: string | null): string {
+  const raw = (name || "").trim();
+  if (!raw) return "لید داغ";
+  // Hide raw WhatsApp JIDs / lids in the bubble
+  if (/@|^\d{10,}$/.test(raw) || raw.includes("g.us") || raw.includes("@lid")) {
+    return "لید داغ";
+  }
+  return raw.length > 18 ? `${raw.slice(0, 16)}…` : raw;
+}
+
 /** Floating «آقای پشمک» mascot — draggable; pose follows CRM load. */
 export function AghaPashmakFloat() {
   const pathname = usePathname();
@@ -70,7 +80,8 @@ export function AghaPashmakFloat() {
   const onCoachPage =
     pathname === "/aghaye-pashmak" || pathname.startsWith("/aghaye-pashmak/");
   const [mood, setMood] = useState<PashmakMood>("normal");
-  const [tipOverride, setTipOverride] = useState<string | null>(null);
+  const [alertBubble, setAlertBubble] = useState<string | null>(null);
+  const [hotCount, setHotCount] = useState(0);
   const [pos, setPos] = useState<Pos | null>(null);
   const [dragging, setDragging] = useState(false);
   const rootRef = useRef<HTMLButtonElement>(null);
@@ -91,16 +102,26 @@ export function AghaPashmakFloat() {
         const res = await api<{
           mood?: string;
           tip?: string | null;
+          hot_leads?: number;
+          important_leads?: number;
           hot_lead?: { name?: string; buying_intent?: number } | null;
         }>("/ai/pir/mood");
         if (cancelled) return;
         if (isMood(res.mood)) setMood(res.mood);
-        const custom =
-          (res.tip || "").trim() ||
-          (res.hot_lead?.name
-            ? `لید داغ: ${res.hot_lead.name}`
-            : "");
-        setTipOverride(custom || null);
+        const hot = Number(res.hot_leads || 0) + Number(res.important_leads || 0);
+        setHotCount(hot > 0 ? hot : res.mood === "alert" ? 1 : 0);
+        if (res.mood === "alert" || res.hot_lead?.name) {
+          const label = shortLeadLabel(res.hot_lead?.name);
+          setAlertBubble(
+            Number(res.important_leads || 0) > 0 && !res.hot_lead?.name
+              ? "لید پرریسک!"
+              : label === "لید داغ"
+                ? "لید داغ!"
+                : `لید داغ: ${label}`
+          );
+        } else {
+          setAlertBubble(null);
+        }
       } catch {
         /* keep last mood */
       }
@@ -201,7 +222,8 @@ export function AghaPashmakFloat() {
   if (onCoachPage) return null;
 
   const src = MOOD_IMG[mood];
-  const tip = tipOverride || MOOD_TIP[mood];
+  const tip = mood === "alert" ? "آقای پشمک" : MOOD_TIP[mood];
+  const showBubble = mood === "alert" && !!alertBubble;
 
   return (
     <button
@@ -209,29 +231,39 @@ export function AghaPashmakFloat() {
       type="button"
       className={`pashmak-float pashmak-mood-${mood}${dragging ? " is-dragging" : ""}${
         pos ? " is-placed" : ""
-      }`}
+      }${showBubble ? " has-alert-bubble" : ""}`}
       style={
         pos
           ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" }
           : undefined
       }
-      aria-label={`گفتگو با آقای پشمک — ${tip}. بکشید تا جابه‌جا شود.`}
-      title={`${tip} · بکشید تا جابه‌جا شود`}
+      aria-label={`گفتگو با آقای پشمک — ${alertBubble || tip}. بکشید تا جابه‌جا شود.`}
+      title={`${alertBubble || tip} · بکشید تا جابه‌جا شود`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        key={mood}
-        src={src}
-        alt={tip}
-        className="pashmak-float-img"
-        width={96}
-        height={96}
-        draggable={false}
-      />
+      <span className="pashmak-float-avatar">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          key={mood}
+          src={src}
+          alt={tip}
+          className="pashmak-float-img"
+          width={96}
+          height={96}
+          draggable={false}
+        />
+        {showBubble ? (
+          <span className="pashmak-alert-bubble" role="status">
+            <span className="pashmak-alert-bubble-text">{alertBubble}</span>
+            {hotCount > 1 ? (
+              <span className="pashmak-alert-bubble-count">{hotCount > 9 ? "9+" : hotCount}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </span>
       <span className="pashmak-float-tip">{tip}</span>
     </button>
   );

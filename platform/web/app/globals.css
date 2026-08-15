@@ -4320,6 +4320,124 @@ a.btn.wizard-btn:hover {
   white-space: nowrap;
   pointer-events: none;
 }
+.pashmak-float-avatar {
+  position: relative;
+  display: block;
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+}
+.pashmak-alert-bubble {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 132px;
+  padding: 5px 9px 6px;
+  border-radius: 14px 14px 4px 14px;
+  background: #e53935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.25;
+  box-shadow: 0 4px 12px rgba(180, 30, 30, 0.35);
+  pointer-events: none;
+  transform-origin: 20% 110%;
+  animation:
+    pashmak-bubble-pop 0.5s cubic-bezier(0.34, 1.45, 0.64, 1) both,
+    pashmak-bubble-bob 1.7s ease-in-out 0.5s infinite;
+  direction: rtl;
+  text-align: right;
+}
+.pashmak-float.is-dragging .pashmak-alert-bubble,
+.pashmak-float:hover .pashmak-alert-bubble {
+  animation-play-state: paused;
+}
+.pashmak-alert-bubble::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: #e53935;
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+.pashmak-alert-bubble-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 96px;
+}
+.pashmak-alert-bubble-count {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #fff;
+  color: #c62828;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 16px;
+  text-align: center;
+  animation: pashmak-bubble-count-pulse 1.7s ease-in-out 0.5s infinite;
+}
+.pashmak-float.is-dragging .pashmak-alert-bubble-count,
+.pashmak-float:hover .pashmak-alert-bubble-count {
+  animation-play-state: paused;
+}
+@keyframes pashmak-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) translate(6px, 10px) rotate(-8deg);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.08) translate(0, -2px) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translate(0, 0) rotate(0deg);
+  }
+}
+@keyframes pashmak-bubble-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    box-shadow: 0 4px 12px rgba(180, 30, 30, 0.35);
+  }
+  25% {
+    transform: translateY(-5px) scale(1.04) rotate(-2deg);
+    box-shadow: 0 8px 16px rgba(180, 30, 30, 0.42);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.02) rotate(1.5deg);
+  }
+  75% {
+    transform: translateY(-6px) scale(1.05) rotate(-1deg);
+    box-shadow: 0 10px 18px rgba(180, 30, 30, 0.45);
+  }
+}
+@keyframes pashmak-bubble-count-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pashmak-alert-bubble,
+  .pashmak-alert-bubble-count {
+    animation: none !important;
+  }
+}
 .pashmak-mood-alert .pashmak-float-tip {
   color: #8b1e1e;
   border-color: color-mix(in srgb, #c62828 40%, transparent);
