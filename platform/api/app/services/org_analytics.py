@@ -23,9 +23,18 @@ INTENT_TOP_SELLER = "top_seller"
 INTENT_TOP_OPERATOR = "top_operator"
 INTENT_TOP_BUYER = "top_buyer"
 INTENT_HOT_TODAY = "hot_today"
+INTENT_RISK = "risk_leads"
+INTENT_OPEN_LEADS = "open_leads"
 
 ANALYTICS_KINDS = frozenset(
-    {INTENT_TOP_SELLER, INTENT_TOP_OPERATOR, INTENT_TOP_BUYER, INTENT_HOT_TODAY}
+    {
+        INTENT_TOP_SELLER,
+        INTENT_TOP_OPERATOR,
+        INTENT_TOP_BUYER,
+        INTENT_HOT_TODAY,
+        INTENT_RISK,
+        INTENT_OPEN_LEADS,
+    }
 )
 
 # (intent, phrases) — first match wins per intent; max 2 intents returned
@@ -100,6 +109,50 @@ _INTENT_PHRASES: list[tuple[str, tuple[str, ...]]] = [
             "اسم لید",
             "کدام لید",
             "کدوم لید",
+            "بیشتر احتمال",
+            "احتمال میدی",
+            "احتمال میدی بخره",
+            "کی رو بیشتر",
+            "کی بیشتر احتمال",
+            "بخره",
+            "می‌خره",
+            "میخره",
+        ),
+    ),
+    (
+        INTENT_RISK,
+        (
+            "ریسک از دست",
+            "از دست رفتن",
+            "مداخله انسانی",
+            "نیاز به مداخله",
+            "نیاز به کارشناس",
+            "پرریسک",
+            "پر ریسک",
+            "churn",
+            "needs_human",
+            "شکایت",
+            "ناراضی",
+            "escalation",
+            "خطر از دست",
+        ),
+    ),
+    (
+        INTENT_OPEN_LEADS,
+        (
+            "در حال مذاکره",
+            "لیدهای در حال",
+            "لید های در حال",
+            "لیست لید",
+            "لیدهای باز",
+            "لید های باز",
+            "چه لیدهایی داریم",
+            "کیا هستن",
+            "کیان هستن",
+            "مرحله پیگیری",
+            "مرحله پیشنهاد",
+            "لیدهای پیگیری",
+            "لیدهای پیشنهاد",
         ),
     ),
 ]
@@ -124,15 +177,22 @@ def detect_analytics_intents(message: str) -> list[str]:
         if len(found) >= 2:
             break
 
-    # Heuristic: lead + buy/today signals → hot_today
+    # Heuristic: buy likelihood → hot_today
     if INTENT_HOT_TODAY not in found:
-        has_lead = any(w in text for w in ("لید", "مشتری", "خریدار"))
-        has_buy = any(w in text for w in ("خرید", "پتانسیل", "امروز", "داغ", "آماده"))
-        if has_lead and has_buy:
+        has_buy = any(
+            w in text
+            for w in ("خرید", "بخر", "پتانسیل", "امروز", "داغ", "آماده", "احتمال")
+        )
+        has_who = any(w in text for w in ("کی", "کدام", "کدوم", "لید", "مشتری", "چه کسی", "کیا"))
+        if has_buy and has_who:
             found.append(INTENT_HOT_TODAY)
-            found = found[:2]
 
-    return found
+    # Risk heuristic
+    if INTENT_RISK not in found and len(found) < 2:
+        if any(w in text for w in ("ریسک", "مداخله", "شکایت", "از دست")):
+            found.append(INTENT_RISK)
+
+    return found[:2]
 
 
 def _user_label(db: Session, user_id: str | None) -> str:
@@ -434,6 +494,83 @@ def rank_hot_leads_today(
     return scored[: max(1, min(int(limit or TOP_N), 20))]
 
 
+RISK_TAGS = frozenset({"churn_risk", "needs_human", "complaint", "detractor", "handoff"})
+
+
+def rank_risk_leads(db: Session, org_id: str, *, limit: int = TOP_N) -> list[dict[str, Any]]:
+    """Leads needing human help or at churn/complaint risk."""
+    if not org_id:
+        return []
+    leads = db.query(Lead).filter(Lead.org_id == org_id).limit(800).all()
+    rows: list[dict[str, Any]] = []
+    for lead in leads:
+        if lead.stage in ("خرید", "بسته", "از دست رفته"):
+            # still include if explicitly risk-tagged, else skip closed
+            tags = {str(t).lower() for t in (lead.tags or [])}
+            meta = lead.ai_meta if isinstance(lead.ai_meta, dict) else {}
+            if not (
+                tags.intersection(RISK_TAGS)
+                or meta.get("escalation")
+                or str(meta.get("sentiment") or "").lower() == "negative"
+            ):
+                continue
+        tags = {str(t).lower() for t in (lead.tags or [])}
+        meta = lead.ai_meta if isinstance(lead.ai_meta, dict) else {}
+        sentiment = str(meta.get("sentiment") or "").lower().strip()
+        reasons: list[str] = []
+        hit_tags = sorted(tags.intersection(RISK_TAGS))
+        if hit_tags:
+            reasons.extend(hit_tags)
+        if meta.get("escalation"):
+            reasons.append("escalation")
+        if sentiment == "negative":
+            reasons.append("sentiment:negative")
+        if lead.bot_paused:
+            reasons.append("ربات متوقف")
+        if not reasons:
+            continue
+        rows.append(
+            {
+                "lead_id": lead.id,
+                "name": (lead.name or "").strip() or "بدون نام",
+                "phone": (lead.phone or "").strip(),
+                "stage": lead.stage or "—",
+                "lead_score": float(lead.lead_score or 0),
+                "reasons": reasons,
+                "assignee": _user_label(db, lead.assignee_id),
+            }
+        )
+    rows.sort(key=lambda r: (-len(r["reasons"]), -r["lead_score"], r["name"]))
+    return rows[: max(1, min(int(limit or TOP_N), 20))]
+
+
+def rank_open_leads(db: Session, org_id: str, *, limit: int = TOP_N) -> list[dict[str, Any]]:
+    """Open-funnel leads (پیگیری/پیشنهاد/جدید) — maps colloquial «مذاکره» to these stages."""
+    if not org_id:
+        return []
+    rows = (
+        db.query(Lead)
+        .filter(Lead.org_id == org_id, Lead.stage.in_(OPEN_FUNNEL_STAGES))
+        .order_by(Lead.lead_score.desc(), Lead.updated_at.desc())
+        .limit(max(1, min(int(limit or TOP_N), 20)))
+        .all()
+    )
+    out: list[dict[str, Any]] = []
+    for lead in rows:
+        out.append(
+            {
+                "lead_id": lead.id,
+                "name": (lead.name or "").strip() or "بدون نام",
+                "phone": (lead.phone or "").strip(),
+                "stage": lead.stage or "—",
+                "lead_score": float(lead.lead_score or 0),
+                "assignee": _user_label(db, lead.assignee_id),
+                "note": "در CRM مرحله «در حال مذاکره» نداریم؛ معادل: پیگیری / پیشنهاد / جدید",
+            }
+        )
+    return out
+
+
 def run_analytics(
     db: Session, org_id: str, intents: list[str], *, limit: int = TOP_N
 ) -> dict[str, list[dict[str, Any]]]:
@@ -450,6 +587,10 @@ def run_analytics(
             out[intent] = rank_top_buyers(db, org_id, limit=limit)
         elif intent == INTENT_HOT_TODAY:
             out[intent] = rank_hot_leads_today(db, org_id, limit=limit)
+        elif intent == INTENT_RISK:
+            out[intent] = rank_risk_leads(db, org_id, limit=limit)
+        elif intent == INTENT_OPEN_LEADS:
+            out[intent] = rank_open_leads(db, org_id, limit=limit)
     return out
 
 
@@ -457,7 +598,11 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
     """Compact Persian report for coach prompt injection."""
     if not results:
         return ""
-    lines: list[str] = ["### گزارش تحلیلی", "فقط از اعداد زیر برای رتبه‌بندی استفاده کن؛ چیزی جعل نکن."]
+    lines: list[str] = [
+        "### گزارش تحلیلی",
+        "فقط از اعداد و نام‌های زیر استفاده کن؛ چیزی جعل نکن.",
+        "هرگز نگو «برو کانبان را ببین» — بورد لیدها / صفحه وظایف را فقط در صورت نیاز ذکر کن.",
+    ]
 
     if INTENT_TOP_SELLER in results:
         rows = results[INTENT_TOP_SELLER]
@@ -507,15 +652,13 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
         rows = results[INTENT_HOT_TODAY]
         lines.append("")
         lines.append(
-            f"#### پتانسیل خرید امروز / داغ‌ترین لیدها "
-            f"(قیف باز + گفتگو {HOT_HOURS}س / ۷روز؛ نام‌ها را عیناً بگو)"
+            f"#### پتانسیل خرید / داغ‌ترین لیدها "
+            f"(قیف باز + گفتگو؛ نام‌ها را عیناً بگو)"
         )
         if not rows:
             lines.append("- هیچ لید بازی در CRM این سازمان پیدا نشد.")
         else:
-            lines.append(
-                "حتماً ۱ تا ۳ نام برتر را با مرحله و دلیل کوتاه بگو؛ به کانبان ارجاع کلی نده."
-            )
+            lines.append("حتماً ۱ تا ۳ نام برتر را با مرحله و دلیل کوتاه بگو.")
             for i, r in enumerate(rows, 1):
                 tags = "، ".join(r.get("tags") or []) or "—"
                 snip = (r.get("last_inbound") or "").strip()
@@ -528,6 +671,74 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
                     f"hot {r['hot_score']} · مسئول: {r['assignee']}{snip_bit}"
                 )
 
+    if INTENT_RISK in results:
+        rows = results[INTENT_RISK]
+        lines.append("")
+        lines.append("#### لیدهای نیازمند مداخله انسانی / ریسک از دست رفتن")
+        if not rows:
+            lines.append("- لید پرریسک با تگ/احساس منفی در داده‌ها نیست.")
+        else:
+            lines.append("نام‌ها را عیناً بگو و دلیل ریسک را ذکر کن.")
+            for i, r in enumerate(rows, 1):
+                phone = f" · {r['phone']}" if r.get("phone") else ""
+                reasons = "، ".join(r.get("reasons") or []) or "—"
+                lines.append(
+                    f"- {i}. نام: {r['name']}{phone} · مرحله: {r['stage']} · "
+                    f"دلیل: {reasons} · مسئول: {r['assignee']}"
+                )
+
+    if INTENT_OPEN_LEADS in results:
+        rows = results[INTENT_OPEN_LEADS]
+        lines.append("")
+        lines.append(
+            "#### لیدهای باز / «در حال مذاکره» "
+            "(مراحل واقعی CRM: جدید، پیگیری، پیشنهاد — نه کانبان)"
+        )
+        if not rows:
+            lines.append("- لید بازی در قیف فروش نیست.")
+        else:
+            lines.append("این نام‌ها را لیست کن؛ به صفحه وظایف فقط برای follow-up اشاره کن.")
+            for i, r in enumerate(rows, 1):
+                phone = f" · {r['phone']}" if r.get("phone") else ""
+                lines.append(
+                    f"- {i}. نام: {r['name']}{phone} · مرحله: {r['stage']} · "
+                    f"امتیاز {r['lead_score']:.0f} · مسئول: {r['assignee']}"
+                )
+
+    return "\n".join(lines)
+
+
+def lead_snapshot_for_context(db: Session, org_id: str, *, limit: int = 8) -> str:
+    """Always-on named lead lists so coach never claims CRM has no lead list."""
+    if not org_id:
+        return ""
+    hot = rank_hot_leads_today(db, org_id, limit=limit)
+    risk = rank_risk_leads(db, org_id, limit=min(5, limit))
+    open_rows = rank_open_leads(db, org_id, limit=limit)
+    lines = ["### لیدهای واقعی این سازمان (از دیتابیس)"]
+    if open_rows:
+        lines.append("لیدهای باز:")
+        for r in open_rows:
+            lines.append(f"- {r['name']} · {r['stage']} · امتیاز {r['lead_score']:.0f}")
+    else:
+        lines.append("لیدهای باز: هیچ")
+    if hot:
+        lines.append("بالاترین پتانسیل (رتبه‌بندی):")
+        for r in hot[:5]:
+            lines.append(
+                f"- {r['name']} · {r['stage']} · hot {r['hot_score']} · "
+                f"ورودی۲۴س {r['inbound_24h']}"
+            )
+    if risk:
+        lines.append("نیازمند توجه / ریسک:")
+        for r in risk:
+            lines.append(f"- {r['name']} · {r['stage']} · {', '.join(r['reasons'])}")
+    else:
+        lines.append("نیازمند توجه / ریسک: موردی ثبت نشده")
+    lines.append(
+        "اگر کاربر نام لید خواست، از همین لیست بگو. "
+        "به جای «کانبان» بگو بورد لیدها یا صفحه وظایف."
+    )
     return "\n".join(lines)
 
 

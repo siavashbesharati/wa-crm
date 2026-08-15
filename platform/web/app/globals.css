@@ -4593,13 +4593,14 @@ a.btn.wizard-btn:hover {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 10px 4px;
+  padding: 10px 4px 64px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   -webkit-overflow-scrolling: touch;
   min-height: 0;
   overscroll-behavior: contain;
+  scroll-padding-bottom: 72px;
 }
 .pir-chat-empty {
   margin: auto;

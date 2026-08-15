@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
@@ -82,7 +82,15 @@ function UserInitialAvatar({ name }: { name: string }) {
   );
 }
 
-function TypewriterText({ text, active }: { text: string; active: boolean }) {
+function TypewriterText({
+  text,
+  active,
+  onTick
+}: {
+  text: string;
+  active: boolean;
+  onTick?: () => void;
+}) {
   const [shown, setShown] = useState(active ? "" : text);
 
   useEffect(() => {
@@ -97,10 +105,11 @@ function TypewriterText({ text, active }: { text: string; active: boolean }) {
     const id = window.setInterval(() => {
       i = Math.min(text.length, i + step);
       setShown(text.slice(0, i));
+      onTick?.();
       if (i >= text.length) window.clearInterval(id);
     }, 28);
     return () => window.clearInterval(id);
-  }, [text, active]);
+  }, [text, active, onTick]);
 
   return (
     <p className={active && shown.length < text.length ? "pir-typewriter" : undefined}>
@@ -163,11 +172,17 @@ export default function PirPageClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantChat]);
 
-  useEffect(() => {
+  const scrollThreadToEnd = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages.length, chatBusy, mode]);
+    // scrollHeight already includes padding-bottom; keep a little extra slack
+    const top = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTo({ top, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    scrollThreadToEnd();
+  }, [messages.length, chatBusy, mode, typingId, scrollThreadToEnd]);
 
   function toggleGoal(key: string) {
     setProfile((cur) => {
@@ -502,7 +517,11 @@ export default function PirPageClient() {
                         <div className="pir-bubble-head">
                           <PashmakAvatar size={22} />
                         </div>
-                        <TypewriterText text={m.body} active={typingId === m.id} />
+                        <TypewriterText
+                          text={m.body}
+                          active={typingId === m.id}
+                          onTick={scrollThreadToEnd}
+                        />
                       </div>
                     </div>
                   ) : (
