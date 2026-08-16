@@ -170,6 +170,9 @@ def put_pair_state(
     if external_id:
         acc.external_id = external_id
     db.add(acc)
+    from app.services.setup_tasks import maybe_complete_setup_tasks_for_account
+
+    maybe_complete_setup_tasks_for_account(db, acc)
     db.commit()
     return {
         "account_id": acc.id,
@@ -217,6 +220,9 @@ def heartbeat(
     elif acc.pairing_state not in ("otp_pending",):
         acc.pairing_state = "connected"
     db.add(acc)
+    from app.services.setup_tasks import maybe_complete_setup_tasks_for_account
+
+    maybe_complete_setup_tasks_for_account(db, acc)
     db.commit()
     return {"ok": True, "session_id": session.id}
 

@@ -168,6 +168,9 @@ def divar_pair_code(
     acc.status = "online"
     acc.external_id = cookies_blob["phone"] or acc.external_id
     db.add(acc)
+    from app.services.setup_tasks import maybe_complete_setup_tasks_for_account
+
+    maybe_complete_setup_tasks_for_account(db, acc)
     db.commit()
     db.refresh(acc)
     return _pair_out(acc, message="دیوار متصل شد")

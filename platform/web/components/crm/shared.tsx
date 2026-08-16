@@ -119,7 +119,27 @@ export type CrmTask = {
   due_at: string | null;
   board_order?: number;
   source?: string;
+  source_message_id?: string;
 };
+
+export const SETUP_TASK_HREF: Record<string, string> = {
+  "setup:whatsapp": "/channels?connect=whatsapp",
+  "setup:divar": "/channels?connect=divar"
+};
+
+export function isSetupChannelTask(t: { source_message_id?: string | null }) {
+  const key = (t.source_message_id || "").trim();
+  return key === "setup:whatsapp" || key === "setup:divar";
+}
+
+export function setupTaskHref(t: {
+  source_message_id?: string | null;
+  status?: string;
+}) {
+  if (t.status === "done" || t.status === "cancelled") return null;
+  const key = (t.source_message_id || "").trim();
+  return SETUP_TASK_HREF[key] || null;
+}
 
 export const TASK_STATUSES = ["open", "in_progress", "done", "cancelled"] as const;
 

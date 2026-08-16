@@ -294,8 +294,8 @@ function OnboardingPageInner() {
     setBusy(true);
     try {
       await api("/orgs/onboarding/complete", { method: "POST" });
-      toast.push("راه‌اندازی تکمیل شد", "ok");
-      router.replace("/home");
+      toast.push("راه‌اندازی تکمیل شد — واتساپ و دیوار را وصل کنید", "ok");
+      router.replace("/tasks");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {

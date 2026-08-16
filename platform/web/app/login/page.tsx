@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, clearSession, getSession, saveSession, isNetworkErrorMessage } from "@/lib/api";
 import { loadOrgMe } from "@/lib/me-cache";
-import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
+import { AuthLayout, AuthStepHeader, AuthEntering } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -19,6 +19,11 @@ export default function BusinessLoginPage() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [entering, setEntering] = useState(() => !!getSession());
+  const [enterCopy, setEnterCopy] = useState({
+    title: "در حال ورود…",
+    sub: "در حال باز کردن پنل…"
+  });
   const [exists, setExists] = useState<boolean | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [shake, setShake] = useState(false);
@@ -33,9 +38,13 @@ export default function BusinessLoginPage() {
       .then((me) => {
         if (cancelled) return;
         if (me.needs_onboarding || (me.onboarding_step && me.onboarding_step !== "done")) {
+          setEnterCopy({ title: "ورود موفق", sub: "در حال باز کردن راه‌اندازی…" });
+          setEntering(true);
           router.replace("/onboarding");
           return;
         }
+        setEnterCopy({ title: "ورود موفق", sub: "در حال باز کردن میز کار…" });
+        setEntering(true);
         router.replace("/home");
       })
       .catch((err) => {
@@ -43,6 +52,7 @@ export default function BusinessLoginPage() {
         if (!isNetworkErrorMessage(msg) && !getSession()) {
           clearSession();
         }
+        if (!cancelled) setEntering(false);
       });
     return () => {
       cancelled = true;
@@ -61,7 +71,7 @@ export default function BusinessLoginPage() {
       autoSubmitRef.current = "";
       return;
     }
-    if (busy || step !== "otp" || verifyingRef.current) return;
+    if (busy || entering || step !== "otp" || verifyingRef.current) return;
     if (autoSubmitRef.current === clean) return;
     autoSubmitRef.current = clean;
     const t = window.setTimeout(() => {
@@ -133,24 +143,26 @@ export default function BusinessLoginPage() {
       });
       saveSession(tok);
       const stepNow = tok.onboarding_step || "done";
-      if (tok.is_new || stepNow !== "done") {
-        toast.push(
-          tok.is_new ? "خوش آمدید — پروفایل را تکمیل کنید" : "ادامه راه‌اندازی",
-          "ok"
-        );
-        router.replace("/onboarding");
-      } else {
-        toast.push("وارد پنل شدید", "ok");
-        router.replace("/home");
-      }
+      const toOnboarding = tok.is_new || stepNow !== "done";
+      setEnterCopy({
+        title: "ورود موفق",
+        sub: toOnboarding ? "در حال باز کردن راه‌اندازی…" : "در حال باز کردن میز کار…"
+      });
+      setEntering(true);
+      toast.push(
+        toOnboarding
+          ? tok.is_new
+            ? "خوش آمدید — پروفایل را تکمیل کنید"
+            : "ادامه راه‌اندازی"
+          : "وارد پنل شدید",
+        "ok"
+      );
+      router.replace(toOnboarding ? "/onboarding" : "/home");
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
       bumpShake();
-      // Keep autoSubmitRef = failed code so the same digits are not re-submitted
-      // automatically; clear inputs so the user can type again.
       autoSubmitRef.current = finalCode;
       setCode("");
-    } finally {
       setBusy(false);
       verifyingRef.current = false;
     }
@@ -162,8 +174,10 @@ export default function BusinessLoginPage() {
       brand="میوژن"
       tagline="ورود سریع با شماره موبایل — اگر تازه باشید، بعد از OTP وارد ویزارد راه‌اندازی می‌شوید."
     >
-      <div key={step} className={`auth-flow ${shake ? "is-shake" : ""}`}>
-        {step === "phone" ? (
+      <div key={entering ? "entering" : step} className={`auth-flow ${shake ? "is-shake" : ""}`}>
+        {entering ? (
+          <AuthEntering title={enterCopy.title} sub={enterCopy.sub} />
+        ) : step === "phone" ? (
           <>
             <AuthStepHeader
               step={1}

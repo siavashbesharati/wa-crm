@@ -185,6 +185,9 @@ def put_pair_state(
         if body.pairing_state in ("disconnected", "reconnecting"):
             acc.status = "offline"
     db.add(acc)
+    from app.services.setup_tasks import maybe_complete_setup_tasks_for_account
+
+    maybe_complete_setup_tasks_for_account(db, acc)
     db.commit()
     return {
         "ok": True,
@@ -231,6 +234,9 @@ def heartbeat(
     if (acc.pairing_state or "") == "connected":
         acc.status = "online"
         db.add(acc)
+    from app.services.setup_tasks import maybe_complete_setup_tasks_for_account
+
+    maybe_complete_setup_tasks_for_account(db, acc)
     db.commit()
     db.refresh(session)
     return {"ok": True, "session_id": session.id, "device_id": device_id}

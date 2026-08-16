@@ -107,3 +107,27 @@ export function AuthStepHeader({
     </div>
   );
 }
+
+/** Replaces the login form after OTP success while the dashboard route loads. */
+export function AuthEntering({
+  title = "ورود موفق",
+  sub = "در حال باز کردن پنل…"
+}: {
+  title?: string;
+  sub?: string;
+}) {
+  return (
+    <div className="auth-entering" role="status" aria-live="polite" aria-busy="true">
+      <div className="auth-entering-orbit" aria-hidden>
+        <span className="auth-entering-ring" />
+        <span className="auth-entering-ring auth-entering-ring-b" />
+        <span className="auth-entering-core" />
+      </div>
+      <h2>{title}</h2>
+      <p>{sub}</p>
+      <div className="auth-entering-bar" aria-hidden>
+        <i />
+      </div>
+    </div>
+  );
+}

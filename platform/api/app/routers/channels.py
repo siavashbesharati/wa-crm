@@ -218,6 +218,9 @@ def heartbeat(body: HeartbeatIn, auth: AuthContext = Depends(get_auth), db: Sess
 
     acc.status = "online"
     db.add(acc)
+    from app.services.setup_tasks import maybe_complete_setup_tasks_for_account
+
+    maybe_complete_setup_tasks_for_account(db, acc)
     db.commit()
     db.refresh(session)
     return {

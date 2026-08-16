@@ -18,6 +18,7 @@ import {
   memberLabel,
   tagLabel,
   tasksBoardHref,
+  setupTaskHref,
   type CrmTask,
   type Lead,
   type Member
@@ -220,8 +221,20 @@ export default function TasksListPage() {
                     return (
                       <tr key={t.id}>
                         <td>
-                          <strong>{t.title}</strong>
-                          {t.message ? <div className="hint">{t.message}</div> : null}
+                          {(() => {
+                            const href = setupTaskHref(t);
+                            return href ? (
+                              <Link href={href}>
+                                <strong>{t.title}</strong>
+                                {t.message ? <div className="hint">{t.message}</div> : null}
+                              </Link>
+                            ) : (
+                              <>
+                                <strong>{t.title}</strong>
+                                {t.message ? <div className="hint">{t.message}</div> : null}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td>
                           {lead ? (

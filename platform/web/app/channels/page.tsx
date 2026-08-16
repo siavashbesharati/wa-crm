@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Badge, Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -33,6 +34,9 @@ type PairModal =
   | { kind: "divar"; accountId: string; step: "otp" | "code" };
 
 export default function ChannelsPage() {
+  const searchParams = useSearchParams();
+  const connectHint = (searchParams.get("connect") || "").toLowerCase();
+  const autoConnectRef = useRef(false);
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -186,6 +190,27 @@ export default function ChannelsPage() {
     setModal({ kind: "divar", accountId: account.id, step: "otp" });
   }
 
+  useEffect(() => {
+    if (loading || autoConnectRef.current) return;
+    if (connectHint !== "whatsapp" && connectHint !== "divar") return;
+    const list = connectHint === "whatsapp" ? waAccounts : divarAccounts;
+    if (list.some((a) => isAccountOn(a.status, a.pairing_state))) {
+      autoConnectRef.current = true;
+      return;
+    }
+    autoConnectRef.current = true;
+    const existing = list[0];
+    if (existing) {
+      if (connectHint === "whatsapp") openWhatsAppPair(existing.id);
+      else openDivarOtp(existing);
+      return;
+    }
+    if (connectHint === "whatsapp") void addWhatsApp();
+    else void addDivar();
+    // Open the matching pair flow once when arriving from a setup task.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, connectHint, waAccounts, divarAccounts]);
+
   async function startDivarOtp() {
     if (!modal || modal.kind !== "divar") return;
     const phone = divarPhone.trim();
@@ -283,6 +308,7 @@ export default function ChannelsPage() {
             hint="اتصال با QR یا کد ۸رقمی"
             accounts={waAccounts}
             busy={busy}
+            highlight={connectHint === "whatsapp"}
             onAdd={() => void addWhatsApp()}
             extraAction={
               waAccounts.some((a) => isAccountOn(a.status, a.pairing_state)) ? (
@@ -301,6 +327,7 @@ export default function ChannelsPage() {
             hint="اتصال با کد تأیید پیامکی"
             accounts={divarAccounts}
             busy={busy}
+            highlight={connectHint === "divar"}
             onAdd={() => void addDivar()}
             onConnect={(a) => openDivarOtp(a)}
             onDisconnect={(a) => void logoutDivar(a.id)}
@@ -518,6 +545,7 @@ function ChannelCard({
   hint,
   accounts,
   busy,
+  highlight,
   onAdd,
   extraAction,
   onConnect,
@@ -529,6 +557,7 @@ function ChannelCard({
   hint: string;
   accounts: ChannelAccount[];
   busy: boolean;
+  highlight?: boolean;
   onAdd: () => void;
   extraAction?: ReactNode;
   onConnect: (a: ChannelAccount) => void;
@@ -538,7 +567,7 @@ function ChannelCard({
   const empty = accounts.length === 0;
   return (
     <Card
-      className={`channel-board-card ${channel}`}
+      className={`channel-board-card ${channel}${highlight ? " is-focus" : ""}`}
       title={title}
       help={
         channel === "whatsapp"

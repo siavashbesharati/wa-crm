@@ -11,6 +11,8 @@ import { formatJalali } from "@/lib/jalali";
 import {
   TASK_STATUS_LABELS,
   tasksBoardHref,
+  setupTaskHref,
+  isSetupChannelTask,
   type CrmTask,
   type Lead
 } from "@/components/crm/shared";
@@ -277,8 +279,11 @@ export default function HomePage() {
     const startToday = new Date();
     startToday.setHours(0, 0, 0, 0);
     return tasks
-      .filter((t) => isOpenTask(t.status) && t.due_at)
+      .filter((t) => isOpenTask(t.status) && (t.due_at || isSetupChannelTask(t)))
       .map((t) => {
+        if (!t.due_at && isSetupChannelTask(t)) {
+          return { task: t, overdue: false, dueToday: true };
+        }
         const due = new Date(t.due_at as string);
         const overdue = !Number.isNaN(due.getTime()) && due < startToday;
         const dueToday = isoDayKey(t.due_at) === today;
@@ -351,7 +356,7 @@ export default function HomePage() {
                     return (
                       <Link
                         key={t.id}
-                        href={tasksBoardHref(t.lead_id)}
+                        href={setupTaskHref(t) || tasksBoardHref(t.lead_id)}
                         className={`dash-today-card ${overdue ? "overdue" : ""}`}
                       >
                         <strong className="dash-today-title">{t.title}</strong>

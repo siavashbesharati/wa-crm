@@ -327,6 +327,9 @@ def onboarding_complete(
             status_code=400,
             detail="ابتدا پروفایل، پلن، پرداخت، تنظیمات AI و دانش را تکمیل کنید",
         )
+    from app.services.setup_tasks import ensure_onboarding_setup_tasks
+
+    ensure_onboarding_setup_tasks(db, org_id=auth.org.id, user_id=auth.user.id)
     auth.org.onboarding_step = "done"
     db.add(auth.org)
     db.commit()

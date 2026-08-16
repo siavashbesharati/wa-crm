@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
@@ -28,6 +28,8 @@ import {
   memberLabel,
   initials,
   tagLabel,
+  setupTaskHref,
+  isSetupChannelTask,
   type CrmTask,
   type Lead,
   type Member
@@ -56,6 +58,7 @@ function sameCalendarDay(a: string | null | undefined, b: string | null | undefi
 
 export default function TasksBoardPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const leadFilter = searchParams.get("lead") || "";
   const tagFromUrl = searchParams.get("tag") || "";
   const [tasks, setTasks] = useState<CrmTask[]>([]);
@@ -360,6 +363,11 @@ export default function TasksBoardPage() {
                           onDragEnd={resetDragState}
                           onClick={() => {
                             if (dragMovedRef.current) return;
+                            const href = setupTaskHref(t);
+                            if (href) {
+                              router.push(href);
+                              return;
+                            }
                             setDetailTask(t);
                           }}
                           role="button"
@@ -367,6 +375,11 @@ export default function TasksBoardPage() {
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
+                              const href = setupTaskHref(t);
+                              if (href) {
+                                router.push(href);
+                                return;
+                              }
                               setDetailTask(t);
                             }
                           }}
@@ -376,6 +389,7 @@ export default function TasksBoardPage() {
                             {lead && contactFilter !== lead.id ? (
                               <Badge tone="accent">{lead.name}</Badge>
                             ) : null}
+                            {isSetupChannelTask(t) ? <Badge tone="accent">راه‌اندازی</Badge> : null}
                             {t.due_at ? (
                               <Badge tone={dueIsPast(t.due_at) ? "danger" : "accent"}>
                                 {formatJalali(t.due_at)}

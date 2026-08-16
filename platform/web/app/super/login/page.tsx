@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, clearPlatformSession, getPlatformSession, savePlatformSession, isNetworkErrorMessage } from "@/lib/api";
 import { loadPlatformMe } from "@/lib/me-cache";
-import { AuthLayout, AuthStepHeader } from "@/components/auth/AuthLayout";
+import { AuthLayout, AuthStepHeader, AuthEntering } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -19,6 +19,7 @@ export default function SuperLoginPage() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [entering, setEntering] = useState(() => !!getPlatformSession());
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [shake, setShake] = useState(false);
   const autoSubmitRef = useRef("");
@@ -30,13 +31,17 @@ export default function SuperLoginPage() {
     let cancelled = false;
     loadPlatformMe(true)
       .then(() => {
-        if (!cancelled) router.replace("/super");
+        if (!cancelled) {
+          setEntering(true);
+          router.replace("/super");
+        }
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : "";
         if (!isNetworkErrorMessage(msg) && !getPlatformSession()) {
           clearPlatformSession();
         }
+        if (!cancelled) setEntering(false);
       });
     return () => {
       cancelled = true;
@@ -55,7 +60,7 @@ export default function SuperLoginPage() {
       autoSubmitRef.current = "";
       return;
     }
-    if (busy || step !== "otp" || verifyingRef.current) return;
+    if (busy || entering || step !== "otp" || verifyingRef.current) return;
     if (autoSubmitRef.current === clean) return;
     autoSubmitRef.current = clean;
     const t = window.setTimeout(() => {
@@ -125,6 +130,7 @@ export default function SuperLoginPage() {
         role: tok.role || "super_admin",
         scope: "platform"
       });
+      setEntering(true);
       toast.push("وارد پنل پلتفرم شدید", "ok");
       router.replace("/super/businesses");
     } catch (e) {
@@ -132,7 +138,6 @@ export default function SuperLoginPage() {
       bumpShake();
       autoSubmitRef.current = finalCode;
       setCode("");
-    } finally {
       setBusy(false);
       verifyingRef.current = false;
     }
@@ -144,8 +149,10 @@ export default function SuperLoginPage() {
       brand="میوژن"
       tagline="ورود با پیامک به کنسول مالک پلتفرم."
     >
-      <div key={step} className={`auth-flow ${shake ? "is-shake" : ""}`}>
-        {step === "phone" ? (
+      <div key={entering ? "entering" : step} className={`auth-flow ${shake ? "is-shake" : ""}`}>
+        {entering ? (
+          <AuthEntering title="ورود موفق" sub="در حال باز کردن پنل پلتفرم…" />
+        ) : step === "phone" ? (
           <>
             <AuthStepHeader
               step={1}
