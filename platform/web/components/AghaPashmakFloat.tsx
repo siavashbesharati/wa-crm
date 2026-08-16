@@ -214,9 +214,10 @@ export function AghaPashmakFloat() {
         });
         return;
       }
+      if (pathname === "/onboarding" || pathname.startsWith("/onboarding/")) return;
       router.push(CHAT_HREF);
     },
-    [router]
+    [pathname, router]
   );
 
   if (onCoachPage) return null;

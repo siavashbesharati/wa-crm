@@ -73,6 +73,8 @@ export function PanelProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const onPanel = isPanelPath(pathname);
+  const onOnboarding =
+    pathname === "/onboarding" || pathname.startsWith("/onboarding/");
   const [meta, setMetaState] = useState<PanelMeta>({
     title: "پنل",
     sub: ""
@@ -150,7 +152,12 @@ export function PanelProvider({ children }: { children: ReactNode }) {
   );
 
   if (!onPanel) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        {onOnboarding ? <AghaPashmakFloat /> : null}
+      </>
+    );
   }
 
   const showNavShimmer = !!pendingHref && pendingHref !== pathname;
