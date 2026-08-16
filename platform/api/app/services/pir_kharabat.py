@@ -1,4 +1,4 @@
-"""آقای پشمک — per-org business coach (wizard prompts + internal chat)."""
+"""آقای میوژن — per-org business coach (wizard prompts + internal chat)."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ TONE_HINTS = {
 
 def coach_system_prompt() -> str:
     return (
-        "تو «آقای پشمک» هستی — مربی و عامل داخلی (با شخصیت گربه ایرانی بامزه و جدی) "
+        "تو «آقای میوژن» هستی — مربی و عامل داخلی (با شخصیت گربه ایرانی بامزه و جدی) "
         "فقط برای تیم همین کسب‌وکار. "
         "هرگز داده سازمان دیگر را حدس نزن یا قاطی نکن. "
         "فقط به تیم داخلی مشاوره بده؛ پیام واتساپ/دیوار نفرست مگر سیستم صریحاً پیش‌نویس بخواهد. "
@@ -180,7 +180,7 @@ def build_org_context(db: Session, org: Organization, profile: OrgCoachProfile |
         f"نام سازمان: {org.name}",
         f"پلن: {getattr(org, 'plan', '')}",
         "",
-        "### پروفایل آقای پشمک",
+        "### پروفایل آقای میوژن",
         f"حوزه: {pdata.get('niche') or '—'}",
         f"مخاطب: {pdata.get('audience') or '—'}",
         f"لحن: {pdata.get('tone') or '—'}",
@@ -287,7 +287,7 @@ def run_coach_turn(
     for m in history:
         if m.id == user_msg.id:
             continue
-        role = "کاربر" if m.role == "user" else "آقای پشمک"
+        role = "کاربر" if m.role == "user" else "آقای میوژن"
         body = (m.body or "")[:COACH_CONTEXT_MSG_CHARS]
         hist_lines.append(f"{role}: {body}")
 
@@ -335,7 +335,7 @@ def run_coach_turn(
         f"### تاریخچه گفتگوی مربی\n"
         f"{chr(10).join(hist_lines) if hist_lines else '(خالی)'}\n\n"
         f"### سوال کاربر تیم\n{text}\n\n"
-        "پاسخ آقای پشمک:"
+        "پاسخ آقای میوژن:"
     )
 
     platform = get_platform_ai_settings(db)

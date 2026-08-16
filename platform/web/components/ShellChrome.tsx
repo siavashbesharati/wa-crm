@@ -18,7 +18,7 @@ const NAV = [
   { href: "/team", label: "تیم", ico: "☺" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
-  { href: "/aghaye-pashmak", label: "آقای پشمک", ico: "✧" },
+  { href: "/aghaye-pashmak", label: "آقای میوژن", ico: "✧" },
   { href: "/kpi", label: "KPI / OKR", ico: "◉" },
   { href: "/support", label: "پشتیبانی", ico: "?" }
 ];

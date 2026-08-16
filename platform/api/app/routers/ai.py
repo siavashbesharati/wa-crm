@@ -525,7 +525,7 @@ def get_pir_profile(auth: AuthContext = Depends(get_auth), db: Session = Depends
 
 @router.get("/pir/mood")
 def get_pir_mood(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
-    """Floating «آقای پشمک» pose: normal | happy | exhaust | alert."""
+    """Floating «آقای میوژن» pose: normal | happy | exhaust | alert."""
     from app.services.pir_kharabat import compute_mascot_mood
 
     return compute_mascot_mood(db, auth.org.id)
@@ -537,7 +537,7 @@ def get_pir_analytics(
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
-    """Smoke/debug: org-scoped rankings for آقای پشمک analytics tools."""
+    """Smoke/debug: org-scoped rankings for آقای میوژن analytics tools."""
     from app.services import org_analytics as oa
 
     key = (kind or "").strip().lower()

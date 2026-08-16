@@ -1,4 +1,4 @@
-"""Org-scoped CRM analytics for آقای پشمک (SQL rankings, never cross-tenant)."""
+"""Org-scoped CRM analytics for آقای میوژن (SQL rankings, never cross-tenant)."""
 
 from __future__ import annotations
 

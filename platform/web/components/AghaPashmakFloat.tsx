@@ -18,7 +18,7 @@ const MOOD_IMG: Record<PashmakMood, string> = {
 };
 
 const MOOD_TIP: Record<PashmakMood, string> = {
-  normal: "آقای پشمک",
+  normal: "آقای میوژن",
   happy: "همه کارها تموم!",
   exhaust: "کار زیاد…",
   alert: "لید مهم!"
@@ -73,7 +73,7 @@ function shortLeadLabel(name?: string | null): string {
   return raw.length > 18 ? `${raw.slice(0, 16)}…` : raw;
 }
 
-/** Floating «آقای پشمک» mascot — draggable; pose follows CRM load. */
+/** Floating «آقای میوژن» mascot — draggable; pose follows CRM load. */
 export function AghaPashmakFloat() {
   const pathname = usePathname();
   const router = useRouter();
@@ -222,7 +222,7 @@ export function AghaPashmakFloat() {
   if (onCoachPage) return null;
 
   const src = MOOD_IMG[mood];
-  const tip = mood === "alert" ? "آقای پشمک" : MOOD_TIP[mood];
+  const tip = mood === "alert" ? "آقای میوژن" : MOOD_TIP[mood];
   const showBubble = mood === "alert" && !!alertBubble;
 
   return (
@@ -237,7 +237,7 @@ export function AghaPashmakFloat() {
           ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" }
           : undefined
       }
-      aria-label={`گفتگو با آقای پشمک — ${alertBubble || tip}. بکشید تا جابه‌جا شود.`}
+      aria-label={`گفتگو با آقای میوژن — ${alertBubble || tip}. بکشید تا جابه‌جا شود.`}
       title={`${alertBubble || tip} · بکشید تا جابه‌جا شود`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -271,5 +271,5 @@ export function AghaPashmakFloat() {
 
 /** Default chat profile image (calm / normal pose). */
 export const PASHMAK_AVATAR = MOOD_IMG.normal;
-export const PASHMAK_NAME = "آقای پشمک";
+export const PASHMAK_NAME = "آقای میوژن";
 export { MOOD_IMG };

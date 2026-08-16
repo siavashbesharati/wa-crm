@@ -111,7 +111,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
           "/team": "تیم",
           "/knowledge": "دانش AI",
           "/ai-settings": "تنظیمات AI",
-          "/aghaye-pashmak": "آقای پشمک",
+          "/aghaye-pashmak": "آقای میوژن",
           "/kpi": "KPI / OKR",
           "/billing": "اشتراک و پرداخت",
           "/support": "پشتیبانی"

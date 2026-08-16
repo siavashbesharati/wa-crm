@@ -1,4 +1,4 @@
-"""آقای پشمک agent tools — mutations and briefs, always org-scoped.
+"""آقای میوژن agent tools — mutations and briefs, always org-scoped.
 
 Hard multi-tenant rule: every public function requires org_id and only reads/writes
 rows with that org_id. Lead/user lookups never cross organizations. No WhatsApp send.
@@ -508,7 +508,7 @@ def run_agent_for_message(
         return ""
 
     blocks: list[str] = [
-        "### نتیجه اقدام آقای پشمک (عامل)",
+        "### نتیجه اقدام آقای میوژن (عامل)",
         f"سازمان فعال: `{oid}` — داده کسب‌وکار دیگر استفاده نشد.",
     ]
 
@@ -544,7 +544,7 @@ def run_agent_for_message(
                 org_id=oid,
                 lead_id=lead.id,
                 title=f"پیگیری {lead.name}",
-                message="ساخته‌شده توسط آقای پشمک",
+                message="ساخته‌شده توسط آقای میوژن",
                 created_by_id=user_id,
             )
             blocks.append(
