@@ -45,6 +45,11 @@ html, body {
     var(--bg);
   -webkit-font-smoothing: antialiased;
 }
+html:has(.auth-screen),
+body:has(.auth-screen) {
+  height: 100%;
+  overflow: hidden;
+}
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
@@ -3120,7 +3125,10 @@ a.btn.wizard-btn:hover {
 
 /* ——— Auth screens (business + platform) ——— */
 .auth-screen {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
   position: relative;
   overflow: hidden;
   color: #e8eef7;
@@ -3193,22 +3201,30 @@ a.btn.wizard-btn:hover {
 .auth-shell {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  height: 100%;
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 22px;
-  gap: 28px;
+  padding: 20px 22px;
+  gap: 24px;
   align-items: center;
+  overflow: hidden;
 }
-.auth-brand-pane { padding: 28px 20px 28px 8px; }
-.auth-brand-inner { max-width: 460px; }
+.auth-brand-pane {
+  padding: 12px 20px 12px 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+.auth-brand-inner {
+  max-width: 460px;
+  max-height: 100%;
+}
 .auth-brand-mark {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
 }
 .auth-mark-dot {
   width: 10px;
@@ -3230,7 +3246,7 @@ a.btn.wizard-btn:hover {
 }
 .auth-portal-chip {
   display: inline-flex;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 11px;
@@ -3252,15 +3268,15 @@ a.btn.wizard-btn:hover {
   text-shadow: 0 0 40px rgba(56, 189, 248, 0.12);
 }
 .auth-brand-copy {
-  margin: 16px 0 0;
+  margin: 10px 0 0;
   font-size: 1.05rem;
-  line-height: 1.8;
+  line-height: 1.65;
   color: #94a3b8;
   font-weight: 600;
   max-width: 38ch;
 }
 .auth-mascot {
-  margin: 22px 0 4px;
+  margin: 10px 0 0;
   display: flex;
   justify-content: flex-start;
   max-width: 280px;
@@ -3271,7 +3287,7 @@ a.btn.wizard-btn:hover {
 }
 .auth-mascot-frame {
   position: relative;
-  width: min(240px, 52vw);
+  width: min(200px, 28vh, 52vw);
   line-height: 0;
   filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.45));
   -webkit-mask-image:
@@ -3333,15 +3349,15 @@ a.btn.wizard-btn:hover {
   }
 }
 .auth-points {
-  margin: 30px 0 0;
+  margin: 14px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 .auth-points li {
   position: relative;
-  padding: 12px 14px 12px 12px;
+  padding: 9px 12px 9px 12px;
   padding-right: 34px;
   font-size: 13px;
   font-weight: 700;
@@ -3372,8 +3388,10 @@ a.btn.wizard-btn:hover {
 
 .auth-panel {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   justify-items: stretch;
+  min-height: 0;
+  align-content: center;
 }
 .auth-panel-card {
   position: relative;
@@ -3382,7 +3400,7 @@ a.btn.wizard-btn:hover {
   backdrop-filter: blur(22px) saturate(1.2);
   border: 1px solid rgba(125, 211, 252, 0.18);
   border-radius: 24px;
-  padding: 30px 26px;
+  padding: 24px 24px;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 28px 70px rgba(0, 0, 0, 0.45),
@@ -3414,8 +3432,8 @@ a.btn.wizard-btn:hover {
   justify-items: center;
   text-align: center;
   gap: 14px;
-  padding: 28px 8px 18px;
-  min-height: 280px;
+  padding: 18px 8px 12px;
+  min-height: 200px;
   align-content: center;
 }
 .auth-entering h2 {
@@ -3733,10 +3751,12 @@ a.btn.wizard-btn:hover {
 @media (max-width: 900px) {
   .auth-shell {
     grid-template-columns: 1fr;
-    padding: 22px 16px 36px;
+    padding: 16px 16px 18px;
+    align-content: start;
+    gap: 12px;
   }
   .auth-brand-pane {
-    padding: 12px 4px 0;
+    padding: 8px 4px 0;
     text-align: center;
   }
   .auth-brand-inner { margin: 0 auto; }
@@ -3745,13 +3765,20 @@ a.btn.wizard-btn:hover {
   .auth-mascot {
     margin-inline: auto;
     justify-content: center;
-    max-width: 180px;
+    max-width: 140px;
   }
   .auth-mascot-frame {
-    width: min(160px, 42vw);
+    width: min(132px, 22vh, 42vw);
   }
   .auth-points { display: none; }
   .otp-boxes { gap: 6px; }
+}
+
+@media (max-height: 760px) {
+  .auth-points { display: none; }
+  .auth-brand-copy { display: none; }
+  .auth-mascot-frame { width: min(160px, 22vh, 40vw); }
+  .auth-panel-card { padding: 20px 20px; }
 }
 
 .progress-bar {
