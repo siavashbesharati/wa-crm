@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, clearSession, getSession, saveSession, isNetworkErrorMessage } from "@/lib/api";
 import { loadOrgMe } from "@/lib/me-cache";
-import { AuthLayout, AuthStepHeader, AuthEntering } from "@/components/auth/AuthLayout";
+import { AuthLayout, AuthStepHeader, AuthEntering, type AuthLayoutHandle } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -29,6 +29,7 @@ export default function BusinessLoginPage() {
   const [shake, setShake] = useState(false);
   const autoSubmitRef = useRef("");
   const verifyingRef = useRef(false);
+  const layoutRef = useRef<AuthLayoutHandle>(null);
 
   useEffect(() => {
     const session = getSession();
@@ -142,6 +143,7 @@ export default function BusinessLoginPage() {
         body: JSON.stringify({ phone: phone.trim(), code: finalCode })
       });
       saveSession(tok);
+      layoutRef.current?.playMascot();
       const stepNow = tok.onboarding_step || "done";
       const toOnboarding = tok.is_new || stepNow !== "done";
       setEnterCopy({
@@ -170,6 +172,7 @@ export default function BusinessLoginPage() {
 
   return (
     <AuthLayout
+      ref={layoutRef}
       variant="business"
       brand="میوژن"
       tagline="ورود سریع با شماره موبایل — اگر تازه باشید، بعد از OTP وارد ویزارد راه‌اندازی می‌شوید."

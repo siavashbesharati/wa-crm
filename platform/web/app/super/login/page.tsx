@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, clearPlatformSession, getPlatformSession, savePlatformSession, isNetworkErrorMessage } from "@/lib/api";
 import { loadPlatformMe } from "@/lib/me-cache";
-import { AuthLayout, AuthStepHeader, AuthEntering } from "@/components/auth/AuthLayout";
+import { AuthLayout, AuthStepHeader, AuthEntering, type AuthLayoutHandle } from "@/components/auth/AuthLayout";
 import { OtpBoxes, ResendCountdown } from "@/components/auth/OtpBoxes";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -24,6 +24,7 @@ export default function SuperLoginPage() {
   const [shake, setShake] = useState(false);
   const autoSubmitRef = useRef("");
   const verifyingRef = useRef(false);
+  const layoutRef = useRef<AuthLayoutHandle>(null);
 
   useEffect(() => {
     const session = getPlatformSession();
@@ -130,6 +131,7 @@ export default function SuperLoginPage() {
         role: tok.role || "super_admin",
         scope: "platform"
       });
+      layoutRef.current?.playMascot();
       setEntering(true);
       toast.push("وارد پنل پلتفرم شدید", "ok");
       router.replace("/super/businesses");
@@ -145,6 +147,7 @@ export default function SuperLoginPage() {
 
   return (
     <AuthLayout
+      ref={layoutRef}
       variant="platform"
       brand="میوژن"
       tagline="ورود با پیامک به کنسول مالک پلتفرم."
