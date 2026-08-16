@@ -169,7 +169,7 @@ export default function AiSettingsPage() {
               <input
                 value={policy.agent_role || ""}
                 onChange={(e) => setPolicy({ ...policy, agent_role: e.target.value })}
-                placeholder="مثلاً مشاور فروش و پشتیبانی ایران اکسپدیا"
+                placeholder="مثلاً مشاور فروش و پشتیبانی میوژن"
                 style={{ width: "100%" }}
               />
             </label>

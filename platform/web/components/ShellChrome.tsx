@@ -186,8 +186,8 @@ export default function ShellChrome({
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-block">
-            <div className="brand">CRM چندکاناله</div>
-            <div className="brand-sub">پنل کسب‌وکار</div>
+            <div className="brand">میوژن</div>
+            <div className="brand-sub">miogen</div>
           </div>
           <button
             type="button"

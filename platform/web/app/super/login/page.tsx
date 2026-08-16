@@ -141,7 +141,7 @@ export default function SuperLoginPage() {
   return (
     <AuthLayout
       variant="platform"
-      brand="سوپر ادمین"
+      brand="میوژن"
       tagline="ورود با پیامک به کنسول مالک پلتفرم."
     >
       <div key={step} className={`auth-flow ${shake ? "is-shake" : ""}`}>

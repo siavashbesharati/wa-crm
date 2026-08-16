@@ -159,7 +159,7 @@ export default function BusinessLoginPage() {
   return (
     <AuthLayout
       variant="business"
-      brand="پنل کسب‌وکار"
+      brand="میوژن"
       tagline="ورود سریع با شماره موبایل — اگر تازه باشید، بعد از OTP وارد ویزارد راه‌اندازی می‌شوید."
     >
       <div key={step} className={`auth-flow ${shake ? "is-shake" : ""}`}>

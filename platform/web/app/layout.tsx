@@ -3,8 +3,9 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "CRM چندکاناله | پنل ابری",
-  description: "پلتفرم چنداپراتوره CRM واتساپ و دیوار"
+  title: "میوژن | miogen",
+  applicationName: "miogen",
+  description: "میوژن — پلتفرم چندکاناله CRM واتساپ و دیوار"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -35,7 +35,7 @@ export function AuthLayout({
           <div className="auth-brand-inner">
             <div className="auth-brand-mark">
               <span className="auth-mark-dot" aria-hidden />
-              <p className="auth-eyebrow">iranexpedia</p>
+              <p className="auth-eyebrow">miogen</p>
             </div>
             <p className="auth-portal-chip">
               {variant === "business" ? "Business Console" : "Platform Console"}

@@ -45,7 +45,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="IranExpedia Multi-Channel CRM API",
+    title="miogen API",
     version="1.2.0",
     lifespan=lifespan,
 )
