@@ -3725,13 +3725,17 @@ a.btn.wizard-btn:hover {
 }
 
 .otp-boxes {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  display: flex;
+  justify-content: center;
+  align-items: center;
   gap: 8px;
+  width: 100%;
 }
 .otp-box {
-  width: 100%;
-  aspect-ratio: 1;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  box-sizing: border-box;
   text-align: center;
   font-size: 1.25rem;
   font-weight: 900;
@@ -3829,6 +3833,11 @@ a.btn.wizard-btn:hover {
   }
   .auth-points { display: none; }
   .otp-boxes { gap: 6px; }
+  .otp-box {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
 }
 
 @media (max-height: 760px) {

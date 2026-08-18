@@ -258,8 +258,8 @@ export default function ChannelsPage() {
   async function submitDivarCode() {
     if (!modal || modal.kind !== "divar") return;
     const code = divarCode.trim();
-    if (!/^\d{4,8}$/.test(code)) {
-      toast.push("کد تأیید را وارد کنید", "err");
+    if (!/^\d{5}$/.test(code)) {
+      toast.push("کد ۵رقمی دیوار را وارد کنید", "err");
       return;
     }
     setBusy(true);
@@ -597,7 +597,7 @@ export default function ChannelsPage() {
               <Button variant="ghost" disabled={busy} onClick={() => setModal({ ...modal, step: "otp" })}>
                 تغییر شماره
               </Button>
-              <Button loading={busy} disabled={divarCode.trim().length < 4} onClick={() => void submitDivarCode()}>
+              <Button loading={busy} disabled={divarCode.trim().length !== 5} onClick={() => void submitDivarCode()}>
                 تأیید و اتصال
               </Button>
             </>
@@ -631,18 +631,7 @@ export default function ChannelsPage() {
         ) : (
           <div className="pair-form">
             <p className="pair-lead">کد پیامک‌شده به {divarPhone || "شماره"} را وارد کنید.</p>
-            <label>
-              کد تأیید
-              <input
-                className="pair-code-input"
-                value={divarCode}
-                onChange={(e) => setDivarCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                placeholder="•••••"
-                dir="ltr"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-              />
-            </label>
+            <OtpBoxes length={5} value={divarCode} onChange={setDivarCode} autoFocus disabled={busy} />
           </div>
         )}
       </Modal>
