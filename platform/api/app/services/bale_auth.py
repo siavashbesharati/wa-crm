@@ -85,8 +85,8 @@ def start_phone_auth(phone: str) -> dict[str, Any]:
 def validate_code(pending: dict[str, Any], code: str) -> dict[str, Any]:
     """Complete OTP. Returns session blob — caller must encrypt; never log token."""
     code = (code or "").translate(_PERSIAN_DIGITS).strip()
-    if not re.fullmatch(r"^\d{4,8}$", code):
-        raise BaleAuthError("کد ورود نامعتبر است")
+    if not re.fullmatch(r"^\d{5}$", code):
+        raise BaleAuthError("کد ورود باید ۵ رقم باشد")
     tx = str((pending or {}).get("transaction_hash") or "").strip()
     if not tx:
         raise BaleAuthError("ابتدا شماره را ارسال کنید")

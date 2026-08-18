@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
-import { Badge, Card } from "@/components/ui/Card";
+import { Card, HelpTip } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { PageLoading } from "@/components/ui/Spinner";
@@ -342,8 +342,8 @@ export default function ChannelsPage() {
   async function submitBaleCode() {
     if (!modal || modal.kind !== "bale") return;
     const code = baleCode.trim();
-    if (!/^\d{4,8}$/.test(code)) {
-      toast.push("کد ورود را وارد کنید", "err");
+    if (!/^\d{5}$/.test(code)) {
+      toast.push("کد ۵رقمی بله را وارد کنید", "err");
       return;
     }
     setBusy(true);
@@ -407,55 +407,66 @@ export default function ChannelsPage() {
     setBaleProfile(null);
   }
 
+  const connectedCount = accounts.filter((a) => isAccountOn(a.status, a.pairing_state)).length;
+
   return (
-    <Shell title="کانال‌ها" sub="واتساپ، دیوار و بله را جداگانه وصل کنید">
+    <Shell
+      title="کانال‌ها"
+      sub={
+        accounts.length
+          ? `${connectedCount} حساب متصل از ${accounts.length}`
+          : "واتساپ، دیوار و بله را جدا وصل کنید"
+      }
+    >
       {loading ? (
         <PageLoading variant="list" />
       ) : (
-        <div className="channel-board">
-          <ChannelCard
-            channel="whatsapp"
-            title="واتساپ"
-            hint="اتصال با QR یا کد ۸رقمی"
-            accounts={waAccounts}
-            busy={busy}
-            highlight={connectHint === "whatsapp"}
-            onAdd={() => void addWhatsApp()}
-            extraAction={
-              waAccounts.some((a) => isAccountOn(a.status, a.pairing_state)) ? (
-                <Link href="/groups" className="channel-card-link">
-                  گروه‌ها
-                </Link>
-              ) : null
-            }
-            onConnect={(a) => void reconnectWhatsApp(a.id)}
-            onDisconnect={(a) => void logoutPair(a.id)}
-            onRemove={setRemoveTarget}
-          />
-          <ChannelCard
-            channel="divar"
-            title="دیوار"
-            hint="اتصال با کد تأیید پیامکی"
-            accounts={divarAccounts}
-            busy={busy}
-            highlight={connectHint === "divar"}
-            onAdd={() => void addDivar()}
-            onConnect={(a) => openDivarOtp(a)}
-            onDisconnect={(a) => void logoutDivar(a.id)}
-            onRemove={setRemoveTarget}
-          />
-          <ChannelCard
-            channel="bale"
-            title="بله"
-            hint="اتصال با کد ورود برنامه بله"
-            accounts={baleAccounts}
-            busy={busy}
-            highlight={connectHint === "bale"}
-            onAdd={() => void addBale()}
-            onConnect={(a) => openBaleOtp(a)}
-            onDisconnect={(a) => void logoutBale(a.id)}
-            onRemove={setRemoveTarget}
-          />
+        <div className="channel-studio">
+          <div className="channel-board">
+            <ChannelCard
+              channel="whatsapp"
+              title="واتساپ"
+              hint="اتصال با QR یا کد ۸رقمی"
+              accounts={waAccounts}
+              busy={busy}
+              highlight={connectHint === "whatsapp"}
+              onAdd={() => void addWhatsApp()}
+              extraAction={
+                waAccounts.some((a) => isAccountOn(a.status, a.pairing_state)) ? (
+                  <Link href="/groups" className="channel-card-link">
+                    گروه‌ها
+                  </Link>
+                ) : null
+              }
+              onConnect={(a) => void reconnectWhatsApp(a.id)}
+              onDisconnect={(a) => void logoutPair(a.id)}
+              onRemove={setRemoveTarget}
+            />
+            <ChannelCard
+              channel="divar"
+              title="دیوار"
+              hint="اتصال با کد تأیید پیامکی"
+              accounts={divarAccounts}
+              busy={busy}
+              highlight={connectHint === "divar"}
+              onAdd={() => void addDivar()}
+              onConnect={(a) => openDivarOtp(a)}
+              onDisconnect={(a) => void logoutDivar(a.id)}
+              onRemove={setRemoveTarget}
+            />
+            <ChannelCard
+              channel="bale"
+              title="بله"
+              hint="اتصال با کد ورود برنامه بله"
+              accounts={baleAccounts}
+              busy={busy}
+              highlight={connectHint === "bale"}
+              onAdd={() => void addBale()}
+              onConnect={(a) => openBaleOtp(a)}
+              onDisconnect={(a) => void logoutBale(a.id)}
+              onRemove={setRemoveTarget}
+            />
+          </div>
         </div>
       )}
 
@@ -653,7 +664,7 @@ export default function ChannelsPage() {
               <Button variant="ghost" disabled={busy} onClick={() => setModal({ ...modal, step: "phone" })}>
                 تغییر شماره
               </Button>
-              <Button loading={busy} disabled={baleCode.trim().length < 4} onClick={() => void submitBaleCode()}>
+              <Button loading={busy} disabled={baleCode.trim().length !== 5} onClick={() => void submitBaleCode()}>
                 تأیید و اتصال
               </Button>
             </>
@@ -695,7 +706,7 @@ export default function ChannelsPage() {
               کد ورود به برنامه بله شما ارسال شده است. آن را اینجا وارد کنید.
             </p>
             <p className="hint">اگر در شرایطی پیامک هم آمد، همان کد را وارد کنید.</p>
-            <OtpBoxes length={6} value={baleCode} onChange={setBaleCode} autoFocus disabled={busy} />
+            <OtpBoxes length={5} value={baleCode} onChange={setBaleCode} autoFocus disabled={busy} />
           </div>
         ) : (
           <div className="pair-form">
@@ -744,28 +755,25 @@ export default function ChannelsPage() {
 
 const CHANNEL_CARD_COPY: Record<
   "whatsapp" | "divar" | "bale",
-  { helpTitle: string; helpBody: string; helpTips: string[]; empty: string; connect: string }
+  { helpTitle: string; helpBody: string; helpTips: string[]; connect: string }
 > = {
   whatsapp: {
     helpTitle: "واتساپ سرور",
     helpBody: "شماره واتساپ کسب‌وکار را با اسکن QR به سرور وصل کنید.",
     helpTips: ["سرویس wa-connector باید روشن باشد."],
-    empty: "QR را با گوشی اسکن کنید تا پیام‌ها اینجا بیایند.",
-    connect: "اتصال واتساپ"
+    connect: "اتصال"
   },
   divar: {
     helpTitle: "دیوار سرور",
     helpBody: "با کد تأیید پیامکی شماره دیوار را وصل کنید.",
     helpTips: ["سرویس divar-connector باید روشن باشد."],
-    empty: "با یک کد پیامکی حساب دیوار را به پنل وصل کنید.",
-    connect: "اتصال دیوار"
+    connect: "اتصال"
   },
   bale: {
     helpTitle: "بله سرور",
     helpBody: "با کد ورود برنامه بله، حساب را به سرور وصل کنید.",
     helpTips: ["سرویس bale-connector باید روشن باشد."],
-    empty: "شماره بله را وارد کنید و کد ورود را از برنامه بله تأیید کنید.",
-    connect: "اتصال بله"
+    connect: "اتصال"
   }
 };
 
@@ -796,59 +804,62 @@ function ChannelCard({
 }) {
   const empty = accounts.length === 0;
   const copy = CHANNEL_CARD_COPY[channel];
+  const liveCount = accounts.filter((a) => isAccountOn(a.status, a.pairing_state)).length;
   return (
-    <Card
-      className={`channel-board-card ${channel}${highlight ? " is-focus" : ""}`}
-      title={title}
-      help={{
-        title: copy.helpTitle,
-        body: copy.helpBody,
-        tips: copy.helpTips
-      }}
-      actions={
-        <div className="channel-card-actions">
-          {extraAction}
-          {!empty ? (
-            <Button size="sm" loading={busy} onClick={onAdd}>
-              افزودن
-            </Button>
-          ) : null}
+    <Card className={`channel-board-card${highlight ? " is-focus" : ""}`}>
+      <header className="channel-card-head">
+        <ChannelBrand channel={channel} size="xs" />
+        <div className="channel-card-head-copy">
+          <div className="channel-card-head-title">
+            <h3>{title}</h3>
+            <HelpTip
+              help={{
+                title: copy.helpTitle,
+                body: copy.helpBody,
+                tips: copy.helpTips
+              }}
+            />
+            {!empty ? (
+              <span className="channel-card-count">
+                {liveCount}/{accounts.length}
+              </span>
+            ) : null}
+          </div>
+          <p className="channel-card-hint">{hint}</p>
         </div>
-      }
-    >
-      <p className="channel-card-hint">{hint}</p>
-      {empty ? (
-        <div className="channel-empty">
-          <ChannelBrand channel={channel} size="lg" />
-          <strong>هنوز وصل نشده</strong>
-          <p>{copy.empty}</p>
-          <Button loading={busy} onClick={onAdd}>
-            {copy.connect}
+        <div className="channel-card-head-aside">
+          {extraAction}
+          <Button variant={empty ? "primary" : "ghost"} size="sm" loading={busy} onClick={onAdd}>
+            {empty ? copy.connect : "افزودن"}
           </Button>
         </div>
-      ) : (
+      </header>
+
+      {empty ? null : (
         <ul className="channel-account-list">
           {accounts.map((a) => {
             const on = isAccountOn(a.status, a.pairing_state);
             return (
               <li key={a.id} className="channel-account-row">
-                <ChannelBrand channel={channel} size="sm" />
                 <div className="channel-account-meta">
                   <strong>{a.label || title}</strong>
                   <span dir="ltr">{accountIdentity(a)}</span>
                 </div>
-                <Badge tone={on ? "online" : "offline"}>{statusLabel(a)}</Badge>
+                <span className={`channel-status ${on ? "on" : "off"}`}>
+                  <i />
+                  {statusLabel(a)}
+                </span>
                 <div className="channel-account-actions">
                   {on ? (
-                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => onDisconnect(a)}>
-                      قطع اتصال
+                    <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDisconnect(a)}>
+                      قطع
                     </Button>
                   ) : (
-                    <Button size="sm" disabled={busy} onClick={() => onConnect(a)}>
+                    <Button variant="ghost" size="sm" disabled={busy} onClick={() => onConnect(a)}>
                       اتصال
                     </Button>
                   )}
-                  <Button variant="danger" size="sm" disabled={busy} onClick={() => onRemove(a)}>
+                  <Button variant="ghost" size="sm" className="channel-remove" disabled={busy} onClick={() => onRemove(a)}>
                     حذف
                   </Button>
                 </div>

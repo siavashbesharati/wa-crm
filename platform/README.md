@@ -155,6 +155,9 @@ python main.py
 
 ## تولید (Production)
 
+برنامه ظرفیت ۱۰۰۰ کسب‌وکار / ۳۰۰۰ کانال: [`docs/scale-1000-businesses.md`](docs/scale-1000-businesses.md).
+
+
 
 
 ```bash

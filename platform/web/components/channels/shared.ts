@@ -62,7 +62,7 @@ export function accountIdentity(a: ChannelAccount) {
 }
 
 export function statusLabel(a: ChannelAccount) {
-  if (isAccountOn(a.status, a.pairing_state)) return "روشن";
+  if (isAccountOn(a.status, a.pairing_state)) return "متصل";
   const p = (a.pairing_state || "").toLowerCase();
   if (p && PAIRING_STATE_FA[p]) return PAIRING_STATE_FA[p];
   const s = (a.status || "").toLowerCase();

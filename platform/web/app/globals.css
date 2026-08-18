@@ -2878,131 +2878,116 @@ a.btn.wizard-btn:hover {
 .msg.out { background: var(--accent-soft); margin-right: auto; }
 .msg.in { margin-left: auto; }
 
-/* Channels — per-channel cards */
+/* Channels — compact board */
+.channel-studio { display: grid; }
 .channel-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   align-items: start;
 }
 .channel-board .card { margin-bottom: 0; }
 .channel-board-card {
-  min-height: 320px;
   display: flex;
   flex-direction: column;
-}
-.channel-board-card.whatsapp {
-  box-shadow: 0 1px 0 rgba(18, 140, 126, 0.18), var(--shadow);
-}
-.channel-board-card.divar {
-  box-shadow: 0 1px 0 rgba(166, 25, 46, 0.16), var(--shadow);
-}
-.channel-board-card.bale {
-  box-shadow: 0 1px 0 rgba(12, 188, 141, 0.22), var(--shadow);
+  gap: 8px;
+  padding: 12px 12px 10px;
 }
 .channel-board-card.is-focus {
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
-.channel-card-hint {
-  margin: 0 0 14px;
-  color: var(--muted);
-  font-size: 13px;
+.channel-board .help-tip-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  font-size: 11px;
 }
-.channel-card-actions {
+.channel-board .btn.sm,
+.channel-board .btn.ghost {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.channel-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+.channel-card-head .channel-brand.xs {
+  width: 22px;
+  height: 22px;
+}
+.channel-card-head-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0;
+}
+.channel-card-head-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.channel-card-head-title h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.channel-card-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.channel-card-head-aside {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.channel-card-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .channel-card-link {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--accent);
   text-decoration: none;
-  padding: 6px 8px;
+  padding: 0 4px;
 }
 .channel-card-link:hover { text-decoration: underline; }
-.channel-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 28px 16px 20px;
-  gap: 8px;
-}
-.channel-empty strong {
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-}
-.channel-empty p {
-  margin: 0 0 10px;
-  max-width: 280px;
-  color: var(--muted);
-  font-size: 13.5px;
-  line-height: 1.6;
-}
-.channel-empty-mark {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  margin-bottom: 8px;
-}
-.channel-empty-mark svg {
-  width: 30px;
-  height: 30px;
-}
-.channel-empty-mark.whatsapp {
-  background: rgba(37, 211, 102, 0.16);
-  color: #128c7e;
-}
-.channel-empty-mark.divar {
-  background: rgba(166, 25, 46, 0.12);
-  color: #a6192e;
-}
-.channel-empty-mark.bale {
-  background: rgba(12, 188, 141, 0.16);
-  color: #0cbc8d;
-}
-.channel-empty-mark.sm {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  margin: 0;
-}
-.channel-empty-mark.sm svg {
-  width: 18px;
-  height: 18px;
-}
 .channel-account-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px 0 0;
   display: grid;
-  gap: 8px;
+  gap: 0;
+  border-top: 1px solid var(--border);
 }
 .channel-account-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.55);
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 4px;
+  border-radius: 8px;
+}
+.channel-account-row:hover {
+  background: rgba(29, 29, 31, 0.04);
 }
 .channel-account-meta {
   flex: 1;
-  min-width: 120px;
+  min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 0;
 }
 .channel-account-meta strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3010,14 +2995,44 @@ a.btn.wizard-btn:hover {
 }
 .channel-account-meta span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.channel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+}
+.channel-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c7c7cc;
+}
+.channel-status.on { color: var(--success); }
+.channel-status.on i { background: var(--success); }
 .channel-account-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 0;
   flex-shrink: 0;
+}
+.channel-account-actions .btn {
+  width: auto;
+  color: var(--muted);
+}
+.channel-account-actions .btn.channel-remove {
+  color: var(--danger);
+}
+.channel-account-actions .btn.channel-remove:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 .pair-lead {
   margin: 0 0 16px;
@@ -4421,6 +4436,14 @@ a.btn.wizard-btn:hover {
   .chat-app,
   .channel-board {
     grid-template-columns: 1fr;
+  }
+  .channel-board .btn.sm,
+  .channel-board .btn.ghost {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+  .channel-account-row {
+    flex-wrap: wrap;
   }
   .chat-app {
     height: calc(100vh - 118px);
