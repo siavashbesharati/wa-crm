@@ -469,6 +469,7 @@ def _ingest_is_group(body: MessageIngestIn, external_chat_id: str | None) -> boo
         or bool((body.group_id or "").strip())
         or ext.endswith("@g.us")
         or ext.startswith("gname:")
+        or ext.startswith("bale:group:")
     )
 
 

@@ -9,6 +9,7 @@ _DEFAULT_DB = _API_DIR / "wa_crm.db"
 _JWT_SECRET_FILE = _API_DIR / ".local" / "jwt_secret"
 _WA_CONNECTOR_KEY_FILE = _API_DIR / ".local" / "wa_connector_key"
 _DIVAR_CONNECTOR_KEY_FILE = _API_DIR / ".local" / "divar_connector_key"
+_BALE_CONNECTOR_KEY_FILE = _API_DIR / ".local" / "bale_connector_key"
 _WA_CREDS_KEY_FILE = _API_DIR / ".local" / "wa_creds_fernet_key"
 
 
@@ -48,6 +49,12 @@ def _load_or_create_divar_connector_key() -> str:
     )
 
 
+def _load_or_create_bale_connector_key() -> str:
+    return _load_or_create_secret_file(
+        _BALE_CONNECTOR_KEY_FILE, "dev-bale-connector-key-change-me", min_len=16
+    )
+
+
 def _load_or_create_wa_creds_key() -> str:
     """Fernet key (url-safe base64, 32 bytes). Generated once and persisted."""
     try:
@@ -82,7 +89,9 @@ class Settings(BaseSettings):
     wa_connector_key: str = _load_or_create_wa_connector_key()
     # Shared secret for platform/divar-connector → /internal/divar/*
     divar_connector_key: str = _load_or_create_divar_connector_key()
-    # Fernet key for encrypting Baileys / Divar auth state at rest
+    # Shared secret for platform/bale-connector → /internal/bale/*
+    bale_connector_key: str = _load_or_create_bale_connector_key()
+    # Fernet key for encrypting Baileys / Divar / Bale auth state at rest
     wa_creds_fernet_key: str = _load_or_create_wa_creds_key()
     # Platform owner phone (must match OTP login for /super)
     super_admin_phone: str = "09120674032"

@@ -6,7 +6,7 @@
 
 
 
-کانال‌های فعلی: **WhatsApp (Baileys سرور — QR)** و **Divar (API سرور — OTP)**. افزونه Chrome حذف شده است.
+کانال‌های فعلی: **WhatsApp (Baileys سرور — QR)**، **Divar (API سرور — OTP)** و **Bale (WebSocket سرور — OTP برنامه بله)**. افزونه Chrome حذف شده است.
 
 
 
@@ -35,10 +35,11 @@
 Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboarding?paid=1` یا `/billing?paid=1`. برای تست لوکال API باید از اینترنت در دسترس باشد (tunnel).  
 در پنل کسب‌وکار: صفحه **`/billing`** برای تمدید همان پلن یا ارتقا (مالک، از طریق `POST /api/payments/start`).
 
-**اجرای لوکال:** `npm run start:all` از ریشه ریپو (API + Web + Workers + wa-connector + divar-connector).  
+**اجرای لوکال:** `npm run start:all` از ریشه ریپو (API + Web + Workers + wa-connector + divar-connector + bale-connector).  
 - بدون واتساپ: `node scripts/start-all.mjs --no-wa`  
 - بدون دیوار: `node scripts/start-all.mjs --no-divar`  
-- فقط کانکتورها: `npm run wa:dev` / `npm run divar:dev`
+- بدون بله: `node scripts/start-all.mjs --no-bale`  
+- فقط کانکتورها: `npm run wa:dev` / `npm run divar:dev` / `npm run bale:dev`
 
 ## اجزا
 
@@ -53,6 +54,10 @@ Callback: `GET /api/payments/zibal/callback` → ریدایرکت به `/onboard
 | Admin UI | `platform/web` | پنل فارسی سوپر ادمین + کسب‌وکار |
 
 | WA Connector | `platform/wa-connector` | Baileys sidecar — QR، دریافت/ارسال واتساپ |
+
+| Divar Connector | `platform/divar-connector` | OTP + HTTP chat sidecar دیوار |
+
+| Bale Connector | `platform/bale-connector` | OTP + WebSocket sidecar بله |
 
 | Workers | `python -m app.workers.runner` | auto-reply / KPI |
 
@@ -119,7 +124,7 @@ npm run dev
 
 # http://127.0.0.1:8090/health
 
-# پنل → کانال‌ها → اتصال واتساپ (QR) یا دیوار (OTP)
+# پنل → کانال‌ها → اتصال واتساپ (QR) یا دیوار (OTP) یا بله (OTP برنامه)
 
 # 5) Divar connector
 
@@ -127,6 +132,13 @@ cd platform/divar-connector
 pip install -r requirements.txt
 python main.py
 # http://127.0.0.1:8091/health
+
+# 6) Bale connector
+
+cd platform/bale-connector
+pip install -r requirements.txt
+python main.py
+# http://127.0.0.1:8092/health
 ```
 
 
@@ -172,7 +184,7 @@ docker compose up -d db redis
 - **growth**: ۵ عضو، AI auto-send
 - **scale**: ۲۰ عضو، AI auto-send
 
-کانال‌ها از داشبورد → **کانال‌ها** وصل می‌شوند (واتساپ QR / دیوار OTP). سرویس‌های `wa-connector` و `divar-connector` روی سرور باید روشن باشند.
+کانال‌ها از داشبورد → **کانال‌ها** وصل می‌شوند (واتساپ QR / دیوار OTP / بله OTP). سرویس‌های `wa-connector`، `divar-connector` و `bale-connector` روی سرور باید روشن باشند.
 
 
 
@@ -186,7 +198,7 @@ docker compose up -d db redis
 
 3. اکانت‌های کانال (واتساپ QR / دیوار OTP) را در «کانال‌ها» وصل می‌کند  
 
-4. یک PC/VPS همیشه روشن با `wa-connector` + `divar-connector`  
+4. یک PC/VPS همیشه روشن با `wa-connector` + `divar-connector` + `bale-connector`  
 
 5. اپراتورها فقط پنل ابری  
 

@@ -17,6 +17,9 @@ const PAIRING_STATE_FA: Record<string, string> = {
   code_pending: "در انتظار کد جفت‌سازی",
   otp_pending: "در انتظار کد تأیید",
   reconnecting: "در حال اتصال مجدد",
+  auth_required: "نیاز به ورود دوباره",
+  connecting: "در حال اتصال",
+  error: "خطا"
 };
 
 const ACCOUNT_STATUS_FA: Record<string, string> = {
@@ -48,7 +51,7 @@ export function isAccountOn(status: string, pairing?: string) {
   if (s === "offline" || s === "disconnected") return false;
   if (s === "online" || s === "connected" || s === "ready" || s === "on") return true;
   const p = (pairing || "").toLowerCase();
-  if (p === "reconnecting" || p === "disconnected" || p === "qr_pending" || p === "otp_pending" || p === "code_pending") {
+  if (p === "reconnecting" || p === "disconnected" || p === "qr_pending" || p === "otp_pending" || p === "code_pending" || p === "auth_required") {
     return false;
   }
   return p === "connected";

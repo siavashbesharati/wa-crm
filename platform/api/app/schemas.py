@@ -99,7 +99,7 @@ class ChannelAccountIn(BaseModel):
     label: str = ""
     external_id: str = ""
     phone: str = ""  # WA alias for external_id
-    connector_type: str = "baileys"  # baileys | divar_api
+    connector_type: str = "baileys"  # baileys | divar_api | bale_api
 
 
 class ChannelAccountOut(BaseModel):
@@ -140,6 +140,39 @@ class DivarAuthStateIn(BaseModel):
 class DivarAuthStateOut(BaseModel):
     account_id: str
     cookies_json: str = ""
+    pending_json: str = ""
+    cursors_json: str = ""
+
+
+class BalePairStartIn(BaseModel):
+    phone: str
+
+
+class BalePairCodeIn(BaseModel):
+    code: str
+
+
+class BalePairStatusOut(BaseModel):
+    account_id: str
+    pairing_state: str
+    status: str
+    phone: str = ""
+    display_name: str = ""
+    user_id: str = ""
+    connector_type: str = "bale_api"
+    sent_code_type: int | None = None
+    message: str = ""
+
+
+class BaleAuthStateIn(BaseModel):
+    token_json: str = ""
+    pending_json: str = ""
+    cursors_json: str = ""
+
+
+class BaleAuthStateOut(BaseModel):
+    account_id: str
+    token_json: str = ""
     pending_json: str = ""
     cursors_json: str = ""
 

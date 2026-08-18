@@ -17,11 +17,12 @@ def process_message_ingest(
     *,
     allow_baileys_extension: bool = False,
     allow_divar_api: bool = False,
+    allow_bale_api: bool = False,
 ) -> MessageIngestOut:
     """
     Persist inbound/outbound channel messages and run bot/AI post-handlers.
 
-    Public JWT ingest must not feed baileys/divar_api accounts unless the
+    Public JWT ingest must not feed baileys/divar_api/bale_api accounts unless the
     matching server connector sets allow_* flags.
     """
     from app.routers import messages as messages_router
@@ -51,6 +52,12 @@ def process_message_ingest(
         raise HTTPException(
             status_code=409,
             detail="این اکانت دیوار روی کانکتور سرور است؛ ingest فقط از divar-connector مجاز است",
+        )
+
+    if not allow_bale_api and connector == "bale_api" and channel == "bale":
+        raise HTTPException(
+            status_code=409,
+            detail="این اکانت بله روی کانکتور سرور است؛ ingest فقط از bale-connector مجاز است",
         )
 
     return messages_router.process_message_ingest(

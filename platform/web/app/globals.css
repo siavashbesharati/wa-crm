@@ -2294,6 +2294,10 @@ a.btn.wizard-btn:hover {
   background: rgba(166, 25, 46, 0.12);
   color: #a6192e;
 }
+.chat-avatar.bale {
+  background: rgba(12, 188, 141, 0.16);
+  color: #0cbc8d;
+}
 .chat-row-body {
   flex: 1;
   min-width: 0;
@@ -2361,6 +2365,10 @@ a.btn.wizard-btn:hover {
   background: rgba(166, 25, 46, 0.1);
   color: #a6192e;
 }
+.ch-badge.bale {
+  background: rgba(12, 188, 141, 0.14);
+  color: #0a8f6b;
+}
 .channel-brand {
   display: grid;
   place-items: center;
@@ -2386,8 +2394,14 @@ a.btn.wizard-btn:hover {
 .channel-brand.divar {
   border-radius: 10px;
 }
-.channel-brand.xs.divar { border-radius: 4px; }
-.channel-brand.sm.divar { border-radius: 8px; }
+.channel-brand.bale {
+  border-radius: 10px;
+  padding: 2px;
+}
+.channel-brand.xs.divar,
+.channel-brand.xs.bale { border-radius: 4px; }
+.channel-brand.sm.divar,
+.channel-brand.sm.bale { border-radius: 8px; }
 
 .chat-stage {
   display: flex;
@@ -2867,7 +2881,7 @@ a.btn.wizard-btn:hover {
 /* Channels — per-channel cards */
 .channel-board {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -2882,6 +2896,9 @@ a.btn.wizard-btn:hover {
 }
 .channel-board-card.divar {
   box-shadow: 0 1px 0 rgba(166, 25, 46, 0.16), var(--shadow);
+}
+.channel-board-card.bale {
+  box-shadow: 0 1px 0 rgba(12, 188, 141, 0.22), var(--shadow);
 }
 .channel-board-card.is-focus {
   outline: 2px solid var(--accent);
@@ -2946,6 +2963,10 @@ a.btn.wizard-btn:hover {
 .channel-empty-mark.divar {
   background: rgba(166, 25, 46, 0.12);
   color: #a6192e;
+}
+.channel-empty-mark.bale {
+  background: rgba(12, 188, 141, 0.16);
+  color: #0cbc8d;
 }
 .channel-empty-mark.sm {
   width: 40px;
@@ -3096,6 +3117,20 @@ a.btn.wizard-btn:hover {
   font-size: 22px;
   font-weight: 700;
   min-height: 52px;
+}
+.bale-pair-summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  text-align: start;
+  font-size: 14px;
+  color: var(--muted);
+}
+.bale-pair-summary strong {
+  color: var(--text);
+  font-weight: 650;
 }
 .groups-toolbar {
   display: flex;

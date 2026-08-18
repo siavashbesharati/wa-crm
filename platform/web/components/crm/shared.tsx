@@ -67,7 +67,8 @@ export function tagLabel(key: string) {
 
 export const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "واتساپ",
-  divar: "دیوار"
+  divar: "دیوار",
+  bale: "بله"
 };
 
 export function leadPhone(l: Lead) {
@@ -124,12 +125,13 @@ export type CrmTask = {
 
 export const SETUP_TASK_HREF: Record<string, string> = {
   "setup:whatsapp": "/channels?connect=whatsapp",
-  "setup:divar": "/channels?connect=divar"
+  "setup:divar": "/channels?connect=divar",
+  "setup:bale": "/channels?connect=bale"
 };
 
 export function isSetupChannelTask(t: { source_message_id?: string | null }) {
   const key = (t.source_message_id || "").trim();
-  return key === "setup:whatsapp" || key === "setup:divar";
+  return key === "setup:whatsapp" || key === "setup:divar" || key === "setup:bale";
 }
 
 export function setupTaskHref(t: {

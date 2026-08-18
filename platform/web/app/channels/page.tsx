@@ -18,6 +18,7 @@ import {
   type ChannelAccount
 } from "@/components/channels/shared";
 import { ChannelBrand } from "@/components/channels/brand";
+import { OtpBoxes } from "@/components/auth/OtpBoxes";
 
 type PairStatus = {
   account_id: string;
@@ -31,7 +32,18 @@ type PairStatus = {
 
 type PairModal =
   | { kind: "whatsapp"; accountId: string; mode: "qr" | "code"; step: "choose" | "active" }
-  | { kind: "divar"; accountId: string; step: "otp" | "code" };
+  | { kind: "divar"; accountId: string; step: "otp" | "code" }
+  | { kind: "bale"; accountId: string; step: "phone" | "otp" | "done" };
+
+type BalePairStatus = {
+  account_id: string;
+  pairing_state: string;
+  status: string;
+  phone?: string;
+  display_name?: string;
+  user_id?: string;
+  message?: string;
+};
 
 export default function ChannelsPage() {
   const searchParams = useSearchParams();
@@ -44,6 +56,9 @@ export default function ChannelsPage() {
   const [pair, setPair] = useState<PairStatus | null>(null);
   const [divarPhone, setDivarPhone] = useState("");
   const [divarCode, setDivarCode] = useState("");
+  const [balePhone, setBalePhone] = useState("");
+  const [baleCode, setBaleCode] = useState("");
+  const [baleProfile, setBaleProfile] = useState<{ name: string; userId: string; phone: string } | null>(null);
   const [waPhone, setWaPhone] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ChannelAccount | null>(null);
   const toast = useToast();
@@ -54,6 +69,10 @@ export default function ChannelsPage() {
   );
   const divarAccounts = useMemo(
     () => accounts.filter((a) => a.channel === "divar"),
+    [accounts]
+  );
+  const baleAccounts = useMemo(
+    () => accounts.filter((a) => a.channel === "bale"),
     [accounts]
   );
 
@@ -192,8 +211,9 @@ export default function ChannelsPage() {
 
   useEffect(() => {
     if (loading || autoConnectRef.current) return;
-    if (connectHint !== "whatsapp" && connectHint !== "divar") return;
-    const list = connectHint === "whatsapp" ? waAccounts : divarAccounts;
+    if (connectHint !== "whatsapp" && connectHint !== "divar" && connectHint !== "bale") return;
+    const list =
+      connectHint === "whatsapp" ? waAccounts : connectHint === "divar" ? divarAccounts : baleAccounts;
     if (list.some((a) => isAccountOn(a.status, a.pairing_state))) {
       autoConnectRef.current = true;
       return;
@@ -202,14 +222,16 @@ export default function ChannelsPage() {
     const existing = list[0];
     if (existing) {
       if (connectHint === "whatsapp") openWhatsAppPair(existing.id);
-      else openDivarOtp(existing);
+      else if (connectHint === "divar") openDivarOtp(existing);
+      else openBaleOtp(existing);
       return;
     }
     if (connectHint === "whatsapp") void addWhatsApp();
-    else void addDivar();
+    else if (connectHint === "divar") void addDivar();
+    else void addBale();
     // Open the matching pair flow once when arriving from a setup task.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, connectHint, waAccounts, divarAccounts]);
+  }, [loading, connectHint, waAccounts, divarAccounts, baleAccounts]);
 
   async function startDivarOtp() {
     if (!modal || modal.kind !== "divar") return;
@@ -271,6 +293,94 @@ export default function ChannelsPage() {
     }
   }
 
+  async function addBale() {
+    setBusy(true);
+    try {
+      const acc = await api<ChannelAccount>("/channels/accounts/bale-api", { method: "POST" });
+      setBalePhone("");
+      setBaleCode("");
+      setBaleProfile(null);
+      setModal({ kind: "bale", accountId: acc.id, step: "phone" });
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openBaleOtp(account: ChannelAccount) {
+    setBalePhone(account.external_id || account.phone || "");
+    setBaleCode("");
+    setBaleProfile(null);
+    setModal({ kind: "bale", accountId: account.id, step: "phone" });
+  }
+
+  async function startBaleOtp() {
+    if (!modal || modal.kind !== "bale") return;
+    const phone = balePhone.trim();
+    if (!phone) {
+      toast.push("شماره موبایل را وارد کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${modal.accountId}/bale/pair/start`, {
+        method: "POST",
+        body: JSON.stringify({ phone })
+      });
+      setBaleCode("");
+      setModal({ ...modal, step: "otp" });
+      toast.push("کد ورود ارسال شد", "ok");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در ارسال کد", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitBaleCode() {
+    if (!modal || modal.kind !== "bale") return;
+    const code = baleCode.trim();
+    if (!/^\d{4,8}$/.test(code)) {
+      toast.push("کد ورود را وارد کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      const st = await api<BalePairStatus>(`/channels/accounts/${modal.accountId}/bale/pair/code`, {
+        method: "POST",
+        body: JSON.stringify({ code })
+      });
+      setBaleProfile({
+        name: st.display_name || "",
+        userId: st.user_id || "",
+        phone: st.phone || balePhone
+      });
+      setModal({ ...modal, step: "done" });
+      toast.push("بله متصل شد", "ok");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "کد نامعتبر", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logoutBale(accountId: string) {
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${accountId}/bale/pair/logout`, { method: "POST" });
+      if (modal?.kind === "bale" && modal.accountId === accountId) setModal(null);
+      toast.push("اتصال بله قطع شد", "ok");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removeAccount() {
     if (!removeTarget) return;
     const id = removeTarget.id;
@@ -294,10 +404,11 @@ export default function ChannelsPage() {
   function closeModal() {
     setModal(null);
     setPair(null);
+    setBaleProfile(null);
   }
 
   return (
-    <Shell title="کانال‌ها" sub="واتساپ و دیوار را جداگانه وصل کنید">
+    <Shell title="کانال‌ها" sub="واتساپ، دیوار و بله را جداگانه وصل کنید">
       {loading ? (
         <PageLoading variant="list" />
       ) : (
@@ -331,6 +442,18 @@ export default function ChannelsPage() {
             onAdd={() => void addDivar()}
             onConnect={(a) => openDivarOtp(a)}
             onDisconnect={(a) => void logoutDivar(a.id)}
+            onRemove={setRemoveTarget}
+          />
+          <ChannelCard
+            channel="bale"
+            title="بله"
+            hint="اتصال با کد ورود برنامه بله"
+            accounts={baleAccounts}
+            busy={busy}
+            highlight={connectHint === "bale"}
+            onAdd={() => void addBale()}
+            onConnect={(a) => openBaleOtp(a)}
+            onDisconnect={(a) => void logoutBale(a.id)}
             onRemove={setRemoveTarget}
           />
         </div>
@@ -512,6 +635,86 @@ export default function ChannelsPage() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        open={modal?.kind === "bale"}
+        title={
+          modal?.kind === "bale" && modal.step === "done"
+            ? "بله متصل شد"
+            : modal?.kind === "bale" && modal.step === "otp"
+              ? "تأیید حساب بله"
+              : "اتصال بله"
+        }
+        onClose={closeModal}
+        panelClassName="pair-modal"
+        footer={
+          modal?.kind === "bale" && modal.step === "otp" ? (
+            <>
+              <Button variant="ghost" disabled={busy} onClick={() => setModal({ ...modal, step: "phone" })}>
+                تغییر شماره
+              </Button>
+              <Button loading={busy} disabled={baleCode.trim().length < 4} onClick={() => void submitBaleCode()}>
+                تأیید و اتصال
+              </Button>
+            </>
+          ) : modal?.kind === "bale" && modal.step === "done" ? (
+            <Button onClick={closeModal}>تمام</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={closeModal}>
+                انصراف
+              </Button>
+              <Button loading={busy} onClick={() => void startBaleOtp()}>
+                ادامه
+              </Button>
+            </>
+          )
+        }
+      >
+        {modal?.kind === "bale" && modal.step === "phone" ? (
+          <div className="pair-form">
+            <p className="pair-lead">شماره موبایل حساب بله را وارد کنید.</p>
+            <label>
+              شماره موبایل
+              <input
+                className="ltr-text"
+                value={balePhone}
+                onChange={(e) => setBalePhone(e.target.value)}
+                placeholder="+98 912 123 4567"
+                dir="ltr"
+                inputMode="tel"
+                autoComplete="tel"
+                autoFocus
+              />
+            </label>
+            <p className="hint">۰۹۱۲…، +۹۸ یا ۹۸۹۱۲… پذیرفته می‌شود.</p>
+          </div>
+        ) : modal?.kind === "bale" && modal.step === "otp" ? (
+          <div className="pair-form">
+            <p className="pair-lead">
+              کد ورود به برنامه بله شما ارسال شده است. آن را اینجا وارد کنید.
+            </p>
+            <p className="hint">اگر در شرایطی پیامک هم آمد، همان کد را وارد کنید.</p>
+            <OtpBoxes length={6} value={baleCode} onChange={setBaleCode} autoFocus disabled={busy} />
+          </div>
+        ) : (
+          <div className="pair-form">
+            <p className="pair-lead">حساب بله با موفقیت وصل شد.</p>
+            <ul className="bale-pair-summary">
+              <li>
+                حساب: <strong>{baleProfile?.name || "—"}</strong>
+              </li>
+              <li>
+                شناسه بله:{" "}
+                <strong dir="ltr">{baleProfile?.userId || "—"}</strong>
+              </li>
+              <li>
+                شماره: <strong dir="ltr">{baleProfile?.phone || balePhone || "—"}</strong>
+              </li>
+            </ul>
+          </div>
+        )}
+      </Modal>
       <Modal
         open={!!removeTarget}
         title="حذف کانال"
@@ -539,6 +742,33 @@ export default function ChannelsPage() {
   );
 }
 
+const CHANNEL_CARD_COPY: Record<
+  "whatsapp" | "divar" | "bale",
+  { helpTitle: string; helpBody: string; helpTips: string[]; empty: string; connect: string }
+> = {
+  whatsapp: {
+    helpTitle: "واتساپ سرور",
+    helpBody: "شماره واتساپ کسب‌وکار را با اسکن QR به سرور وصل کنید.",
+    helpTips: ["سرویس wa-connector باید روشن باشد."],
+    empty: "QR را با گوشی اسکن کنید تا پیام‌ها اینجا بیایند.",
+    connect: "اتصال واتساپ"
+  },
+  divar: {
+    helpTitle: "دیوار سرور",
+    helpBody: "با کد تأیید پیامکی شماره دیوار را وصل کنید.",
+    helpTips: ["سرویس divar-connector باید روشن باشد."],
+    empty: "با یک کد پیامکی حساب دیوار را به پنل وصل کنید.",
+    connect: "اتصال دیوار"
+  },
+  bale: {
+    helpTitle: "بله سرور",
+    helpBody: "با کد ورود برنامه بله، حساب را به سرور وصل کنید.",
+    helpTips: ["سرویس bale-connector باید روشن باشد."],
+    empty: "شماره بله را وارد کنید و کد ورود را از برنامه بله تأیید کنید.",
+    connect: "اتصال بله"
+  }
+};
+
 function ChannelCard({
   channel,
   title,
@@ -552,7 +782,7 @@ function ChannelCard({
   onDisconnect,
   onRemove
 }: {
-  channel: "whatsapp" | "divar";
+  channel: "whatsapp" | "divar" | "bale";
   title: string;
   hint: string;
   accounts: ChannelAccount[];
@@ -565,23 +795,16 @@ function ChannelCard({
   onRemove: (a: ChannelAccount) => void;
 }) {
   const empty = accounts.length === 0;
+  const copy = CHANNEL_CARD_COPY[channel];
   return (
     <Card
       className={`channel-board-card ${channel}${highlight ? " is-focus" : ""}`}
       title={title}
-      help={
-        channel === "whatsapp"
-          ? {
-              title: "واتساپ سرور",
-              body: "شماره واتساپ کسب‌وکار را با اسکن QR به سرور وصل کنید.",
-              tips: ["سرویس wa-connector باید روشن باشد."]
-            }
-          : {
-              title: "دیوار سرور",
-              body: "با کد تأیید پیامکی شماره دیوار را وصل کنید.",
-              tips: ["سرویس divar-connector باید روشن باشد."]
-            }
-      }
+      help={{
+        title: copy.helpTitle,
+        body: copy.helpBody,
+        tips: copy.helpTips
+      }}
       actions={
         <div className="channel-card-actions">
           {extraAction}
@@ -598,13 +821,9 @@ function ChannelCard({
         <div className="channel-empty">
           <ChannelBrand channel={channel} size="lg" />
           <strong>هنوز وصل نشده</strong>
-          <p>
-            {channel === "whatsapp"
-              ? "QR را با گوشی اسکن کنید تا پیام‌ها اینجا بیایند."
-              : "با یک کد پیامکی حساب دیوار را به پنل وصل کنید."}
-          </p>
+          <p>{copy.empty}</p>
           <Button loading={busy} onClick={onAdd}>
-            {channel === "whatsapp" ? "اتصال واتساپ" : "اتصال دیوار"}
+            {copy.connect}
           </Button>
         </div>
       ) : (

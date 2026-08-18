@@ -3,6 +3,7 @@
 import { CHANNEL_LABELS } from "@/components/crm/shared";
 
 const DIVAR_LOGO = "/brands/Divar%20Logo.svg";
+const BALE_LOGO = "/brands/bale.svg";
 
 function WhatsAppMark() {
   return (
@@ -15,6 +16,8 @@ function WhatsAppMark() {
   );
 }
 
+const KNOWN = new Set(["whatsapp", "divar", "bale"]);
+
 export function ChannelBrand({
   channel,
   size = "md",
@@ -25,12 +28,15 @@ export function ChannelBrand({
   className?: string;
 }) {
   const ch = (channel || "").toLowerCase();
-  if (ch !== "whatsapp" && ch !== "divar") return null;
+  if (!KNOWN.has(ch)) return null;
   return (
     <span className={`channel-brand ${ch} ${size} ${className}`.trim()} aria-hidden>
       {ch === "divar" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={DIVAR_LOGO} alt="" />
+      ) : ch === "bale" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={BALE_LOGO} alt="" />
       ) : (
         <WhatsAppMark />
       )}
@@ -40,7 +46,7 @@ export function ChannelBrand({
 
 export function ChannelBadge({ channel }: { channel?: string }) {
   const ch = (channel || "").toLowerCase();
-  if (ch !== "whatsapp" && ch !== "divar") return null;
+  if (!KNOWN.has(ch)) return null;
   return (
     <span className={`ch-badge ${ch}`}>
       <ChannelBrand channel={ch} size="xs" />

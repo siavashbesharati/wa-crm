@@ -246,6 +246,8 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
             label = "واتساپ"
         elif label == "divar":
             label = "دیوار"
+        elif label == "bale":
+            label = "بله"
         elif label == "":
             label = "نامشخص"
         channels.append({"channel": label, "count": int(count)})

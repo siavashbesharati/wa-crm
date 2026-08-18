@@ -11,6 +11,7 @@ from app.services.contact_tasks import next_board_order
 
 SETUP_WHATSAPP = "setup:whatsapp"
 SETUP_DIVAR = "setup:divar"
+SETUP_BALE = "setup:bale"
 
 SETUP_SPECS: tuple[dict[str, str], ...] = (
     {
@@ -25,10 +26,16 @@ SETUP_SPECS: tuple[dict[str, str], ...] = (
         "title": "اتصال دیوار",
         "message": "دیوار را از صفحه کانال‌ها وصل کنید.",
     },
+    {
+        "key": SETUP_BALE,
+        "channel": "bale",
+        "title": "اتصال بله",
+        "message": "حساب بله را از صفحه کانال‌ها وصل کنید.",
+    },
 )
 
 _PENDING_PAIRING = frozenset(
-    {"qr_pending", "otp_pending", "code_pending", "disconnected", "reconnecting"}
+    {"qr_pending", "otp_pending", "code_pending", "disconnected", "reconnecting", "auth_required"}
 )
 _OFF_STATUS = frozenset({"offline", "disconnected"})
 _ON_STATUS = frozenset({"online", "connected", "ready", "on"})
@@ -46,6 +53,8 @@ def _key_for_channel(channel: ChannelType | str) -> str | None:
         return SETUP_WHATSAPP
     if raw == "divar":
         return SETUP_DIVAR
+    if raw == "bale":
+        return SETUP_BALE
     return None
 
 

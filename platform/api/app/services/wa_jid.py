@@ -29,6 +29,8 @@ def normalize_to_jid(value: str | None) -> str:
     raw = (value or "").strip()
     if not raw:
         return ""
+    if raw.startswith("bale:"):
+        return raw
     if _is_wa_jid(raw):
         # Legacy @c.us → @s.whatsapp.net
         if raw.endswith("@c.us"):
@@ -52,7 +54,7 @@ def _looks_like_display_name(value: str) -> bool:
 def resolve_target_jid(lead: Lead | None, link: LeadAccountLink | None = None) -> str:
     """Prefer stable chat ids; never return a display name as JID.
 
-    Also returns Divar conversation ids (short tokens / UUIDs) for divar_api sends.
+    Also returns Divar conversation ids and Bale peer keys (`bale:user:…` / `bale:group:…`).
     """
     candidates = (
         (link.external_chat_id if link else None),

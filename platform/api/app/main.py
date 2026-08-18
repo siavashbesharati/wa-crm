@@ -29,6 +29,8 @@ from app.routers import (
     wa_connector,
     wa_pair,
     whatsapp,
+    bale_connector,
+    bale_pair,
 )
 from app.services.sse_hub import sse_hub
 
@@ -80,6 +82,8 @@ ROUTERS = [
     support.router,
     wa_connector.router,
     divar_connector.router,
+    bale_pair.router,
+    bale_connector.router,
 ]
 
 

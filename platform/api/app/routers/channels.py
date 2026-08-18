@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import (
+    BaleAuthState,
     ChannelAccount,
     ChannelType,
     ConnectorRole,
@@ -105,6 +106,9 @@ def _purge_account_auth_and_row(db: Session, acc: ChannelAccount) -> None:
     db.query(DivarAuthState).filter(DivarAuthState.account_id == account_id).delete(
         synchronize_session=False
     )
+    db.query(BaleAuthState).filter(BaleAuthState.account_id == account_id).delete(
+        synchronize_session=False
+    )
     db.query(ConnectorSession).filter(
         ConnectorSession.org_id == org_id, ConnectorSession.account_id == account_id
     ).delete(synchronize_session=False)
@@ -153,13 +157,20 @@ def create_account(
     external_id = (body.external_id or body.phone or "").strip()
     label = (body.label or external_id or ch.value).strip()
     connector_type = (body.connector_type or "").strip().lower()
-    if connector_type not in ("baileys", "divar_api"):
+    if connector_type not in ("baileys", "divar_api", "bale_api"):
         # Default by channel — Chrome extension connector removed
-        connector_type = "baileys" if ch == ChannelType.whatsapp else "divar_api"
+        if ch == ChannelType.whatsapp:
+            connector_type = "baileys"
+        elif ch == ChannelType.divar:
+            connector_type = "divar_api"
+        else:
+            connector_type = "bale_api"
     if connector_type == "baileys" and ch != ChannelType.whatsapp:
         raise HTTPException(status_code=400, detail="Baileys فقط برای واتساپ است")
     if connector_type == "divar_api" and ch != ChannelType.divar:
         raise HTTPException(status_code=400, detail="divar_api فقط برای دیوار است")
+    if connector_type == "bale_api" and ch != ChannelType.bale:
+        raise HTTPException(status_code=400, detail="bale_api فقط برای بله است")
     acc = ChannelAccount(
         org_id=auth.org.id,
         channel=ch,
@@ -268,6 +279,8 @@ def pick_session(db: Session, org_id: str, account_id: str) -> ConnectorSession 
         return base.filter(ConnectorSession.role == ConnectorRole.baileys).first()
     if ctype == "divar_api":
         return base.filter(ConnectorSession.role == ConnectorRole.divar).first()
+    if ctype == "bale_api":
+        return base.filter(ConnectorSession.role == ConnectorRole.bale).first()
     connector = base.filter(ConnectorSession.role == ConnectorRole.connector).first()
     if connector:
         return connector
@@ -426,6 +439,18 @@ def claim_jobs(
         )
         if not session or session.role != ConnectorRole.divar:
             return {"jobs": []}
+    elif ctype == "bale_api":
+        session = (
+            db.query(ConnectorSession)
+            .filter(
+                ConnectorSession.org_id == auth.org.id,
+                ConnectorSession.account_id == account_id,
+                ConnectorSession.device_id == device_id,
+            )
+            .first()
+        )
+        if not session or session.role != ConnectorRole.bale:
+            return {"jobs": []}
 
     session = (
         db.query(ConnectorSession)
@@ -441,7 +466,7 @@ def claim_jobs(
 
     preferred = pick_session(db, auth.org.id, account_id)
     if preferred and preferred.device_id != device_id:
-        if preferred.role in (ConnectorRole.baileys, ConnectorRole.divar):
+        if preferred.role in (ConnectorRole.baileys, ConnectorRole.divar, ConnectorRole.bale):
             return {"jobs": []}
         if preferred.role == ConnectorRole.connector or session.role != ConnectorRole.connector:
             if preferred.id != session.id:

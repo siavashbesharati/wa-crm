@@ -1,11 +1,12 @@
 /**
- * Start API + Web + Workers + WA/Divar connectors.
+ * Start API + Web + Workers + WA/Divar/Bale connectors.
  *
  * Usage (repo root):
  *   node scripts/start-all.mjs
  *   node scripts/start-all.mjs --no-workers
  *   node scripts/start-all.mjs --no-wa
  *   node scripts/start-all.mjs --no-divar
+ *   node scripts/start-all.mjs --no-bale
  *   node scripts/start-all.mjs --seed
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -20,12 +21,14 @@ const args = new Set(process.argv.slice(2));
 const noWorkers = args.has("--no-workers");
 const noWa = args.has("--no-wa");
 const noDivar = args.has("--no-divar");
+const noBale = args.has("--no-bale");
 const seed = args.has("--seed");
 
 const apiDir = join(root, "platform", "api");
 const webDir = join(root, "platform", "web");
 const waDir = join(root, "platform", "wa-connector");
 const divarDir = join(root, "platform", "divar-connector");
+const baleDir = join(root, "platform", "bale-connector");
 const children = [];
 
 function log(msg) {
@@ -88,6 +91,7 @@ async function main() {
     runSync("python", ["scripts/migrate_multichannel.py"], apiDir, { shell: true });
     runSync("python", ["scripts/migrate_baileys.py"], apiDir, { shell: true });
     runSync("python", ["scripts/migrate_divar.py"], apiDir, { shell: true });
+    runSync("python", ["scripts/migrate_bale.py"], apiDir, { shell: true });
     runSync("python", ["scripts/seed_demo.py"], apiDir, { shell: true });
   } else {
     log("Ensure connector schema");
@@ -100,6 +104,11 @@ async function main() {
       runSync("python", ["scripts/migrate_divar.py"], apiDir, { shell: true });
     } catch {
       console.warn("migrate_divar skipped/failed");
+    }
+    try {
+      runSync("python", ["scripts/migrate_bale.py"], apiDir, { shell: true });
+    } catch {
+      console.warn("migrate_bale skipped/failed");
     }
   }
 
@@ -121,6 +130,17 @@ async function main() {
     }
   }
 
+  if (!noBale) {
+    log("Ensure bale-connector deps");
+    try {
+      runSync("python", ["-m", "pip", "install", "-q", "-r", "requirements.txt"], baleDir, {
+        shell: true
+      });
+    } catch {
+      console.warn("bale-connector pip install skipped/failed");
+    }
+  }
+
   start("api", "python", ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"], apiDir);
   start("web", "npm", ["run", "dev"], webDir);
   if (!noWorkers) {
@@ -132,6 +152,9 @@ async function main() {
   if (!noDivar) {
     start("divar-connector", "python", ["main.py"], divarDir);
   }
+  if (!noBale) {
+    start("bale-connector", "python", ["main.py"], baleDir);
+  }
 
   console.log(`
 --------------------------------------------------
@@ -141,6 +164,7 @@ async function main() {
   Super:      http://localhost:3000/super/login
   WA conn:    http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
   Divar conn: http://127.0.0.1:8091/health${noDivar ? " (skipped)" : ""}
+  Bale conn:  http://127.0.0.1:8092/health${noBale ? " (skipped)" : ""}
  Press Ctrl+C to stop all
 --------------------------------------------------
 `);

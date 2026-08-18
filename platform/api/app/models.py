@@ -41,11 +41,13 @@ class ConnectorRole(str, enum.Enum):
     agent = "agent"
     baileys = "baileys"
     divar = "divar"
+    bale = "bale"
 
 
 class ChannelType(str, enum.Enum):
     whatsapp = "whatsapp"
     divar = "divar"
+    bale = "bale"
 
 
 class TaskStatus(str, enum.Enum):
@@ -225,9 +227,9 @@ class ChannelAccount(Base):
     # WA phone or Divar session label / external id
     external_id: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(40), default="disconnected")
-    # baileys = WA server; divar_api = Divar HTTP client
+    # baileys = WA server; divar_api = Divar HTTP client; bale_api = Bale WS client
     connector_type: Mapped[str] = mapped_column(String(40), default="baileys")
-    # disconnected | qr_pending | otp_pending | connected
+    # disconnected | qr_pending | otp_pending | connected | reconnecting | auth_required
     pairing_state: Mapped[str] = mapped_column(String(40), default="disconnected")
     wa_jid: Mapped[str] = mapped_column(String(120), default="")
     # Short-lived QR payload (data URL / base64) for panel pairing
@@ -270,6 +272,21 @@ class DivarAuthState(Base):
         ForeignKey("channel_accounts.id"), unique=True, index=True
     )
     cookies_enc: Mapped[str] = mapped_column(Text, default="")
+    pending_enc: Mapped[str] = mapped_column(Text, default="")
+    cursors_json: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class BaleAuthState(Base):
+    """Encrypted Bale access token + OTP pending + sync cursors."""
+
+    __tablename__ = "bale_auth_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("channel_accounts.id"), unique=True, index=True
+    )
+    token_enc: Mapped[str] = mapped_column(Text, default="")
     pending_enc: Mapped[str] = mapped_column(Text, default="")
     cursors_json: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
