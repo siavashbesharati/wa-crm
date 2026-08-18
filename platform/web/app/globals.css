@@ -3330,6 +3330,13 @@ a.btn.wizard-btn:hover {
 .auth-mascot-video.is-on {
   opacity: 1;
 }
+.auth-mascot-preload {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
 @keyframes auth-mascot-bob {
   0%,
   100% {

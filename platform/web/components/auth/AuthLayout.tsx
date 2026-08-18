@@ -15,16 +15,11 @@ function prefersReducedMotion() {
 
 type MascotHandle = { playNow: () => void };
 
-const AuthMascot = forwardRef<MascotHandle, { play?: boolean }>(function AuthMascot(
-  { play = false },
-  ref
-) {
-  const playRef = useRef(play);
-  playRef.current = play;
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const startedRef = useRef(false);
-  const [loadVideo, setLoadVideo] = useState(false);
-  const [videoOn, setVideoOn] = useState(false);
+const AuthMascot = forwardRef<MascotHandle>(function AuthMascot(_, ref) {
+  const [preloaded, setPreloaded] = useState(false);
+  const [live, setLive] = useState(false);
+  const [on, setOn] = useState(false);
+  const liveRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (prefersReducedMotion()) return;
@@ -34,8 +29,7 @@ const AuthMascot = forwardRef<MascotHandle, { play?: boolean }>(function AuthMas
     let cancelled = false;
 
     const arm = () => {
-      if (cancelled) return;
-      setLoadVideo(true);
+      if (!cancelled) setPreloaded(true);
     };
 
     const afterIdle = () => {
@@ -65,85 +59,35 @@ const AuthMascot = forwardRef<MascotHandle, { play?: boolean }>(function AuthMas
     };
   }, []);
 
-  function holdAtStart(el: HTMLVideoElement) {
-    el.pause();
+  useEffect(() => {
+    if (!live) return;
+    const el = liveRef.current;
+    if (!el) return;
+    el.muted = true;
+    el.defaultMuted = true;
+    el.loop = true;
+    el.playsInline = true;
     try {
-      if (el.currentTime > 0) el.currentTime = 0;
+      el.currentTime = 0;
     } catch {
       /* ignore */
     }
-  }
-
-  function startPlayback() {
-    if (startedRef.current || prefersReducedMotion()) return;
-    const el = videoRef.current;
-    if (!el || el.readyState < 2) {
-      setLoadVideo(true);
-      return;
+    const attempt = el.play();
+    if (attempt && typeof attempt.catch === "function") {
+      attempt.catch(() => undefined);
     }
-    startedRef.current = true;
-    el.muted = true;
-    el.defaultMuted = true;
-    el.autoplay = false;
-    el.loop = true;
-    el.playsInline = true;
-    el.setAttribute("playsinline", "");
-    el.setAttribute("webkit-playsinline", "");
+  }, [live]);
 
-    const run = () => {
-      const attempt = el.play();
-      if (attempt && typeof attempt.then === "function") {
-        attempt.then(() => setVideoOn(true)).catch(() => {
-          startedRef.current = false;
-        });
-      } else {
-        setVideoOn(true);
-      }
-    };
-
-    el.pause();
-    if (el.currentTime > 0.04) {
-      const onSeeked = () => {
-        el.removeEventListener("seeked", onSeeked);
-        run();
-      };
-      el.addEventListener("seeked", onSeeked);
-      try {
-        el.currentTime = 0;
-      } catch {
-        run();
-      }
-      return;
+  useImperativeHandle(ref, () => ({
+    playNow: () => {
+      if (prefersReducedMotion()) return;
+      setPreloaded(true);
+      setLive(true);
     }
-    run();
-  }
-
-  function playNow() {
-    playRef.current = true;
-    setLoadVideo(true);
-    startPlayback();
-  }
-
-  useImperativeHandle(ref, () => ({ playNow }));
-
-  function onBuffered() {
-    const el = videoRef.current;
-    if (!el) return;
-    if (playRef.current) {
-      startPlayback();
-      return;
-    }
-    holdAtStart(el);
-  }
-
-  useEffect(() => {
-    if (!play) return;
-    playNow();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [play]);
+  }));
 
   return (
-    <div className={`auth-mascot${videoOn ? " is-video" : ""}`} aria-hidden>
+    <div className={`auth-mascot${on ? " is-video" : ""}`} aria-hidden>
       <div className="auth-mascot-frame">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -153,28 +97,36 @@ const AuthMascot = forwardRef<MascotHandle, { play?: boolean }>(function AuthMas
           width={320}
           height={320}
         />
-        {loadVideo ? (
+        {preloaded && !live ? (
           <video
-            ref={videoRef}
-            className={`auth-mascot-video${videoOn ? " is-on" : ""}`}
+            className="auth-mascot-preload"
+            src={MASCOT_VIDEO}
+            muted
+            preload="auto"
+            playsInline
+            tabIndex={-1}
+            onLoadedData={(e) => {
+              e.currentTarget.pause();
+              try {
+                e.currentTarget.currentTime = 0;
+              } catch {
+                /* ignore */
+              }
+            }}
+          />
+        ) : null}
+        {live ? (
+          <video
+            ref={liveRef}
+            className={`auth-mascot-video${on ? " is-on" : ""}`}
             src={MASCOT_VIDEO}
             muted
             loop
+            autoPlay
             playsInline
             preload="auto"
-            autoPlay={false}
             disablePictureInPicture
-            onLoadedMetadata={onBuffered}
-            onCanPlayThrough={onBuffered}
-            onLoadedData={onBuffered}
-            onPlaying={() => {
-              const el = videoRef.current;
-              if (!playRef.current) {
-                if (el) holdAtStart(el);
-                return;
-              }
-              setVideoOn(true);
-            }}
+            onPlaying={() => setOn(true)}
           />
         ) : null}
       </div>
