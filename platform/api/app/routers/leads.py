@@ -84,6 +84,9 @@ def _heal_lead_phone_vs_contact_id(lead: Lead) -> bool:
 
 def _to_out(lead: Lead) -> LeadOut:
     _heal_lead_phone_vs_contact_id(lead)
+    from app.services.bale_identity import heal_bale_lead
+
+    heal_bale_lead(lead)
     return LeadOut(
         id=lead.id,
         name=lead.name,
@@ -202,7 +205,9 @@ def list_leads(
     rows.sort(key=sort_key)
     healed = False
     for r in rows:
-        if _heal_lead_phone_vs_contact_id(r):
+        from app.services.bale_identity import heal_bale_lead
+
+        if _heal_lead_phone_vs_contact_id(r) or heal_bale_lead(r):
             db.add(r)
             healed = True
     if healed:

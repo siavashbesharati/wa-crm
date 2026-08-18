@@ -51,12 +51,17 @@ def is_opaque_wa_name(value: str | None) -> bool:
 
 
 def prefer_pn_external(phone: str | None, external_chat_id: str | None, wa_lid: str | None) -> str | None:
-    """Stable CRM chat id: PN jid > existing PN > LID."""
+    """Stable CRM chat id: PN jid > existing PN > LID.
+
+    Never rewrite Bale peer keys (`bale:user:…`) into `@s.whatsapp.net`.
+    """
+    ext = (external_chat_id or "").strip()
+    if ext.startswith("bale:"):
+        return ext
     ph = (phone or "").strip()
     if looks_like_phone(ph):
         digits = re.sub(r"\D", "", ph)
         return f"{digits}@s.whatsapp.net"
-    ext = (external_chat_id or "").strip()
     if is_pn_jid(ext):
         local = ext.split("@")[0].split(":")[0]
         return f"{local}@s.whatsapp.net" if local else ext
@@ -344,6 +349,13 @@ def apply_wa_identity(
     chat_name: str | None = None,
 ) -> None:
     """Upgrade lead fields toward PN + store LID."""
+    if (external_chat_id or "").startswith("bale:") or (lead.external_chat_id or "").startswith("bale:"):
+        from app.services.bale_identity import heal_bale_lead, is_opaque_bale_name
+
+        if chat_name and not is_opaque_bale_name(chat_name) and is_opaque_bale_name(lead.name):
+            lead.name = chat_name[:200]
+        heal_bale_lead(lead)
+        return
     lid = normalize_lid(wa_lid) or (
         normalize_lid(external_chat_id) if is_lid_jid(external_chat_id) else ""
     )

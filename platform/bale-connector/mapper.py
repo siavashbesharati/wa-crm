@@ -10,6 +10,9 @@ PEER_USER = 1
 PEER_GROUP = 2
 
 _PEER_KEY_RE = re.compile(r"^bale:(user|group):(\d+)$")
+_MISSTAG_WA_RE = re.compile(r"^(\d+)@(?:s\.whatsapp\.net|c\.us)$", re.I)
+_PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+_IR_LOCAL = re.compile(r"^09\d{9}$")
 
 
 class AuthRequired(Exception):
@@ -60,9 +63,58 @@ def parse_peer_key(value: str | None) -> tuple[str, int] | None:
     m = _PEER_KEY_RE.match(raw)
     if m:
         return m.group(1), int(m.group(2))
+    # CRM used to rewrite Bale peer ids as WhatsApp JIDs — still sendable as a user.
+    m = _MISSTAG_WA_RE.match(raw)
+    if m:
+        return "user", int(m.group(1))
     if raw.isdigit():
         return "user", int(raw)
     return None
+
+
+def _sv(value: Any) -> str:
+    if value is None:
+        return ""
+    inner = getattr(value, "value", value)
+    if isinstance(inner, (bytes, bytearray)):
+        return inner.decode("utf-8", "replace").strip()
+    return str(inner or "").strip()
+
+
+def normalize_visible_phone(raw: str | None) -> str:
+    """Keep a real mobile for CRM display. Never treat a Bale user id as a phone."""
+    d = re.sub(r"\D", "", (raw or "").translate(_PERSIAN_DIGITS))
+    if d.startswith("00"):
+        d = d[2:]
+    if d.startswith("98") and len(d) == 12:
+        d = "0" + d[2:]
+    elif d.startswith("9") and len(d) == 10:
+        d = "0" + d
+    return d if _IR_LOCAL.fullmatch(d) else ""
+
+
+def phone_from_contact_records(records: Any) -> str:
+    for item in records or []:
+        for raw in (
+            _sv(getattr(item, "stringValue", None)),
+            _sv(getattr(item, "title", None)),
+            _sv(getattr(item, "subtitle", None)),
+            _sv(getattr(item, "longValue", None)),
+        ):
+            phone = normalize_visible_phone(raw)
+            if phone:
+                return phone
+    return ""
+
+
+def peer_display_name(title: str | None, username: str | None, ext: str) -> str:
+    t = (title or "").strip()
+    if t and t != ext and not t.startswith("bale:"):
+        return t
+    u = (username or "").strip().lstrip("@")
+    if u:
+        return f"@{u}"
+    return ext
 
 
 def message_external_id(peer_type: int, peer_id: int, rid: int) -> str:
@@ -108,6 +160,8 @@ def map_history_message(
     title: str,
     entry: Any,
     me_id: int | None,
+    username: str = "",
+    phone: str = "",
 ) -> dict[str, Any] | None:
     rid = int(getattr(entry, "rid", 0) or 0)
     if not rid:
@@ -119,12 +173,14 @@ def map_history_message(
     is_group = int(peer_type) != PEER_USER
     from_me = bool(me_id and sender_id and sender_id == int(me_id))
     ext = peer_key(peer_type, peer_id)
+    phone = "" if is_group else normalize_visible_phone(phone)
+    chat_name = peer_display_name(title, username, ext)
     return {
         "account_id": account_id,
-        "chat_name": title or ext,
+        "chat_name": chat_name,
         "body": body,
         "direction": "outbound" if from_me else "inbound",
-        "phone": "" if is_group else str(peer_id),
+        "phone": phone,
         "group_id": str(peer_id) if is_group else "",
         "external_chat_id": ext,
         "chat_type": "group" if is_group else "pv",
@@ -140,6 +196,8 @@ def map_new_message_event(
     event: Any,
     title: str,
     me_id: int | None,
+    username: str = "",
+    phone: str = "",
 ) -> dict[str, Any] | None:
     peer = getattr(event, "peer", None)
     if peer is None:
@@ -160,13 +218,13 @@ def map_new_message_event(
     is_group = bool(getattr(event, "is_group", False)) or peer_type != PEER_USER
     from_me = bool(me_id and sender_id and sender_id == int(me_id))
     ext = peer_key(peer_type, peer_id)
-    chat_name = title or ext
+    chat_name = peer_display_name(title, username, ext)
     return {
         "account_id": account_id,
         "chat_name": chat_name,
         "body": body,
         "direction": "outbound" if from_me else "inbound",
-        "phone": "" if is_group else str(peer_id),
+        "phone": "" if is_group else normalize_visible_phone(phone),
         "group_id": str(peer_id) if is_group else "",
         "external_chat_id": ext,
         "chat_type": "group" if is_group else "pv",

@@ -24,6 +24,7 @@ from mapper import (
     parse_peer_key,
     parse_token_blob,
     peer_key,
+    phone_from_contact_records,
 )
 
 log = logging.getLogger("bale-connector.session")
@@ -38,6 +39,7 @@ class SessionHandle:
         self._cursors: dict[str, str] = {}
         self._me_id: int | None = None
         self._synced = False
+        self._profiles: dict[str, tuple[str, str, str]] = {}
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         if self._task and not self._task.done():
@@ -202,6 +204,74 @@ class SessionHandle:
                 pass
             log.info("[Bale] Disconnected account=%s", self.account_id)
 
+    async def _resolve_profile(self, client: Any, peer: Any) -> tuple[str, str, str]:
+        """Return (title, username, phone) for a Bale peer. Cached per session."""
+        peer_type = int(getattr(peer, "type", 1) or 1)
+        peer_id = int(getattr(peer, "id", 0) or 0)
+        if not peer_id:
+            return "", "", ""
+        key = peer_key(peer_type, peer_id)
+        cached = self._profiles.get(key)
+        if cached and (cached[0] or cached[1] or cached[2]):
+            return cached
+
+        title = ""
+        username = ""
+        phone = ""
+        try:
+            title = str(client.name_of(peer_type, peer_id) or "")
+        except Exception:  # noqa: BLE001
+            title = ""
+        try:
+            if peer_type == 1:
+                await client.load_users([peer_id])
+            else:
+                await client.load_groups([peer_id])
+            title = str(client.name_of(peer_type, peer_id) or title)
+        except Exception:  # noqa: BLE001
+            pass
+
+        if peer_type == 1:
+            try:
+                from bale import bale_pb2 as pb
+                from bale.peer import Peer, _info_from_full_user
+
+                ref = Peer.user(peer_id)
+                cached_info = client.cache.by_id(1, peer_id)
+                if cached_info is not None:
+                    ref = cached_info.peer
+                req = pb.GetFullUserRequest()
+                req.peer.uid = ref.id
+                req.peer.accessHash = int(getattr(ref, "access_hash", 0) or 0)
+                resp = await client.call("bale.users.v1.Users", "GetFullUser", req)
+                if resp is not None:
+                    info = _info_from_full_user(ref, resp)
+                    client.cache.put(info)
+                    title = str(getattr(info, "title", None) or title or "")
+                    username = str(getattr(info, "username", None) or "")
+                    phone = phone_from_contact_records(list(getattr(resp.fullUser, "contactInfo", []) or []))
+            except Exception as exc:  # noqa: BLE001
+                log.debug("[Bale] full user profile %s: %s", key, type(exc).__name__)
+                try:
+                    from bale.peer import Peer
+
+                    info = await client.get_entity(Peer.user(peer_id))
+                    title = str(getattr(info, "title", None) or title or "")
+                    username = str(getattr(info, "username", None) or username)
+                except Exception:  # noqa: BLE001
+                    pass
+        else:
+            try:
+                info = await client.get_entity(peer)
+                title = str(getattr(info, "title", None) or title or "")
+                username = str(getattr(info, "username", None) or "")
+            except Exception:  # noqa: BLE001
+                pass
+
+        profile = (title, username, phone)
+        self._profiles[key] = profile
+        return profile
+
     async def _initial_sync(self, client: Any) -> None:
         log.info("[Bale] Dialog sync started account=%s", self.account_id)
         try:
@@ -222,7 +292,9 @@ class SessionHandle:
             if not peer_id:
                 continue
             key = peer_key(peer_type, peer_id)
-            title = str(getattr(dialog, "title", None) or getattr(dialog, "name", None) or key)
+            title, username, phone = await self._resolve_profile(client, peer)
+            if not title:
+                title = str(getattr(dialog, "title", None) or getattr(dialog, "name", None) or key)
             already = key in self._cursors
             try:
                 messages = await client.get_messages(peer, limit=FIRST_SYNC_LIMIT)
@@ -252,6 +324,8 @@ class SessionHandle:
                     title=title,
                     entry=msg,
                     me_id=self._me_id,
+                    username=username,
+                    phone=phone,
                 )
                 if not payload:
                     continue
@@ -259,6 +333,24 @@ class SessionHandle:
                     api.ingest(self.account_id, payload)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("[Bale] ingest failed: %s", type(exc).__name__)
+
+            # Already-synced chats: re-ingest latest so name/phone heal in CRM
+            if already and not incoming and messages:
+                payload = map_history_message(
+                    account_id=self.account_id,
+                    peer_type=peer_type,
+                    peer_id=peer_id,
+                    title=title,
+                    entry=messages[0],
+                    me_id=self._me_id,
+                    username=username,
+                    phone=phone,
+                )
+                if payload:
+                    try:
+                        api.ingest(self.account_id, payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("[Bale] name refresh ingest: %s", type(exc).__name__)
 
             if messages:
                 top = str(int(getattr(messages[0], "rid", 0) or 0))
@@ -278,23 +370,21 @@ class SessionHandle:
 
     async def _handle_event(self, client: Any, event: Any) -> None:
         title = ""
+        username = ""
+        phone = ""
         try:
             peer = getattr(event, "peer", None)
             if peer is not None:
-                title = client.name_of(int(peer.type), int(peer.id)) or ""
-                if not title:
-                    try:
-                        info = await client.get_entity(peer)
-                        title = str(getattr(info, "title", "") or "")
-                    except Exception:  # noqa: BLE001
-                        title = ""
+                title, username, phone = await self._resolve_profile(client, peer)
         except Exception:  # noqa: BLE001
-            title = ""
+            title, username, phone = "", "", ""
         payload = map_new_message_event(
             account_id=self.account_id,
             event=event,
             title=title,
             me_id=self._me_id,
+            username=username,
+            phone=phone,
         )
         if not payload:
             return
@@ -354,32 +444,24 @@ class SessionHandle:
                 api.complete_job(job_id, ok=False, error="missing peer or body")
                 continue
             kind, pid = parsed
-            ref = peer_cls.user(pid) if kind == "user" else peer_cls.channel(pid)
-            rid = random.getrandbits(63)
             try:
+                if kind == "user":
+                    from bale.peer import Peer
+
+                    ref = Peer.user(pid)
+                    cached = client.cache.by_id(1, pid)
+                    if cached is not None:
+                        ref = cached.peer
+                else:
+                    ref = peer_cls.channel(pid)
+                rid = random.getrandbits(63)
                 await client.send_message(ref, body, rid=rid)
                 api.complete_job(job_id, ok=True)
                 log.info("[Bale] Message sent account=%s", self.account_id)
                 peer_type = 1 if kind == "user" else 2
                 ext = peer_key(peer_type, pid)
+                self._cursors[ext] = str(rid)
                 try:
-                    api.ingest(
-                        self.account_id,
-                        {
-                            "account_id": self.account_id,
-                            "chat_name": job.get("target_name") or ext,
-                            "body": body,
-                            "direction": "outbound",
-                            "phone": "" if kind == "group" else str(pid),
-                            "group_id": str(pid) if kind == "group" else "",
-                            "external_chat_id": ext,
-                            "chat_type": "group" if kind == "group" else "pv",
-                            "external_message_id": f"bale:{peer_type}:{pid}:{rid}",
-                            "sender_type": job.get("sender_type") or "agent",
-                            "media_type": "text",
-                        },
-                    )
-                    self._cursors[ext] = str(rid)
                     api.put_cursors(self.account_id, self._cursors)
                 except Exception:  # noqa: BLE001
                     pass

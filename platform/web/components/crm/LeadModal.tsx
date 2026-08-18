@@ -17,6 +17,7 @@ import {
   STAGE_DOT,
   leadPhone,
   leadContactId,
+  leadDisplayName,
   LtrText,
   initials,
   memberLabel,
@@ -75,7 +76,7 @@ function LeadDetailView({
     ((lead.tags || []).includes("needs_human") && sentiment === "negative");
 
   const handoffPack = [
-    `نام: ${lead.name || "—"}`,
+    `نام: ${leadDisplayName(lead) || "—"}`,
     phone ? `تلفن: ${phone}` : null,
     `مرحله: ${lead.stage || "—"}`,
     `امتیاز AI: ${Math.round(score)}`,
@@ -96,10 +97,10 @@ function LeadDetailView({
     <div className="lead-modal-view">
       <div className="lead-modal-hero">
         <div className="lead-modal-avatar" aria-hidden>
-          {initials(lead.name)}
+          {initials(leadDisplayName(lead))}
         </div>
         <div className="lead-modal-hero-copy">
-          <h3 className="lead-modal-name">{lead.name}</h3>
+          <h3 className="lead-modal-name">{leadDisplayName(lead)}</h3>
           <div className="lead-modal-badges">
             <Badge tone="accent">{isGroup ? "گروه" : "مخاطب"}</Badge>
             <span className="lead-stage-pill">
@@ -536,8 +537,11 @@ export function LeadModal({
     if (ok) await onChanged();
   }
 
+  const shownName = lead ? leadDisplayName(lead) : "";
   const deleteNameMatches =
-    !!lead && deleteConfirmName.trim() === lead.name.trim();
+    !!lead &&
+    (deleteConfirmName.trim() === shownName.trim() ||
+      deleteConfirmName.trim() === lead.name.trim());
 
   async function confirmDelete() {
     if (!lead || !deleteNameMatches) return;
@@ -559,7 +563,7 @@ export function LeadModal({
     <>
       <Modal
         open={open && !deleteOpen}
-        title={mode === "edit" ? `ویرایش: ${lead.name}` : ""}
+        title={mode === "edit" ? `ویرایش: ${leadDisplayName(lead)}` : ""}
         panelClassName={mode === "view" ? "lead-modal lead-modal-panel" : "lead-modal-panel"}
         onClose={closeAll}
         headerActions={
@@ -746,7 +750,7 @@ export function LeadModal({
       >
         <div className="delete-confirm-body">
           <p className="delete-confirm-text">
-            حذف «<strong>{lead.name}</strong>» برگشت‌پذیر نیست. پیام‌ها و جاب‌های مرتبط هم
+            حذف «<strong>{leadDisplayName(lead)}</strong>» برگشت‌پذیر نیست. پیام‌ها و جاب‌های مرتبط هم
             پاک می‌شوند.
           </p>
           <label>
@@ -754,7 +758,7 @@ export function LeadModal({
             <input
               value={deleteConfirmName}
               onChange={(e) => setDeleteConfirmName(e.target.value)}
-              placeholder={lead.name}
+              placeholder={leadDisplayName(lead)}
               autoFocus
             />
           </label>

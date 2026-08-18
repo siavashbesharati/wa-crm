@@ -29,7 +29,7 @@ def normalize_to_jid(value: str | None) -> str:
     raw = (value or "").strip()
     if not raw:
         return ""
-    if raw.startswith("bale:"):
+    if raw.startswith("bale:") or raw.startswith("divar:"):
         return raw
     if _is_wa_jid(raw):
         # Legacy @c.us → @s.whatsapp.net
@@ -56,6 +56,25 @@ def resolve_target_jid(lead: Lead | None, link: LeadAccountLink | None = None) -
 
     Also returns Divar conversation ids and Bale peer keys (`bale:user:…` / `bale:group:…`).
     """
+    from app.services.bale_identity import (
+        heal_bale_lead,
+        is_bale_channel,
+        reconstruct_bale_key,
+    )
+
+    if lead is not None and is_bale_channel(getattr(lead, "source_channel", None), getattr(lead, "external_chat_id", None)):
+        heal_bale_lead(lead)
+        chat_type = (getattr(lead, "chat_type", None) or "pv")
+        for c in (
+            (link.external_chat_id if link else None),
+            getattr(lead, "external_chat_id", None),
+            getattr(lead, "phone", None),
+        ):
+            key = reconstruct_bale_key(c, chat_type=chat_type)
+            if key.startswith("bale:"):
+                return key
+        return ""
+
     candidates = (
         (link.external_chat_id if link else None),
         getattr(lead, "external_chat_id", None) if lead else None,

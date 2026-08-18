@@ -9,8 +9,11 @@ import { PageLoading } from "@/components/ui/Spinner";
 import {
   initials,
   leadHref,
+  leadDisplayName,
+  leadPhone,
   tagLabel,
-  SENTIMENT_LABELS_FA
+  SENTIMENT_LABELS_FA,
+  type Lead
 } from "@/components/crm/shared";
 import { ChannelBadge } from "@/components/channels/brand";
 import { api } from "@/lib/api";
@@ -24,6 +27,7 @@ type Thread = {
     phone: string;
     stage: string;
     source_channel?: string;
+    external_chat_id?: string | null;
     tags?: string[];
     lead_score?: number;
     bot_paused?: boolean;
@@ -38,6 +42,21 @@ type Thread = {
   accounts: { account_id: string; chat_name: string }[];
   last_message: { body: string; direction: string; created_at: string } | null;
 };
+
+function threadLead(t: Thread): Lead {
+  return {
+    id: t.lead.id,
+    name: t.lead.name,
+    phone: t.lead.phone,
+    group_id: "",
+    external_chat_id: t.lead.external_chat_id,
+    source_channel: t.lead.source_channel,
+    stage: t.lead.stage,
+    tags: t.lead.tags || [],
+    notes: t.lead.notes || "",
+    assignee_id: null
+  };
+}
 
 type Message = {
   id: string;
@@ -231,8 +250,10 @@ export default function InboxPage() {
       if (channelFilter !== "all" && ch !== channelFilter) return false;
       if (!needle) return true;
       return (
+        leadDisplayName(threadLead(t)).toLowerCase().includes(needle) ||
         t.lead.name.toLowerCase().includes(needle) ||
         (t.lead.phone || "").includes(needle) ||
+        (t.lead.external_chat_id || "").toLowerCase().includes(needle) ||
         (t.last_message?.body || "").toLowerCase().includes(needle) ||
         (t.lead.tags || []).some((tag) => tag.toLowerCase().includes(needle))
       );
@@ -375,7 +396,7 @@ export default function InboxPage() {
           body: JSON.stringify({
             account_id: active.accounts[0].account_id,
             lead_id: active.lead.id,
-            target_name: active.lead.name,
+            target_name: leadDisplayName(threadLead(active)),
             body,
             sender_type: "agent"
           })
@@ -507,11 +528,11 @@ export default function InboxPage() {
                       onClick={() => void openThread(t)}
                     >
                       <span className={`chat-avatar ${ch || "unknown"}`} aria-hidden>
-                        {initials(t.lead.name)}
+                        {initials(leadDisplayName(threadLead(t)))}
                       </span>
                       <span className="chat-row-body">
                         <span className="chat-row-top">
-                          <strong dir="auto">{t.lead.name}</strong>
+                          <strong dir="auto">{leadDisplayName(threadLead(t))}</strong>
                           <time>{formatTime(t.last_message?.created_at)}</time>
                         </span>
                         <span className="chat-row-mid">
@@ -538,15 +559,17 @@ export default function InboxPage() {
               <>
                 <header className="chat-head">
                   <span className={`chat-avatar ${channelOf(active) || "unknown"}`} aria-hidden>
-                    {initials(active.lead.name)}
+                    {initials(leadDisplayName(threadLead(active)))}
                   </span>
                   <div className="chat-head-meta">
                     <Link href={leadHref(active.lead.id)} className="chat-head-name" dir="auto">
-                      {active.lead.name}
+                      {leadDisplayName(threadLead(active))}
                     </Link>
                     <div className="chat-head-sub">
                       <ChannelBadge channel={channelOf(active)} />
-                      {active.lead.phone ? <span dir="ltr">{active.lead.phone}</span> : null}
+                      {leadPhone(threadLead(active)) ? (
+                        <span dir="ltr">{leadPhone(threadLead(active))}</span>
+                      ) : null}
                       {active.lead.stage ? <span>{active.lead.stage}</span> : null}
                       {activeScore > 0 ? <span>امتیاز {activeScore}</span> : null}
                       {active.lead.bot_paused ? (

@@ -20,6 +20,7 @@ import {
   CHANNEL_LABELS,
   leadPhone,
   leadContactId,
+  leadDisplayName,
   LtrText,
   tasksBoardHref,
   tasksByTagHref,
@@ -577,7 +578,7 @@ export default function LeadsPage() {
                                   className="lead-name-link"
                                   onClick={() => openContact(l)}
                                 >
-                                  <strong>{l.name}</strong>
+                                  <strong>{leadDisplayName(l)}</strong>
                                 </button>
                                 <div className="lead-row-meta">
                                   {l.bot_paused ? (

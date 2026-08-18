@@ -77,6 +77,14 @@ def _sanitize_lead_phone(
         lid_local = ext.split("@")[0].split(":")[0]
         if raw.replace("+", "") == lid_local:
             return ""
+    if ch == "bale":
+        from app.services.phone import try_normalize_ir_mobile
+
+        for candidate in (raw, ext):
+            ir = try_normalize_ir_mobile(candidate or "")
+            if ir:
+                return ir
+        return ""
     if raw and _looks_like_phone(raw):
         return re.sub(r"[\s\-()]", "", raw)
     if raw and ch == "divar" and raw != (chat_name or "").strip():
@@ -576,11 +584,18 @@ def _touch_lead_from_ingest(
             and (
                 not lead.name
                 or lead.name == external_chat_id
+                or (lead.name or "").startswith("bale:")
                 or (lead.name or "").endswith("@lid")
                 or (lead.name or "").endswith("@s.whatsapp.net")
             )
         ):
             lead.name = chat_name[:200]
+        if (source_channel or "").strip().lower() == "bale":
+            from app.services.bale_identity import heal_bale_lead
+
+            if external_chat_id and str(external_chat_id).startswith("bale:"):
+                lead.external_chat_id = external_chat_id
+            heal_bale_lead(lead)
         _heal_display_name_phone(lead)
     lead.last_message_at = datetime.utcnow()
     lead.updated_at = datetime.utcnow()
@@ -752,10 +767,17 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         external_chat_id = None
     if phone and not _looks_like_phone(phone) and source_channel == "whatsapp":
         phone = None
+    is_bale = source_channel == "bale" or str(external_chat_id or "").startswith("bale:")
+
     # Group messages never carry the sender phone into lead.phone matching
     if ingest_group:
         phone = None
         wa_lid = ""
+    elif is_bale:
+        from app.services.phone import try_normalize_ir_mobile
+
+        # Bale user ids are not mobiles — never rewrite them to @s.whatsapp.net
+        phone = try_normalize_ir_mobile(phone or "") or None
     else:
         # Prefer stable PN jid as external_chat_id when phone is known
         preferred = prefer_pn_external(phone, external_chat_id, wa_lid or None)
@@ -787,6 +809,15 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         )
 
     link = _find_link_by_ext(external_chat_id)
+    if is_bale and not link:
+        from app.services.bale_identity import bale_lookup_ids
+
+        for alt in bale_lookup_ids(external_chat_id):
+            if alt == external_chat_id:
+                continue
+            link = _find_link_by_ext(alt)
+            if link:
+                break
     # Also match legacy LID-keyed links when ingest now carries PN + lid
     if not link and wa_lid and wa_lid != external_chat_id:
         link = _find_link_by_ext(wa_lid)
@@ -841,33 +872,48 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
                 .first()
             )
     else:
-        # Collect all LID/PN/phone matches and merge duplicates into one lead
-        id_cands = find_wa_identity_candidates(
-            db,
-            org_id=org_id,
-            external_chat_id=external_chat_id,
-            phone=phone,
-            wa_lid=wa_lid or None,
-        )
-        by_id: dict[str, Lead] = {c.id: c for c in id_cands}
-        if lead:
-            by_id[lead.id] = lead
-        # Name match only for PV, and only when name isn't a raw jid
-        if (
-            not by_id
-            and chat_name
-            and chat_name != external_chat_id
-            and not chat_name.endswith("@g.us")
-            and not chat_name.endswith("@lid")
-            and not chat_name.endswith("@s.whatsapp.net")
-        ):
-            cand = (
-                db.query(Lead)
-                .filter(Lead.org_id == org_id, Lead.name == chat_name)
-                .first()
+        by_id: dict[str, Lead] = {}
+        if is_bale:
+            from app.services.bale_identity import bale_lookup_ids
+
+            if lead:
+                by_id[lead.id] = lead
+            for alt in bale_lookup_ids(external_chat_id):
+                cand = (
+                    db.query(Lead)
+                    .filter(Lead.org_id == org_id, Lead.external_chat_id == alt)
+                    .first()
+                )
+                if cand and not _lead_is_group(cand):
+                    by_id[cand.id] = cand
+        else:
+            # Collect all LID/PN/phone matches and merge duplicates into one lead
+            id_cands = find_wa_identity_candidates(
+                db,
+                org_id=org_id,
+                external_chat_id=external_chat_id,
+                phone=phone,
+                wa_lid=wa_lid or None,
             )
-            if cand and not _lead_is_group(cand):
-                by_id[cand.id] = cand
+            by_id = {c.id: c for c in id_cands}
+            if lead:
+                by_id[lead.id] = lead
+            # Name match only for PV, and only when name isn't a raw jid
+            if (
+                not by_id
+                and chat_name
+                and chat_name != external_chat_id
+                and not chat_name.endswith("@g.us")
+                and not chat_name.endswith("@lid")
+                and not chat_name.endswith("@s.whatsapp.net")
+            ):
+                cand = (
+                    db.query(Lead)
+                    .filter(Lead.org_id == org_id, Lead.name == chat_name)
+                    .first()
+                )
+                if cand and not _lead_is_group(cand):
+                    by_id[cand.id] = cand
 
         members = list(by_id.values())
         if len(members) > 1:
@@ -887,6 +933,17 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             display = phone[:200]
         if display.endswith("@lid") and phone:
             display = phone[:200]
+        if is_bale and (
+            not display
+            or display == external_chat_id
+            or str(display).startswith("bale:")
+            or str(display).endswith("@s.whatsapp.net")
+        ):
+            human = (body.ad_title or chat_name or "").strip()
+            if human and human != external_chat_id and not human.startswith("bale:"):
+                display = human[:200]
+            else:
+                display = "مخاطب بله"
         if ingest_group and (display.endswith("@g.us") or display == external_chat_id):
             # Keep jid as placeholder name until a human title is known
             display = (external_chat_id or chat_name or "گروه")[:200]
@@ -927,13 +984,18 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
             chat_name=chat_name,
         )
         if not ingest_group:
-            apply_wa_identity(
-                lead,
-                phone=phone,
-                external_chat_id=external_chat_id,
-                wa_lid=wa_lid or None,
-                chat_name=chat_name,
-            )
+            if is_bale:
+                from app.services.bale_identity import heal_bale_lead
+
+                heal_bale_lead(lead)
+            else:
+                apply_wa_identity(
+                    lead,
+                    phone=phone,
+                    external_chat_id=external_chat_id,
+                    wa_lid=wa_lid or None,
+                    chat_name=chat_name,
+                )
         db.add(lead)
 
     # Link chat_name for groups should be stable (jid or title), not sender name
@@ -943,7 +1005,14 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
 
     # Prefer PN on the account link; upgrade legacy @lid link ids in place
     link_ext = external_chat_id
-    if not ingest_group and link and wa_lid and (link.external_chat_id or "") == wa_lid:
+    if is_bale and external_chat_id and str(external_chat_id).startswith("bale:"):
+        from app.services.bale_identity import heal_bale_link
+
+        link_ext = external_chat_id
+        if link:
+            heal_bale_link(link, external_chat_id)
+            db.add(link)
+    elif not ingest_group and link and wa_lid and (link.external_chat_id or "") == wa_lid:
         if external_chat_id and not is_lid_jid(external_chat_id):
             taken = _ext_id_taken(
                 db,
@@ -957,7 +1026,7 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
                 db.add(link)
                 link_ext = external_chat_id
 
-    _ensure_account_link(
+    created_link = _ensure_account_link(
         db,
         org_id=org_id,
         lead_id=lead.id,
@@ -965,6 +1034,10 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         chat_name=link_chat_name,
         external_chat_id=link_ext,
     )
+    if is_bale and external_chat_id and str(external_chat_id).startswith("bale:"):
+        from app.services.bale_identity import heal_bale_link
+
+        heal_bale_link(created_link, external_chat_id)
     return lead
 
 
@@ -1204,8 +1277,14 @@ def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)
         .limit(200)
         .all()
     )
+    from app.services.bale_identity import heal_bale_lead, heal_bale_link
+
     out = []
+    healed = False
     for lead in leads:
+        if heal_bale_lead(lead):
+            db.add(lead)
+            healed = True
         last = (
             db.query(Message)
             .filter(Message.org_id == auth.org.id, Message.lead_id == lead.id)
@@ -1217,6 +1296,12 @@ def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)
             .filter(LeadAccountLink.org_id == auth.org.id, LeadAccountLink.lead_id == lead.id)
             .all()
         )
+        bale_ext = (lead.external_chat_id or "").strip()
+        if bale_ext.startswith("bale:"):
+            for row in links:
+                if heal_bale_link(row, bale_ext):
+                    db.add(row)
+                    healed = True
         out.append(
             {
                 "lead": {
@@ -1246,6 +1331,8 @@ def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)
                 "last_message": _to_out(last) if last else None,
             }
         )
+    if healed:
+        db.commit()
     return out
 
 

@@ -358,6 +358,28 @@ def complete_job(
     job.error = error or ""
     job.updated_at = datetime.utcnow()
     db.add(job)
+    if job.lead_id:
+        from app.models import Message, MessageDirection
+        from app.services.delivery_status import merge_delivery_status
+
+        msg = (
+            db.query(Message)
+            .filter(
+                Message.org_id == job.org_id,
+                Message.account_id == job.account_id,
+                Message.lead_id == job.lead_id,
+                Message.direction == MessageDirection.outbound,
+                Message.body == (job.body or ""),
+            )
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+        if msg and ok:
+            msg.delivery_status = merge_delivery_status(
+                getattr(msg, "delivery_status", "") or "",
+                "sent",
+            )
+            db.add(msg)
     try:
         from app.services.campaign_send import apply_job_result_to_campaign_send
 

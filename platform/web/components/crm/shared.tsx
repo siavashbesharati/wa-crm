@@ -74,19 +74,36 @@ export const CHANNEL_LABELS: Record<string, string> = {
 export function leadPhone(l: Lead) {
   const p = (l.phone || "").trim();
   if (!p) return "";
-  // Never treat WhatsApp contact ids as phone in the UI
+  // Never treat WhatsApp contact ids or Bale peer keys as phone in the UI
   if (p.includes("@lid") || p.includes("@c.us") || p.includes("@s.whatsapp.net")) return "";
+  if (p.startsWith("bale:")) return "";
   return p;
 }
 
 export function leadContactId(l: Lead) {
   const lid = (l.wa_lid || "").trim();
-  if (lid) return lid;
   const ext = (l.external_chat_id || "").trim();
-  if (ext) return ext;
   const p = (l.phone || "").trim();
+  if (ext.startsWith("bale:")) return ext;
+  if (lid) return lid;
+  if (ext) return ext;
   if (p.includes("@lid") || p.includes("@c.us") || p.includes("@s.whatsapp.net")) return p;
   return "";
+}
+
+export function leadDisplayName(l: Lead) {
+  const n = (l.name || "").trim();
+  const opaque =
+    !n ||
+    n.startsWith("bale:") ||
+    n.includes("@s.whatsapp.net") ||
+    n.includes("@c.us") ||
+    n.endsWith("@lid");
+  if (!opaque) return n;
+  const phone = leadPhone(l);
+  if (phone) return phone;
+  if ((l.source_channel || "").toLowerCase() === "bale") return "مخاطب بله";
+  return n || "بدون نام";
 }
 
 /** @deprecated Prefer leadPhone / leadContactId — kept for list fallbacks */
