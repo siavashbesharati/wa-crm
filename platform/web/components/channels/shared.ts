@@ -57,8 +57,39 @@ export function isAccountOn(status: string, pairing?: string) {
   return p === "connected";
 }
 
+export function asciiDigits(raw: string): string {
+  const fa = "۰۱۲۳۴۵۶۷۸۹";
+  const ar = "٠١٢٣٤٥٦٧٨٩";
+  let out = "";
+  for (const ch of raw || "") {
+    const i = fa.indexOf(ch);
+    if (i >= 0) {
+      out += String(i);
+      continue;
+    }
+    const j = ar.indexOf(ch);
+    if (j >= 0) {
+      out += String(j);
+      continue;
+    }
+    if (ch >= "0" && ch <= "9") out += ch;
+  }
+  return out;
+}
+
+/** Canonical Iranian mobile 09XXXXXXXXX, or null. */
+export function normalizeIrMobile(raw: string): string | null {
+  let d = asciiDigits(raw);
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("98") && d.length === 12) d = `0${d.slice(2)}`;
+  else if (d.startsWith("9") && d.length === 10) d = `0${d}`;
+  return /^09\d{9}$/.test(d) ? d : null;
+}
+
 export function accountIdentity(a: ChannelAccount) {
-  return a.external_id || a.phone || a.wa_jid || "—";
+  const raw = a.external_id || a.phone || a.wa_jid || "";
+  if (!raw) return "—";
+  return normalizeIrMobile(raw) || raw;
 }
 
 export function statusLabel(a: ChannelAccount) {

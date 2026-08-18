@@ -6,6 +6,8 @@ import logging
 import re
 from typing import Any
 
+from app.services.phone import normalize_ir_mobile, normalize_phone_for_storage, to_cc_digits
+
 log = logging.getLogger("bale-auth")
 
 _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
@@ -26,26 +28,15 @@ def _safe_exc_text(exc: BaseException) -> str:
 
 def normalize_iranian_phone(phone: str) -> int:
     """Normalize Iranian numbers to the int form expected by bale.auth (e.g. 98912…)."""
-    raw = (phone or "").translate(_PERSIAN_DIGITS)
-    raw = re.sub(r"[\s\-()]", "", raw)
-    if raw.startswith("+"):
-        raw = raw[1:]
-    if raw.startswith("00"):
-        raw = raw[2:]
-    if raw.startswith("0") and len(raw) == 11:
-        raw = "98" + raw[1:]
-    if raw.startswith("9") and len(raw) == 10:
-        raw = "98" + raw
-    if not re.fullmatch(r"98\d{10}", raw):
-        raise BaleAuthError("شماره موبایل نامعتبر است")
-    return int(raw)
+    try:
+        local = normalize_ir_mobile(phone)
+    except ValueError as exc:
+        raise BaleAuthError("شماره موبایل نامعتبر است") from exc
+    return int(to_cc_digits(local))
 
 
 def format_phone_display(phone_int: int | str) -> str:
-    digits = re.sub(r"\D", "", str(phone_int or ""))
-    if digits.startswith("98") and len(digits) == 12:
-        return "0" + digits[2:]
-    return digits
+    return normalize_phone_for_storage(str(phone_int or "")) or re.sub(r"\D", "", str(phone_int or ""))
 
 
 def start_phone_auth(phone: str) -> dict[str, Any]:
@@ -74,7 +65,7 @@ def start_phone_auth(phone: str) -> dict[str, Any]:
     sent_code_type = int(getattr(session, "sent_code_type", 0) or 0)
     log.info("[Bale] OTP requested phone=%s sent_code_type=%s", format_phone_display(phone_int), sent_code_type)
     return {
-        "phone": str(phone_int),
+        "phone": format_phone_display(phone_int),
         "transaction_hash": tx,
         "is_registered": bool(getattr(session, "is_registered", False)),
         "activation_type": int(getattr(session, "activation_type", 0) or 0),
@@ -116,7 +107,7 @@ def validate_code(pending: dict[str, Any], code: str) -> dict[str, Any]:
 
     user_id = int(getattr(result, "user_id", 0) or 0)
     user_name = str(getattr(result, "user_name", "") or "")
-    phone = str((pending or {}).get("phone") or "")
+    phone = format_phone_display((pending or {}).get("phone") or "")
     log.info("[Bale] Authentication successful user_id=%s", user_id or "unknown")
     return {
         "access_token": token,

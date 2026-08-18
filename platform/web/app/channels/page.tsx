@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import {
   accountIdentity,
   isAccountOn,
+  normalizeIrMobile,
   pairingStateLabel,
   statusEmoji,
   statusLabel,
@@ -129,7 +130,7 @@ export default function ChannelsPage() {
   }
 
   async function startWhatsAppCode(accountId: string) {
-    const phone = waPhone.trim();
+    const phone = normalizeIrMobile(waPhone) || waPhone.trim();
     if (!phone) {
       toast.push("شماره واتساپ را وارد کنید", "err");
       return;
@@ -236,8 +237,8 @@ export default function ChannelsPage() {
 
   async function startDivarOtp() {
     if (!modal || modal.kind !== "divar") return;
-    const phone = divarPhone.trim();
-    if (!/^09\d{9}$/.test(phone)) {
+    const phone = normalizeIrMobile(divarPhone);
+    if (!phone) {
       toast.push("شماره را مثل 09123456789 وارد کنید", "err");
       return;
     }
@@ -259,8 +260,8 @@ export default function ChannelsPage() {
   async function submitDivarCode() {
     if (!modal || modal.kind !== "divar") return;
     const code = divarCode.trim();
-    if (!/^\d{5}$/.test(code)) {
-      toast.push("کد ۵رقمی دیوار را وارد کنید", "err");
+    if (!/^\d{6}$/.test(code)) {
+      toast.push("کد ۶رقمی دیوار را وارد کنید", "err");
       return;
     }
     setBusy(true);
@@ -319,7 +320,7 @@ export default function ChannelsPage() {
 
   async function startBaleOtp() {
     if (!modal || modal.kind !== "bale") return;
-    const phone = balePhone.trim();
+    const phone = normalizeIrMobile(balePhone) || balePhone.trim();
     if (!phone) {
       toast.push("شماره موبایل را وارد کنید", "err");
       return;
@@ -598,7 +599,7 @@ export default function ChannelsPage() {
               <Button variant="ghost" disabled={busy} onClick={() => setModal({ ...modal, step: "otp" })}>
                 تغییر شماره
               </Button>
-              <Button loading={busy} disabled={divarCode.trim().length !== 5} onClick={() => void submitDivarCode()}>
+              <Button loading={busy} disabled={divarCode.trim().length !== 6} onClick={() => void submitDivarCode()}>
                 تأیید و اتصال
               </Button>
             </>
@@ -632,7 +633,7 @@ export default function ChannelsPage() {
         ) : (
           <div className="pair-form">
             <p className="pair-lead">کد پیامک‌شده به {divarPhone || "شماره"} را وارد کنید.</p>
-            <OtpBoxes length={5} value={divarCode} onChange={setDivarCode} autoFocus disabled={busy} />
+            <OtpBoxes length={6} value={divarCode} onChange={setDivarCode} autoFocus disabled={busy} />
           </div>
         )}
       </Modal>
@@ -766,7 +767,7 @@ const CHANNEL_CARD_COPY: Record<
   divar: {
     helpTitle: "دیوار سرور",
     helpBody:
-      "شماره موبایل حساب دیوار را وارد کنید؛ کد ۵رقمی پیامک می‌شود. همان کد را در پنجره تأیید بنویسید. عدد کنار نام (مثلاً ۱/۱) تعداد حساب‌های متصل این کانال است.",
+      "شماره موبایل حساب دیوار را وارد کنید؛ کد ۶رقمی پیامک می‌شود. همان کد را در پنجره تأیید بنویسید. عدد کنار نام (مثلاً ۱/۱) تعداد حساب‌های متصل این کانال است.",
     helpTips: ["سرویس divar-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
     connect: "اتصال"
   },

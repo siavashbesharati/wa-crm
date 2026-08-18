@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.plans import plan_limits
 from app.schemas import ChannelAccountIn, ChannelAccountOut, HeartbeatIn
+from app.services.phone import normalize_phone_for_storage
 from app.services.reply_trace import job_trace_id, trace_event
 from app.services.sse_hub import format_sse, sse_hub
 
@@ -41,7 +42,7 @@ def _account_out(r: ChannelAccount, *, live_online: bool | None = None) -> Chann
         channel=r.channel.value if isinstance(r.channel, ChannelType) else str(r.channel),
         label=r.label,
         external_id=r.external_id or "",
-        phone=r.phone or (r.external_id if r.channel == ChannelType.whatsapp else ""),
+        phone=r.external_id or "",
         status=status,
         connector_type=getattr(r, "connector_type", None) or "extension",
         pairing_state=getattr(r, "pairing_state", None) or "disconnected",
@@ -154,7 +155,9 @@ def create_account(
     _ = plan_limits(auth.org.plan)
 
     ch = _parse_channel(body.channel)
-    external_id = (body.external_id or body.phone or "").strip()
+    external_id = normalize_phone_for_storage(body.external_id or body.phone or "") or (
+        (body.external_id or body.phone or "").strip()
+    )
     label = (body.label or external_id or ch.value).strip()
     connector_type = (body.connector_type or "").strip().lower()
     if connector_type not in ("baileys", "divar_api", "bale_api"):

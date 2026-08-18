@@ -25,7 +25,12 @@ SMS_MAX_ATTEMPTS = 3
 
 def normalize_mobile_for_sms_ir(phone: str) -> str:
     """sms.ir expects Iranian mobile like 912xxxxxxx (no leading 0 / 98)."""
-    digits = "".join(ch for ch in phone if ch.isdigit())
+    from app.services.phone import ascii_digits, try_normalize_ir_mobile
+
+    ir = try_normalize_ir_mobile(phone)
+    if ir:
+        return ir[1:]
+    digits = ascii_digits(phone)
     if digits.startswith("98") and len(digits) >= 12:
         digits = digits[2:]
     if digits.startswith("0"):

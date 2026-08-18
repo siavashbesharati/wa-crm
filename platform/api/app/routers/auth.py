@@ -19,6 +19,7 @@ from app.models import (
 from app.plans import plan_limits
 from app.schemas import LogoutIn, OtpRequestIn, OtpVerifyIn, TokenOut, TokenRefreshIn
 from app.services.otp import consume_otp, issue_otp
+from app.services.phone import normalize_phone_for_storage, phone_aliases
 from app.services.security import (
     create_access_token,
     create_refresh_token,
@@ -34,7 +35,15 @@ AI_DEFAULTS_KEY = "ai_defaults"
 
 
 def _normalize_phone(phone: str) -> str:
-    return "".join(ch for ch in phone if ch.isdigit() or ch == "+")
+    n = normalize_phone_for_storage(phone)
+    return n or "".join(ch for ch in (phone or "") if ch.isdigit() or ch == "+")
+
+
+def _find_user_by_phone(db: Session, phone: str) -> User | None:
+    aliases = phone_aliases(phone)
+    if not aliases:
+        return None
+    return db.query(User).filter(User.phone.in_(aliases)).first()
 
 
 def _ai_defaults(db: Session) -> dict:
@@ -104,7 +113,7 @@ def request_otp(body: OtpRequestIn, db: Session = Depends(get_db)):
     if len(phone) < 8:
         raise HTTPException(status_code=400, detail="شماره موبایل نامعتبر است")
 
-    existing = db.query(User).filter(User.phone == phone).first()
+    existing = _find_user_by_phone(db, phone)
     issue_otp(db, phone)
     return {
         "ok": True,
@@ -122,10 +131,13 @@ def verify_otp(body: OtpVerifyIn, db: Session = Depends(get_db)):
 
     consume_otp(db, phone, body.code)
 
-    user = db.query(User).filter(User.phone == phone).first()
+    user = _find_user_by_phone(db, phone)
     is_new = False
 
     if user:
+        if user.phone != phone:
+            user.phone = phone
+            db.add(user)
         membership = (
             db.query(Membership)
             .filter(Membership.user_id == user.id)

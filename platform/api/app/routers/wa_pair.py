@@ -12,23 +12,18 @@ from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import ChannelAccount, ChannelType, MemberRole, WaAuthState
 from app.schemas import ChannelAccountOut, WaPairCodeStartIn, WaPairStatusOut
+from app.services.phone import ascii_digits, normalize_phone_for_storage, to_cc_digits
 
 router = APIRouter(prefix="/channels", tags=["wa-pair"])
 
 
 def _digits_phone(raw: str) -> str:
-    """Normalize to country-code digits for Baileys requestPairingCode (no +)."""
-    t = re.sub(r"\D", "", (raw or "").strip())
-    if not t:
-        return ""
-    # Iran local 09xxxxxxxxx → 989xxxxxxxxx
-    if t.startswith("09") and len(t) == 11:
-        return "98" + t[1:]
-    if t.startswith("9") and len(t) == 10:
-        return "98" + t
-    if t.startswith("00"):
-        t = t[2:]
-    return t
+    """Canonical 09… for DB; empty if not a usable number."""
+    stored = normalize_phone_for_storage(raw)
+    digits = ascii_digits(stored)
+    if 8 <= len(digits) <= 15:
+        return stored
+    return ""
 
 
 def _pair_status_out(acc: ChannelAccount) -> WaPairStatusOut:
@@ -112,7 +107,7 @@ def pair_code_start(
     acc = _get_org_account(db, auth.org.id, account_id)
     _require_baileys_wa(acc)
     phone = _digits_phone(body.phone)
-    if len(phone) < 8 or len(phone) > 15:
+    if not phone:
         raise HTTPException(
             status_code=400,
             detail="شماره را با کد کشور وارد کنید (مثلاً 98912… یا 0912…)",

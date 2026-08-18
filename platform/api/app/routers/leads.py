@@ -4,12 +4,23 @@ import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
-from app.models import Lead, LeadAccountLink, MemberRole, Message, OutboundJob, Task
+from app.models import (
+    AiEvent,
+    CampaignSend,
+    Lead,
+    LeadAccountLink,
+    MemberRole,
+    Message,
+    OutboundJob,
+    Task,
+)
 from app.schemas import ContactTaskIn, LeadBoardReorderIn, LeadIn, LeadOut, LeadPatchIn, TaskOut
+from app.services.phone import normalize_phone_for_storage
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -35,7 +46,7 @@ def _sanitize_phone(value: str | None, *, chat_type: str = "pv") -> str:
     ):
         return ""
     if _PHONE_RE.match(t):
-        return t
+        return normalize_phone_for_storage(t) or t
     # Allow opaque Divar ids; reject WA display names (letters / Persian, no digit-only)
     if re.search(r"[\u0600-\u06FF]", t) or (re.search(r"[A-Za-z]", t) and not re.search(r"\d", t)):
         return ""
@@ -44,7 +55,7 @@ def _sanitize_phone(value: str | None, *, chat_type: str = "pv") -> str:
     # Reject anything that still looks like a jid local-part dump
     if "@" in t:
         return ""
-    return t
+    return normalize_phone_for_storage(t) or t
 
 
 def _heal_lead_phone_vs_contact_id(lead: Lead) -> bool:
@@ -99,6 +110,12 @@ def _to_out(lead: Lead) -> LeadOut:
 
 def _delete_lead_related(db: Session, *, org_id: str, lead_id: str) -> None:
     """Remove dependent rows before deleting the lead (SQLite has no ON DELETE CASCADE)."""
+    db.query(CampaignSend).filter(
+        CampaignSend.org_id == org_id, CampaignSend.lead_id == lead_id
+    ).delete(synchronize_session=False)
+    db.query(AiEvent).filter(AiEvent.org_id == org_id, AiEvent.lead_id == lead_id).delete(
+        synchronize_session=False
+    )
     db.query(OutboundJob).filter(
         OutboundJob.org_id == org_id, OutboundJob.lead_id == lead_id
     ).delete(synchronize_session=False)
@@ -111,6 +128,21 @@ def _delete_lead_related(db: Session, *, org_id: str, lead_id: str) -> None:
     db.query(Task).filter(Task.org_id == org_id, Task.lead_id == lead_id).update(
         {Task.lead_id: None}, synchronize_session=False
     )
+
+
+def _wipe_org_leads(db: Session, *, org_id: str) -> int:
+    """Bulk-delete every lead in the org and rows that point at them."""
+    db.query(CampaignSend).filter(CampaignSend.org_id == org_id).delete(synchronize_session=False)
+    db.query(AiEvent).filter(AiEvent.org_id == org_id).delete(synchronize_session=False)
+    db.query(OutboundJob).filter(OutboundJob.org_id == org_id).delete(synchronize_session=False)
+    db.query(Message).filter(Message.org_id == org_id).delete(synchronize_session=False)
+    db.query(LeadAccountLink).filter(LeadAccountLink.org_id == org_id).delete(
+        synchronize_session=False
+    )
+    db.query(Task).filter(Task.org_id == org_id).update(
+        {Task.lead_id: None}, synchronize_session=False
+    )
+    return db.query(Lead).filter(Lead.org_id == org_id).delete(synchronize_session=False)
 
 
 @router.get("/stages")
@@ -433,13 +465,15 @@ def clear_all_leads(
     db: Session = Depends(get_db),
 ):
     """Delete every lead in the org (and related messages / jobs / links)."""
-    leads = db.query(Lead).filter(Lead.org_id == auth.org.id).all()
-    deleted = 0
-    for lead in leads:
-        _delete_lead_related(db, org_id=auth.org.id, lead_id=lead.id)
-        db.delete(lead)
-        deleted += 1
-    db.commit()
+    try:
+        deleted = _wipe_org_leads(db, org_id=auth.org.id)
+        db.commit()
+    except (IntegrityError, OperationalError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="پاک‌سازی مخاطبین به خاطر قفل دیتابیس یا وابستگی‌ها ناموفق بود. چند ثانیه بعد دوباره تلاش کنید.",
+        ) from exc
     return {"ok": True, "deleted": deleted}
 
 
@@ -452,9 +486,16 @@ def delete_lead(
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.org_id == auth.org.id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="لید یافت نشد")
-    _delete_lead_related(db, org_id=auth.org.id, lead_id=lead.id)
-    db.delete(lead)
-    db.commit()
+    try:
+        _delete_lead_related(db, org_id=auth.org.id, lead_id=lead.id)
+        db.delete(lead)
+        db.commit()
+    except (IntegrityError, OperationalError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="حذف این مخاطب ممکن نشد. چند ثانیه بعد دوباره تلاش کنید.",
+        ) from exc
     return {"ok": True, "id": lead_id}
 
 

@@ -11,6 +11,8 @@ from typing import Any
 
 import requests
 
+from app.services.phone import ascii_digits, normalize_ir_mobile, normalize_phone_for_storage
+
 API = "https://api.divar.ir"
 
 _UA = (
@@ -26,14 +28,10 @@ class DivarAuthError(Exception):
 
 
 def _normalize_phone(phone: str) -> str:
-    raw = re.sub(r"[\s\-()]", "", (phone or "").strip())
-    if raw.startswith("+98"):
-        raw = "0" + raw[3:]
-    if raw.startswith("98") and len(raw) == 12:
-        raw = "0" + raw[2:]
-    if not re.fullmatch(r"^09\d{9}$", raw):
-        raise DivarAuthError("شماره باید مثل 09123456789 باشد")
-    return raw
+    try:
+        return normalize_ir_mobile(phone)
+    except ValueError as exc:
+        raise DivarAuthError("شماره باید مثل 09123456789 باشد") from exc
 
 
 def _new_session() -> requests.Session:
@@ -93,9 +91,9 @@ def send_otp(phone: str) -> dict[str, Any]:
 
 def consume_otp(pending: dict[str, Any], code: str) -> dict[str, Any]:
     """Complete OTP; returns cookies dict + account phone/user_id."""
-    code = (code or "").strip()
-    if not re.fullmatch(r"^\d{4,8}$", code):
-        raise DivarAuthError("کد تأیید نامعتبر است")
+    code = ascii_digits(code or "")
+    if not re.fullmatch(r"^\d{6}$", code):
+        raise DivarAuthError("کد تأیید باید ۶ رقم باشد")
 
     sess = _new_session()
     if pending.get("user_agent"):
@@ -138,14 +136,15 @@ def consume_otp(pending: dict[str, Any], code: str) -> dict[str, Any]:
         sess.cookies.set(name="sFrontToken", value=s_front, domain=".divar.ir", path="/")
 
     cookies = sess.cookies.get_dict()
-    phone = pending.get("phone") or ""
+    phone = normalize_phone_for_storage(pending.get("phone") or "")
     user_id = ""
     try:
         token = cookies.get("sFrontToken") or s_front or ""
         b64 = token + ("=" * ((4 - len(token) % 4) % 4))
         payload = json.loads(base64.urlsafe_b64decode(b64))
         user_id = str(payload.get("uid") or (payload.get("up") or {}).get("sub") or "")
-        phone = phone or str((payload.get("up") or {}).get("phoneNumber") or "")
+        jwt_phone = str((payload.get("up") or {}).get("phoneNumber") or "")
+        phone = normalize_phone_for_storage(jwt_phone) or phone
     except Exception:  # noqa: BLE001
         pass
 

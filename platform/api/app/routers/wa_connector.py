@@ -27,6 +27,7 @@ from app.schemas import (
 )
 from app.services.reply_trace import job_trace_id, trace_event
 from app.services.wa_crypto import decrypt_text, encrypt_text
+from app.services.phone import ascii_digits, normalize_phone_for_storage, to_cc_digits
 
 router = APIRouter(prefix="/internal/wa", tags=["wa-connector-internal"])
 
@@ -72,7 +73,7 @@ def list_sessions(
             "wa_jid": r.wa_jid or "",
             "pairing_state": r.pairing_state or "disconnected",
             "status": r.status or "disconnected",
-            "phone": (r.external_id or "") if (r.pairing_state or "") == "code_pending" else "",
+            "phone": to_cc_digits(r.external_id or "") if (r.pairing_state or "") == "code_pending" else "",
         }
         for r in rows
     ]
@@ -138,8 +139,8 @@ def clear_auth(
 
 
 def _digits_phone(value: str) -> str:
-    digits = "".join(ch for ch in (value or "") if ch.isdigit())
-    return digits if digits.isdigit() and 8 <= len(digits) <= 15 else ""
+    digits = ascii_digits(value)
+    return digits if 8 <= len(digits) <= 15 else ""
 
 
 def _phone_from_pair_payload(external_id: str, wa_jid: str) -> str:
@@ -175,7 +176,7 @@ def put_pair_state(
         acc.wa_jid = body.wa_jid
     phone = _phone_from_pair_payload(body.external_id or "", body.wa_jid or "")
     if phone:
-        acc.external_id = phone
+        acc.external_id = normalize_phone_for_storage(phone) or phone
     if body.status:
         acc.status = body.status
     elif body.pairing_state == "connected":
@@ -578,7 +579,7 @@ def get_pair_command(
     """Sidecar polls this to learn when the panel requested QR / code pairing / logout."""
     acc = _baileys_account(db, account_id)
     state = acc.pairing_state or "disconnected"
-    phone = (acc.external_id or "").strip() if state == "code_pending" else ""
+    phone = to_cc_digits(acc.external_id or "") if state == "code_pending" else ""
     return {
         "account_id": acc.id,
         "pairing_state": state,

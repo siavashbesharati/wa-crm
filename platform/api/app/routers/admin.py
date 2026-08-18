@@ -15,6 +15,7 @@ from app.plans import ensure_default_plans, list_plans_admin, plan_exists, plan_
 from app.schemas import LogoutIn, OtpRequestIn, OtpVerifyIn, TokenOut, TokenRefreshIn
 from app.services.otp import consume_otp, issue_otp
 from app.services.sms import normalize_mobile_for_sms_ir
+from app.services.phone import normalize_phone_for_storage, phone_aliases
 from app.services.security import (
     create_access_token,
     create_platform_access_token,
@@ -43,7 +44,8 @@ AI_DEFAULTS_KEY = "ai_defaults"
 
 
 def _normalize_phone(phone: str) -> str:
-    return "".join(ch for ch in phone if ch.isdigit() or ch == "+")
+    n = normalize_phone_for_storage(phone)
+    return n or "".join(ch for ch in (phone or "") if ch.isdigit() or ch == "+")
 
 
 def _phones_match(a: str, b: str) -> bool:
@@ -53,9 +55,19 @@ def _phones_match(a: str, b: str) -> bool:
         return _normalize_phone(a) == _normalize_phone(b)
 
 
+def _find_user_by_phone(db: Session, phone: str) -> User | None:
+    aliases = phone_aliases(phone)
+    if not aliases:
+        return None
+    return db.query(User).filter(User.phone.in_(aliases)).first()
+
+
 def _ensure_platform_admin(db: Session) -> User:
     phone = _normalize_phone(settings.super_admin_phone)
-    user = db.query(User).filter(User.phone == phone).first()
+    user = _find_user_by_phone(db, phone)
+    if user and user.phone != phone:
+        user.phone = phone
+        db.add(user)
     if not user:
         user = User(
             phone=phone,
@@ -323,7 +335,7 @@ def create_business(
     if not name:
         raise HTTPException(status_code=400, detail="نام کسب‌وکار لازم است")
 
-    existing = db.query(User).filter(User.phone == phone).first()
+    existing = _find_user_by_phone(db, phone)
     if existing:
         raise HTTPException(status_code=400, detail="این شماره از قبل ثبت شده است")
 
@@ -377,7 +389,7 @@ def patch_business(
         if len(phone) < 8:
             raise HTTPException(status_code=400, detail="شماره موبایل نامعتبر است")
         owner = _owner_for_org(db, org.id)
-        clash = db.query(User).filter(User.phone == phone).first()
+        clash = _find_user_by_phone(db, phone)
         if clash and (not owner or clash.id != owner.id):
             raise HTTPException(status_code=400, detail="این شماره متعلق به کاربر دیگری است")
         if owner:
@@ -412,7 +424,7 @@ def enter_business(
         user = db.get(User, membership.user_id)
     else:
         phone = _normalize_phone(body.phone)
-        user = db.query(User).filter(User.phone == phone).first()
+        user = _find_user_by_phone(db, phone)
         if not user:
             raise HTTPException(status_code=404, detail="این شماره در سیستم ثبت نشده است")
         membership = (

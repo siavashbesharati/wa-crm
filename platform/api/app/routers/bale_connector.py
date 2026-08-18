@@ -20,6 +20,7 @@ from app.models import (
     OutboundStatus,
 )
 from app.schemas import BaleAuthStateIn, BaleAuthStateOut, MessageIngestIn
+from app.services.phone import normalize_phone_for_storage
 from app.services.reply_trace import job_trace_id, trace_event
 from app.services.wa_crypto import decrypt_text, encrypt_text
 
@@ -169,7 +170,7 @@ def put_pair_state(
     if status:
         acc.status = status
     if external_id:
-        acc.external_id = external_id
+        acc.external_id = normalize_phone_for_storage(external_id) or external_id
     if label:
         acc.label = label
     db.add(acc)
