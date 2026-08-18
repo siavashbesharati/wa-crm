@@ -7,13 +7,14 @@ import Shell from "@/components/Shell";
 import { Card, HelpTip } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { PageLoading } from "@/components/ui/Spinner";
+import { PageLoading, Spinner } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import {
   accountIdentity,
   isAccountOn,
   pairingStateLabel,
+  statusEmoji,
   statusLabel,
   type ChannelAccount
 } from "@/components/channels/shared";
@@ -545,7 +546,7 @@ export default function ChannelsPage() {
                 {pair.qr_payload}
               </div>
             ) : (
-              <div className="pair-qr-wait">در حال دریافت کد جفت‌سازی…</div>
+              <PairWait label="در حال دریافت کد جفت‌سازی…" />
             )}
             <p className="hint">
               شماره: {pair?.phone || waPhone || "—"} · وضعیت:{" "}
@@ -568,7 +569,7 @@ export default function ChannelsPage() {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={pair.qr_payload} alt="کد QR واتساپ" width={260} height={260} />
             ) : (
-              <div className="pair-qr-wait">در انتظار QR از سرور…</div>
+              <PairWait label="در انتظار QR از سرور…" />
             )}
             <p className="hint">
               وضعیت: {pairingStateLabel(pair?.pairing_state || "qr_pending")}
@@ -742,26 +743,38 @@ export default function ChannelsPage() {
   );
 }
 
+const STATUS_HELP = [
+  "🟢 سبز: متصل — پیام‌ها به پنل می‌آیند.",
+  "🟡 زرد: در حال اتصال مجدد؛ کمی صبر کنید.",
+  "🔵 آبی: در انتظار تأیید (QR یا کد).",
+  "⚪ خاکستری: قطع یا خاموش — از آیکون دوشاخه دوباره وصل کنید.",
+  "🔴 قرمز: خطا؛ اتصال را از نو بزنید یا حساب را حذف کنید.",
+  "آیکون دوشاخه: اتصال / قطع · سطل زباله: حذف نشست."
+];
+
 const CHANNEL_CARD_COPY: Record<
   "whatsapp" | "divar" | "bale",
   { helpTitle: string; helpBody: string; helpTips: string[]; connect: string }
 > = {
   whatsapp: {
     helpTitle: "واتساپ سرور",
-    helpBody: "شماره واتساپ کسب‌وکار را با اسکن QR به سرور وصل کنید.",
-    helpTips: ["سرویس wa-connector باید روشن باشد."],
+    helpBody:
+      "با «اتصال» یا «افزودن» یک نشست بسازید. در موبایل واتساپ: تنظیمات ← دستگاه‌های متصل ← پیوند دستگاه، بعد QR را اسکن کنید یا کد ۸رقمی را وارد کنید. عدد کنار نام (مثلاً ۰/۱) یعنی چند حساب از این کانال الان متصل است.",
+    helpTips: ["سرویس wa-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
     connect: "اتصال"
   },
   divar: {
     helpTitle: "دیوار سرور",
-    helpBody: "با کد تأیید پیامکی شماره دیوار را وصل کنید.",
-    helpTips: ["سرویس divar-connector باید روشن باشد."],
+    helpBody:
+      "شماره موبایل حساب دیوار را وارد کنید؛ کد ۵رقمی پیامک می‌شود. همان کد را در پنجره تأیید بنویسید. عدد کنار نام (مثلاً ۱/۱) تعداد حساب‌های متصل این کانال است.",
+    helpTips: ["سرویس divar-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
     connect: "اتصال"
   },
   bale: {
     helpTitle: "بله سرور",
-    helpBody: "با کد ورود برنامه بله، حساب را به سرور وصل کنید.",
-    helpTips: ["سرویس bale-connector باید روشن باشد."],
+    helpBody:
+      "شماره موبایل حساب بله را وارد کنید. کد ۵رقمی معمولاً داخل برنامه بله می‌آید (گاهی پیامک). همان را وارد کنید تا نشست وصل شود. عدد کنار نام تعداد حساب‌های متصل است.",
+    helpTips: ["سرویس bale-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
     connect: "اتصال"
   }
 };
@@ -801,6 +814,9 @@ function ChannelCard({
         <div className="channel-card-head-copy">
           <div className="channel-card-head-title">
             <h3>{title}</h3>
+            <span className="channel-card-count">
+              {liveCount}/{accounts.length}
+            </span>
             <HelpTip
               help={{
                 title: copy.helpTitle,
@@ -808,11 +824,6 @@ function ChannelCard({
                 tips: copy.helpTips
               }}
             />
-            {!empty ? (
-              <span className="channel-card-count">
-                {liveCount}/{accounts.length}
-              </span>
-            ) : null}
           </div>
           <p className="channel-card-hint">{hint}</p>
         </div>
@@ -824,39 +835,126 @@ function ChannelCard({
         </div>
       </header>
 
-      {empty ? null : (
-        <ul className="channel-account-list">
-          {accounts.map((a) => {
-            const on = isAccountOn(a.status, a.pairing_state);
-            return (
-              <li key={a.id} className="channel-account-row">
-                <div className="channel-account-meta">
-                  <strong>{a.label || title}</strong>
-                  <span dir="ltr">{accountIdentity(a)}</span>
-                </div>
-                <span className={`channel-status ${on ? "on" : "off"}`}>
-                  <i />
-                  {statusLabel(a)}
-                </span>
-                <div className="channel-account-actions">
-                  {on ? (
-                    <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDisconnect(a)}>
-                      قطع
-                    </Button>
-                  ) : (
-                    <Button variant="ghost" size="sm" disabled={busy} onClick={() => onConnect(a)}>
-                      اتصال
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="sm" className="channel-remove" disabled={busy} onClick={() => onRemove(a)}>
-                    حذف
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <div className="channel-session-wrap">
+        <table className="channel-session-table">
+          <thead>
+            <tr>
+              <th>وضعیت</th>
+              <th>نام</th>
+              <th>شماره</th>
+              <th>عمل</th>
+            </tr>
+          </thead>
+          <tbody>
+            {empty ? (
+              <tr>
+                <td className="channel-session-empty" colSpan={4}>
+                  جلسه‌ای نیست
+                </td>
+              </tr>
+            ) : (
+              accounts.map((a) => {
+                const on = isAccountOn(a.status, a.pairing_state);
+                const label = statusLabel(a);
+                return (
+                  <tr key={a.id}>
+                    <td className="channel-session-status">
+                      <span title={label} aria-label={label}>
+                        {statusEmoji(a)}
+                      </span>
+                    </td>
+                    <td className="channel-session-name">{a.label || title}</td>
+                    <td className="channel-session-num" dir="ltr">
+                      {accountIdentity(a)}
+                    </td>
+                    <td className="channel-session-actions">
+                      {on ? (
+                        <button
+                          type="button"
+                          className="channel-icon-btn"
+                          disabled={busy}
+                          aria-label="قطع اتصال"
+                          title="قطع اتصال"
+                          onClick={() => onDisconnect(a)}
+                        >
+                          <IconUnplug />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="channel-icon-btn"
+                          disabled={busy}
+                          aria-label="اتصال"
+                          title="اتصال"
+                          onClick={() => onConnect(a)}
+                        >
+                          <IconPlug />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="channel-icon-btn danger"
+                        disabled={busy}
+                        aria-label="حذف"
+                        title="حذف"
+                        onClick={() => onRemove(a)}
+                      >
+                        <IconTrash />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </Card>
+  );
+}
+
+function PairWait({ label }: { label: string }) {
+  return (
+    <div className="pair-qr-wait" role="status" aria-live="polite" aria-busy="true">
+      <span className="pair-qr-scan" aria-hidden />
+      <Spinner dark lg />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function IconPlug() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22v-5" />
+      <path d="M8 8V2" />
+      <path d="M16 8V2" />
+      <path d="M18 8v4a6 6 0 0 1-12 0V8Z" />
+    </svg>
+  );
+}
+
+function IconUnplug() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22v-3" />
+      <path d="M8 8V2" />
+      <path d="M16 8V2" />
+      <path d="M18 8v2.5" />
+      <path d="M6 8v2.5a6 6 0 0 0 8.5 5.5" />
+      <path d="m18 18-2-2" />
+    </svg>
+  );
+}
+
+function IconTrash() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
   );
 }

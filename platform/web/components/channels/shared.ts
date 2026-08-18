@@ -70,6 +70,15 @@ export function statusLabel(a: ChannelAccount) {
   return "خاموش";
 }
 
+export function statusEmoji(a: ChannelAccount) {
+  if (isAccountOn(a.status, a.pairing_state)) return "🟢";
+  const p = (a.pairing_state || "").toLowerCase();
+  if (p === "reconnecting" || p === "connecting") return "🟡";
+  if (p === "qr_pending" || p === "otp_pending" || p === "code_pending") return "🔵";
+  if (p === "error") return "🔴";
+  return "⚪";
+}
+
 export function isAccountNeedsReconnect(a: ChannelAccount) {
   if (isAccountOn(a.status, a.pairing_state)) return false;
   const p = (a.pairing_state || "").toLowerCase();

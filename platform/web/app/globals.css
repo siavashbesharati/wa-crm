@@ -2903,6 +2903,14 @@ a.btn.wizard-btn:hover {
   min-width: 22px;
   font-size: 11px;
 }
+.channel-board .help-tip-pop {
+  width: min(360px, calc(100vw - 40px));
+  right: auto;
+  left: 0;
+}
+.channel-board .help-tip-pop-tips {
+  gap: 6px;
+}
 .channel-board .btn.sm,
 .channel-board .btn.ghost {
   min-height: 28px;
@@ -2961,78 +2969,95 @@ a.btn.wizard-btn:hover {
   padding: 0 4px;
 }
 .channel-card-link:hover { text-decoration: underline; }
-.channel-account-list {
-  list-style: none;
-  margin: 0;
-  padding: 4px 0 0;
-  display: grid;
-  gap: 0;
-  border-top: 1px solid var(--border);
+.channel-session-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
-.channel-account-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+.channel-session-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-weight: 600;
+}
+.channel-session-table th,
+.channel-session-table td {
   padding: 6px 4px;
-  border-radius: 8px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
 }
-.channel-account-row:hover {
-  background: rgba(29, 29, 31, 0.04);
+.channel-session-table th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
-.channel-account-meta {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 0;
+.channel-session-table tbody tr:last-child td {
+  border-bottom: 0;
 }
-.channel-account-meta strong {
+.channel-session-table tbody tr:hover td {
+  background: rgba(29, 29, 31, 0.03);
+}
+.channel-session-status {
+  width: 42px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
+}
+.channel-session-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 650;
   font-size: 13px;
-  font-weight: 650;
+}
+.channel-session-num {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.channel-account-meta span {
-  color: var(--muted);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.channel-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--muted);
-}
-.channel-status i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #c7c7cc;
-}
-.channel-status.on { color: var(--success); }
-.channel-status.on i { background: var(--success); }
-.channel-account-actions {
+.channel-session-actions {
+  width: 72px;
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 0;
-  flex-shrink: 0;
+  gap: 2px;
 }
-.channel-account-actions .btn {
-  width: auto;
+.channel-session-empty {
   color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
 }
-.channel-account-actions .btn.channel-remove {
-  color: var(--danger);
+.channel-icon-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
 }
-.channel-account-actions .btn.channel-remove:hover:not(:disabled) {
+.channel-icon-btn:hover:not(:disabled) {
+  background: rgba(29, 29, 31, 0.06);
+  color: var(--text);
+}
+.channel-icon-btn.danger:hover:not(:disabled) {
   background: var(--danger-soft);
   color: var(--danger);
+}
+.channel-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .pair-lead {
   margin: 0 0 16px;
@@ -3053,17 +3078,41 @@ a.btn.wizard-btn:hover {
   border: 1px solid var(--border);
 }
 .pair-qr-wait {
+  position: relative;
+  overflow: hidden;
   width: 260px;
   height: 260px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   border-radius: 16px;
   border: 1px dashed var(--border);
+  background: rgba(255, 255, 255, 0.45);
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
   text-align: center;
   padding: 16px;
+}
+.pair-qr-scan {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: pair-qr-scan 1.6s var(--ease) infinite alternate;
+  pointer-events: none;
+}
+@keyframes pair-qr-scan {
+  from { top: 12%; }
+  to { top: 86%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pair-qr-scan { animation: none; top: 50%; opacity: 0.3; }
 }
 .wa-pair-choose {
   display: grid;
@@ -4451,8 +4500,11 @@ a.btn.wizard-btn:hover {
     min-height: 36px;
     padding: 6px 12px;
   }
-  .channel-account-row {
-    flex-wrap: wrap;
+  .channel-icon-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
   }
   .chat-app {
     height: calc(100vh - 118px);
