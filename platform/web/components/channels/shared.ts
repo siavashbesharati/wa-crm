@@ -8,6 +8,7 @@ export type ChannelAccount = {
   connector_type?: string;
   pairing_state?: string;
   wa_jid?: string;
+  profile?: Record<string, string>;
 };
 
 const PAIRING_STATE_FA: Record<string, string> = {
@@ -20,6 +21,9 @@ const PAIRING_STATE_FA: Record<string, string> = {
   auth_required: "نیاز به ورود دوباره",
   connecting: "در حال اتصال",
   error: "خطا"
+  ,authenticating: "در حال ورود"
+  ,two_factor_required: "نیاز به کد دومرحله‌ای"
+  ,challenge_required: "نیاز به تأیید اینستاگرام"
 };
 
 const ACCOUNT_STATUS_FA: Record<string, string> = {

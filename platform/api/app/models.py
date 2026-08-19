@@ -42,12 +42,14 @@ class ConnectorRole(str, enum.Enum):
     baileys = "baileys"
     divar = "divar"
     bale = "bale"
+    instagram = "instagram"
 
 
 class ChannelType(str, enum.Enum):
     whatsapp = "whatsapp"
     divar = "divar"
     bale = "bale"
+    instagram = "instagram"
 
 
 class TaskStatus(str, enum.Enum):
@@ -289,6 +291,97 @@ class BaleAuthState(Base):
     token_enc: Mapped[str] = mapped_column(Text, default="")
     pending_enc: Mapped[str] = mapped_column(Text, default="")
     cursors_json: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class InstagramAuthState(Base):
+    """Encrypted instagrapi settings and pending authentication state."""
+
+    __tablename__ = "instagram_auth_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("channel_accounts.id"), unique=True, index=True
+    )
+    settings_enc: Mapped[str] = mapped_column(Text, default="")
+    credentials_enc: Mapped[str] = mapped_column(Text, default="")
+    pending_enc: Mapped[str] = mapped_column(Text, default="")
+    profile_json: Mapped[str] = mapped_column(Text, default="")
+    cursors_json: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class InstagramEvent(Base):
+    """Normalized Instagram DM/comment event used for idempotent processing."""
+
+    __tablename__ = "instagram_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "event_type",
+            "external_event_id",
+            name="uq_instagram_event_external",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("channel_accounts.id"), index=True)
+    lead_id: Mapped[str | None] = mapped_column(ForeignKey("leads.id"), nullable=True, index=True)
+    message_id: Mapped[str | None] = mapped_column(ForeignKey("messages.id"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(24), index=True)  # dm | comment | comment_reply
+    external_event_id: Mapped[str] = mapped_column(String(160), index=True)
+    external_thread_id: Mapped[str] = mapped_column(String(160), default="", index=True)
+    external_media_id: Mapped[str] = mapped_column(String(160), default="", index=True)
+    external_author_id: Mapped[str] = mapped_column(String(160), default="", index=True)
+    parent_comment_id: Mapped[str] = mapped_column(String(160), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    author_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="received", index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class AutomationRule(Base):
+    """Organization-scoped trigger/condition/action definition."""
+
+    __tablename__ = "automation_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(48), index=True)
+    source_channel: Mapped[str] = mapped_column(String(40), default="")
+    source_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("channel_accounts.id"), nullable=True, index=True
+    )
+    conditions: Mapped[list] = mapped_column(JSON, default=list)
+    actions: Mapped[list] = mapped_column(JSON, default=list)
+    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class AutomationRun(Base):
+    """Idempotent audit record for a rule execution against an external event."""
+
+    __tablename__ = "automation_runs"
+    __table_args__ = (
+        UniqueConstraint("org_id", "rule_id", "event_id", name="uq_automation_run_event"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    rule_id: Mapped[str] = mapped_column(ForeignKey("automation_rules.id"), index=True)
+    event_id: Mapped[str] = mapped_column(ForeignKey("instagram_events.id"), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 

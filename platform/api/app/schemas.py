@@ -99,7 +99,7 @@ class ChannelAccountIn(BaseModel):
     label: str = ""
     external_id: str = ""
     phone: str = ""  # WA alias for external_id
-    connector_type: str = "baileys"  # baileys | divar_api | bale_api
+    connector_type: str = "baileys"  # baileys | divar_api | bale_api | instagram_api
 
 
 class ChannelAccountOut(BaseModel):
@@ -112,6 +112,62 @@ class ChannelAccountOut(BaseModel):
     connector_type: str = "baileys"
     pairing_state: str = "disconnected"
     wa_jid: str = ""
+    profile: dict[str, Any] = Field(default_factory=dict)
+
+
+class InstagramPairStartIn(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=240)
+
+
+class InstagramVerificationIn(BaseModel):
+    code: str = Field(min_length=4, max_length=16)
+
+
+class InstagramPairStatusOut(BaseModel):
+    account_id: str
+    pairing_state: str
+    status: str
+    username: str = ""
+    user_id: str = ""
+    full_name: str = ""
+    profile_pic_url: str = ""
+    message: str = ""
+
+
+class InstagramAuthStateOut(BaseModel):
+    account_id: str
+    pending_json: str = ""
+    cursors_json: str = ""
+
+
+class InstagramEventIn(BaseModel):
+    event_type: str
+    external_event_id: str = Field(min_length=1, max_length=160)
+    external_thread_id: str = ""
+    external_media_id: str = ""
+    external_author_id: str = ""
+    parent_comment_id: str = ""
+    body: str = ""
+    author: dict[str, Any] = Field(default_factory=dict)
+    occurred_at: datetime | None = None
+
+
+class AutomationRuleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    enabled: bool = True
+    priority: int = 0
+    trigger_type: str = Field(min_length=1, max_length=48)
+    source_channel: str = "instagram"
+    source_account_id: str | None = None
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AutomationRuleOut(AutomationRuleIn):
+    id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class DivarPairStartIn(BaseModel):

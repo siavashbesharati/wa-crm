@@ -45,5 +45,15 @@ services:
     volumes:
       - ./api:/app
 
+  instagram-connector:
+    build: ./instagram-connector
+    environment:
+      BIDAR_API_URL: http://api:8000/api
+      INSTAGRAM_CONNECTOR_KEY: dev-instagram-connector-key-change-me
+    depends_on:
+      - api
+    volumes:
+      - ./instagram-connector:/app
+
 volumes:
   pgdata:

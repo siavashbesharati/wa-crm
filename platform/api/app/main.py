@@ -14,6 +14,7 @@ from app.database import Base, engine
 from app.routers import (
     admin,
     ai,
+    automations,
     auth,
     campaigns,
     channels,
@@ -31,6 +32,8 @@ from app.routers import (
     whatsapp,
     bale_connector,
     bale_pair,
+    instagram_connector,
+    instagram_pair,
 )
 from app.services.sse_hub import sse_hub
 
@@ -76,6 +79,7 @@ ROUTERS = [
     whatsapp.router,
     messages.router,
     ai.router,
+    automations.router,
     campaigns.router,
     kpi.router,
     payments.router,
@@ -84,6 +88,8 @@ ROUTERS = [
     divar_connector.router,
     bale_pair.router,
     bale_connector.router,
+    instagram_pair.router,
+    instagram_connector.router,
 ]
 
 

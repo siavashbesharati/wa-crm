@@ -4,6 +4,7 @@ import { CHANNEL_LABELS } from "@/components/crm/shared";
 
 const DIVAR_LOGO = "/brands/Divar%20Logo.svg";
 const BALE_LOGO = "/brands/bale.svg";
+const INSTAGRAM_LOGO = "/brands/instagram.svg";
 
 function WhatsAppMark() {
   return (
@@ -16,7 +17,7 @@ function WhatsAppMark() {
   );
 }
 
-const KNOWN = new Set(["whatsapp", "divar", "bale"]);
+const KNOWN = new Set(["whatsapp", "divar", "bale", "instagram"]);
 
 export function ChannelBrand({
   channel,
@@ -37,6 +38,9 @@ export function ChannelBrand({
       ) : ch === "bale" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={BALE_LOGO} alt="" />
+      ) : ch === "instagram" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={INSTAGRAM_LOGO} alt="" />
       ) : (
         <WhatsAppMark />
       )}

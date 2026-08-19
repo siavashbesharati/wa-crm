@@ -16,6 +16,7 @@ from app.models import (
     ConnectorRole,
     ConnectorSession,
     DivarAuthState,
+    InstagramAuthState,
     LeadAccountLink,
     MemberRole,
     Message,
@@ -110,6 +111,9 @@ def _purge_account_auth_and_row(db: Session, acc: ChannelAccount) -> None:
     db.query(BaleAuthState).filter(BaleAuthState.account_id == account_id).delete(
         synchronize_session=False
     )
+    db.query(InstagramAuthState).filter(InstagramAuthState.account_id == account_id).delete(
+        synchronize_session=False
+    )
     db.query(ConnectorSession).filter(
         ConnectorSession.org_id == org_id, ConnectorSession.account_id == account_id
     ).delete(synchronize_session=False)
@@ -160,20 +164,26 @@ def create_account(
     )
     label = (body.label or external_id or ch.value).strip()
     connector_type = (body.connector_type or "").strip().lower()
-    if connector_type not in ("baileys", "divar_api", "bale_api"):
+    if connector_type not in ("baileys", "divar_api", "bale_api", "instagram_api"):
         # Default by channel — Chrome extension connector removed
         if ch == ChannelType.whatsapp:
             connector_type = "baileys"
         elif ch == ChannelType.divar:
             connector_type = "divar_api"
-        else:
+        elif ch == ChannelType.bale:
             connector_type = "bale_api"
+        else:
+            connector_type = "instagram_api"
     if connector_type == "baileys" and ch != ChannelType.whatsapp:
         raise HTTPException(status_code=400, detail="Baileys فقط برای واتساپ است")
     if connector_type == "divar_api" and ch != ChannelType.divar:
         raise HTTPException(status_code=400, detail="divar_api فقط برای دیوار است")
     if connector_type == "bale_api" and ch != ChannelType.bale:
         raise HTTPException(status_code=400, detail="bale_api فقط برای بله است")
+    if connector_type == "instagram_api" and ch != ChannelType.instagram:
+        raise HTTPException(status_code=400, detail="instagram_api فقط برای اینستاگرام است")
+    if ch == ChannelType.instagram and connector_type != "instagram_api":
+        raise HTTPException(status_code=400, detail="اینستاگرام فقط با instagram_api پشتیبانی می‌شود")
     acc = ChannelAccount(
         org_id=auth.org.id,
         channel=ch,

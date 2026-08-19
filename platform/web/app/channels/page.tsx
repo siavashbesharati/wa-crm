@@ -35,7 +35,8 @@ type PairStatus = {
 type PairModal =
   | { kind: "whatsapp"; accountId: string; mode: "qr" | "code"; step: "choose" | "active" }
   | { kind: "divar"; accountId: string; step: "otp" | "code" }
-  | { kind: "bale"; accountId: string; step: "phone" | "otp" | "done" };
+  | { kind: "bale"; accountId: string; step: "phone" | "otp" | "done" }
+  | { kind: "instagram"; accountId: string; step: "credentials" | "two_factor" | "challenge" | "done" };
 
 type BalePairStatus = {
   account_id: string;
@@ -44,6 +45,17 @@ type BalePairStatus = {
   phone?: string;
   display_name?: string;
   user_id?: string;
+  message?: string;
+};
+
+type InstagramPairStatus = {
+  account_id: string;
+  pairing_state: string;
+  status: string;
+  username?: string;
+  user_id?: string;
+  full_name?: string;
+  profile_pic_url?: string;
   message?: string;
 };
 
@@ -62,6 +74,10 @@ export default function ChannelsPage() {
   const [baleCode, setBaleCode] = useState("");
   const [baleProfile, setBaleProfile] = useState<{ name: string; userId: string; phone: string } | null>(null);
   const [waPhone, setWaPhone] = useState("");
+  const [instagramUsername, setInstagramUsername] = useState("");
+  const [instagramPassword, setInstagramPassword] = useState("");
+  const [instagramCode, setInstagramCode] = useState("");
+  const [instagramStatus, setInstagramStatus] = useState<InstagramPairStatus | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ChannelAccount | null>(null);
   const toast = useToast();
 
@@ -75,6 +91,10 @@ export default function ChannelsPage() {
   );
   const baleAccounts = useMemo(
     () => accounts.filter((a) => a.channel === "bale"),
+    [accounts]
+  );
+  const instagramAccounts = useMemo(
+    () => accounts.filter((a) => a.channel === "instagram"),
     [accounts]
   );
 
@@ -122,6 +142,32 @@ export default function ChannelsPage() {
     const t = setInterval(() => void pollPair(modal.accountId), 2000);
     return () => clearInterval(t);
   }, [modal, pollPair]);
+
+  const pollInstagram = useCallback(async (accountId: string) => {
+    try {
+      const status = await api<InstagramPairStatus>(
+        `/channels/accounts/${accountId}/instagram/pair/status`
+      );
+      setInstagramStatus(status);
+      if (status.pairing_state === "connected") {
+        setModal({ kind: "instagram", accountId, step: "done" });
+        void load({ quiet: true });
+      } else if (status.pairing_state === "two_factor_required") {
+        setModal({ kind: "instagram", accountId, step: "two_factor" });
+      } else if (status.pairing_state === "challenge_required") {
+        setModal({ kind: "instagram", accountId, step: "challenge" });
+      }
+    } catch {
+      /* ignore transient status errors */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!modal || modal.kind !== "instagram" || modal.step === "done") return;
+    void pollInstagram(modal.accountId);
+    const timer = setInterval(() => void pollInstagram(modal.accountId), 2000);
+    return () => clearInterval(timer);
+  }, [modal, pollInstagram]);
 
   async function startWhatsAppQr(accountId: string) {
     await api(`/channels/accounts/${accountId}/pair/start`, { method: "POST" });
@@ -213,9 +259,9 @@ export default function ChannelsPage() {
 
   useEffect(() => {
     if (loading || autoConnectRef.current) return;
-    if (connectHint !== "whatsapp" && connectHint !== "divar" && connectHint !== "bale") return;
+    if (connectHint !== "whatsapp" && connectHint !== "divar" && connectHint !== "bale" && connectHint !== "instagram") return;
     const list =
-      connectHint === "whatsapp" ? waAccounts : connectHint === "divar" ? divarAccounts : baleAccounts;
+      connectHint === "whatsapp" ? waAccounts : connectHint === "divar" ? divarAccounts : connectHint === "bale" ? baleAccounts : instagramAccounts;
     if (list.some((a) => isAccountOn(a.status, a.pairing_state))) {
       autoConnectRef.current = true;
       return;
@@ -225,15 +271,17 @@ export default function ChannelsPage() {
     if (existing) {
       if (connectHint === "whatsapp") openWhatsAppPair(existing.id);
       else if (connectHint === "divar") openDivarOtp(existing);
-      else openBaleOtp(existing);
+      else if (connectHint === "bale") openBaleOtp(existing);
+      else openInstagramPair(existing);
       return;
     }
     if (connectHint === "whatsapp") void addWhatsApp();
     else if (connectHint === "divar") void addDivar();
-    else void addBale();
+    else if (connectHint === "bale") void addBale();
+    else void addInstagram();
     // Open the matching pair flow once when arriving from a setup task.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, connectHint, waAccounts, divarAccounts, baleAccounts]);
+  }, [loading, connectHint, waAccounts, divarAccounts, baleAccounts, instagramAccounts]);
 
   async function startDivarOtp() {
     if (!modal || modal.kind !== "divar") return;
@@ -383,6 +431,85 @@ export default function ChannelsPage() {
     }
   }
 
+  function openInstagramPair(account: ChannelAccount) {
+    setInstagramUsername((account.external_id || "").replace(/^@/, ""));
+    setInstagramPassword("");
+    setInstagramCode("");
+    setInstagramStatus(null);
+    setModal({ kind: "instagram", accountId: account.id, step: "credentials" });
+  }
+
+  async function addInstagram() {
+    setBusy(true);
+    try {
+      const account = await api<ChannelAccount>("/channels/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          channel: "instagram",
+          connector_type: "instagram_api",
+          label: "Instagram"
+        })
+      });
+      await load();
+      openInstagramPair(account);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startInstagramPair() {
+    if (!modal || modal.kind !== "instagram") return;
+    if (!instagramUsername.trim() || !instagramPassword) {
+      toast.push("نام کاربری و رمز اینستاگرام را وارد کنید", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${modal.accountId}/instagram/pair/start`, {
+        method: "POST",
+        body: JSON.stringify({ username: instagramUsername.trim(), password: instagramPassword })
+      });
+      setInstagramPassword("");
+      void pollInstagram(modal.accountId);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در ورود اینستاگرام", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitInstagramCode() {
+    if (!modal || modal.kind !== "instagram" || !instagramCode.trim()) return;
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${modal.accountId}/instagram/pair/verify`, {
+        method: "POST",
+        body: JSON.stringify({ code: instagramCode.trim() })
+      });
+      setInstagramCode("");
+      void pollInstagram(modal.accountId);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "کد نامعتبر است", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logoutInstagram(accountId: string) {
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${accountId}/instagram/pair/logout`, { method: "POST" });
+      if (modal?.kind === "instagram" && modal.accountId === accountId) setModal(null);
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removeAccount() {
     if (!removeTarget) return;
     const id = removeTarget.id;
@@ -407,6 +534,8 @@ export default function ChannelsPage() {
     setModal(null);
     setPair(null);
     setBaleProfile(null);
+    setInstagramStatus(null);
+    setInstagramPassword("");
   }
 
   const connectedCount = accounts.filter((a) => isAccountOn(a.status, a.pairing_state)).length;
@@ -466,6 +595,18 @@ export default function ChannelsPage() {
               onAdd={() => void addBale()}
               onConnect={(a) => openBaleOtp(a)}
               onDisconnect={(a) => void logoutBale(a.id)}
+              onRemove={setRemoveTarget}
+            />
+            <ChannelCard
+              channel="instagram"
+              title="اینستاگرام"
+              hint="اتصال با نام کاربری و رمز عبور"
+              accounts={instagramAccounts}
+              busy={busy}
+              highlight={connectHint === "instagram"}
+              onAdd={() => void addInstagram()}
+              onConnect={(a) => openInstagramPair(a)}
+              onDisconnect={(a) => void logoutInstagram(a.id)}
               onRemove={setRemoveTarget}
             />
           </div>
@@ -718,6 +859,66 @@ export default function ChannelsPage() {
         )}
       </Modal>
       <Modal
+        open={modal?.kind === "instagram"}
+        title={
+          modal?.kind === "instagram" && modal.step === "two_factor"
+            ? "کد دومرحله‌ای اینستاگرام"
+            : modal?.kind === "instagram" && modal.step === "challenge"
+              ? "تأیید بیشتر لازم است"
+              : modal?.kind === "instagram" && modal.step === "done"
+                ? "اینستاگرام متصل شد"
+                : "اتصال اینستاگرام"
+        }
+        onClose={closeModal}
+        panelClassName="pair-modal"
+        footer={
+          modal?.kind === "instagram" && modal.step === "credentials" ? (
+            <Button loading={busy} onClick={() => void startInstagramPair()}>
+              ورود
+            </Button>
+          ) : modal?.kind === "instagram" && modal.step === "two_factor" ? (
+            <Button loading={busy} disabled={!instagramCode.trim()} onClick={() => void submitInstagramCode()}>
+              تأیید کد
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={closeModal}>بستن</Button>
+          )
+        }
+      >
+        {modal?.kind === "instagram" && modal.step === "credentials" ? (
+          <div className="pair-form">
+            <p className="pair-lead">اطلاعات ورود حساب اینستاگرام را وارد کنید.</p>
+            <label>
+              نام کاربری
+              <input className="ltr-text" dir="ltr" value={instagramUsername} onChange={(e) => setInstagramUsername(e.target.value)} autoFocus />
+            </label>
+            <label>
+              رمز عبور
+              <input className="ltr-text" dir="ltr" type="password" value={instagramPassword} onChange={(e) => setInstagramPassword(e.target.value)} autoComplete="current-password" />
+            </label>
+            <p className="hint">رمز و نشست فقط در سرور رمزگذاری می‌شوند.</p>
+            {instagramStatus?.pairing_state === "authenticating" ? <PairWait label="در حال ورود به اینستاگرام…" /> : null}
+          </div>
+        ) : modal?.kind === "instagram" && modal.step === "two_factor" ? (
+          <div className="pair-form">
+            <p className="pair-lead">کد تأیید اینستاگرام را وارد کنید.</p>
+            <input className="ltr-text" dir="ltr" inputMode="numeric" value={instagramCode} onChange={(e) => setInstagramCode(e.target.value)} autoFocus />
+          </div>
+        ) : modal?.kind === "instagram" && modal.step === "challenge" ? (
+          <div className="pair-form">
+            <p className="pair-lead">اینستاگرام به تأیید بیشتری نیاز دارد.</p>
+            <p className="hint">لطفاً فرایند تأیید را در خود اینستاگرام انجام دهید؛ Bidar تلاش نمی‌کند محدودیت امنیتی را دور بزند.</p>
+            <p className="hint">وضعیت: {pairingStateLabel(instagramStatus?.pairing_state)}</p>
+          </div>
+        ) : (
+          <div className="pair-form">
+            <p className="pair-lead">حساب با موفقیت متصل شد.</p>
+            <p dir="ltr">@{instagramStatus?.username || instagramUsername}</p>
+            <p>{instagramStatus?.full_name || ""}</p>
+          </div>
+        )}
+      </Modal>
+      <Modal
         open={!!removeTarget}
         title="حذف کانال"
         onClose={() => setRemoveTarget(null)}
@@ -754,7 +955,7 @@ const STATUS_HELP = [
 ];
 
 const CHANNEL_CARD_COPY: Record<
-  "whatsapp" | "divar" | "bale",
+  "whatsapp" | "divar" | "bale" | "instagram",
   { helpTitle: string; helpBody: string; helpTips: string[]; connect: string }
 > = {
   whatsapp: {
@@ -777,6 +978,13 @@ const CHANNEL_CARD_COPY: Record<
       "شماره موبایل حساب بله را وارد کنید. کد ۵رقمی معمولاً داخل برنامه بله می‌آید (گاهی پیامک). همان را وارد کنید تا نشست وصل شود. عدد کنار نام تعداد حساب‌های متصل است.",
     helpTips: ["سرویس bale-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
     connect: "اتصال"
+  },
+  instagram: {
+    helpTitle: "اینستاگرام سرور",
+    helpBody:
+      "نام کاربری و رمز حساب را وارد کنید. در صورت نیاز، کد دومرحله‌ای یا تأیید اضافی در مرحله جداگانه نمایش داده می‌شود.",
+    helpTips: ["سرویس instagram-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
+    connect: "اتصال"
   }
 };
 
@@ -793,7 +1001,7 @@ function ChannelCard({
   onDisconnect,
   onRemove
 }: {
-  channel: "whatsapp" | "divar" | "bale";
+  channel: "whatsapp" | "divar" | "bale" | "instagram";
   title: string;
   hint: string;
   accounts: ChannelAccount[];
