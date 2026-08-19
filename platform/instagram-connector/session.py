@@ -51,11 +51,34 @@ class SessionHandle:
             self.api.heartbeat(self.account_id)
             self.sync_dms()
             self.sync_comments(profile_data)
+            self.sync_outbound()
         except Exception as exc:  # noqa: BLE001
             name = type(exc).__name__
             state_name = "challenge_required" if "Challenge" in name else "two_factor_required" if "TwoFactor" in name else "reconnecting"
             log.warning("Instagram account %s failed: %s", self.account_id, name)
             self.api.state(self.account_id, pairing_state=state_name, status="offline", pending_json=json.dumps({"message": str(exc)[:240]}))
+
+    def sync_outbound(self) -> None:
+        assert self.adapter is not None
+        for job in self.api.claim_jobs(self.account_id, limit=5):
+            target = str(job.get("target_jid") or job.get("target_name") or "")
+            try:
+                if target.startswith("instagram:comment:"):
+                    parts = target.split(":", 3)
+                    if len(parts) != 4:
+                        raise ValueError("invalid Instagram comment target")
+                    media_id = parts[2]
+                    comment_id = parts[3].removeprefix("comment:")
+                    sent = self.adapter.reply_to_comment(
+                        media_id,
+                        str(job.get("body") or ""),
+                        int(comment_id),
+                    )
+                else:
+                    sent = self.adapter.send_text(target, str(job.get("body") or ""))
+                self.api.complete_job(job["id"], ok=bool(sent))
+            except Exception as exc:  # noqa: BLE001
+                self.api.complete_job(job["id"], ok=False, error=str(exc))
 
     def sync_dms(self) -> None:
         assert self.adapter is not None

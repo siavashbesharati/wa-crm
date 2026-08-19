@@ -40,3 +40,18 @@ class BidarApi:
 
     def event(self, account_id: str, payload: dict[str, Any]) -> Any:
         return self._request("POST", f"/internal/instagram/sessions/{account_id}/events", json=payload)
+
+    def claim_jobs(self, account_id: str, limit: int = 5) -> list[dict[str, Any]]:
+        data = self._request(
+            "POST",
+            "/internal/instagram/jobs/claim",
+            params={"account_id": account_id, "limit": limit},
+        )
+        return list((data or {}).get("jobs") or [])
+
+    def complete_job(self, job_id: str, *, ok: bool = True, error: str = "") -> Any:
+        return self._request(
+            "POST",
+            f"/internal/instagram/jobs/{job_id}/complete",
+            params={"ok": str(ok).lower(), "error": error[:1000]},
+        )

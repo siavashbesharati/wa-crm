@@ -50,8 +50,14 @@ class InstagramAdapter:
     def user_medias(self, user_id: str, amount: int = 20) -> list[Any]:
         return self.client.user_medias(user_id=user_id, amount=amount)
 
-    def send_text(self, thread_id: int, text: str) -> Any:
-        return self.client.direct_answer(thread_id=thread_id, text=text)
+    def send_text(self, target: str, text: str) -> Any:
+        if target.startswith("instagram:thread:"):
+            thread_id = int(target.rsplit(":", 1)[-1])
+            return self.client.direct_answer(thread_id=thread_id, text=text)
+        if target.startswith("instagram:user:"):
+            user_id = int(target.rsplit(":", 1)[-1])
+            return self.client.direct_send(text=text, user_ids=[user_id])
+        raise ValueError("unsupported Instagram text target")
 
     def media_comments(self, media_id: str, amount: int = 20) -> list[Any]:
         return self.client.media_comments(media_id=media_id, amount=amount)

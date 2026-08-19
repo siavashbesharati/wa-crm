@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import ChannelAccount, ChannelType, ConnectorRole, ConnectorSession, InstagramAuthState
+from app.models import (
+    ChannelAccount,
+    ChannelType,
+    ConnectorRole,
+    ConnectorSession,
+    InstagramAuthState,
+    OutboundJob,
+    OutboundStatus,
+)
 from app.schemas import InstagramAuthStateOut, InstagramEventIn
 from app.services.wa_crypto import decrypt_text, encrypt_text
 
@@ -156,6 +164,102 @@ def heartbeat(
     db.add(account)
     db.commit()
     return {"ok": True, "session_id": session.id}
+
+
+@router.post("/jobs/claim")
+def claim_jobs(
+    account_id: str = Query(...),
+    limit: int = Query(default=5, ge=1, le=20),
+    _: None = Depends(require_instagram_connector_key),
+    db: Session = Depends(get_db),
+):
+    account = _account(db, account_id)
+    stale_cutoff = datetime.utcnow() - timedelta(minutes=5)
+    stale = (
+        db.query(OutboundJob)
+        .filter(
+            OutboundJob.org_id == account.org_id,
+            OutboundJob.account_id == account_id,
+            OutboundJob.status == OutboundStatus.claimed,
+            OutboundJob.updated_at < stale_cutoff,
+        )
+        .all()
+    )
+    for job in stale:
+        job.status = OutboundStatus.queued
+        job.claimed_by_session_id = None
+        db.add(job)
+
+    device_id = f"instagram-{account_id}"
+    session = (
+        db.query(ConnectorSession)
+        .filter(
+            ConnectorSession.org_id == account.org_id,
+            ConnectorSession.account_id == account_id,
+            ConnectorSession.device_id == device_id,
+        )
+        .first()
+    )
+    if not session:
+        session = ConnectorSession(
+            org_id=account.org_id,
+            account_id=account_id,
+            device_id=device_id,
+            role=ConnectorRole.instagram,
+        )
+        db.add(session)
+        db.flush()
+    session.status = "online"
+    session.role = ConnectorRole.instagram
+    session.last_seen_at = datetime.utcnow()
+    jobs = (
+        db.query(OutboundJob)
+        .filter(
+            OutboundJob.org_id == account.org_id,
+            OutboundJob.account_id == account_id,
+            OutboundJob.status == OutboundStatus.queued,
+        )
+        .order_by(OutboundJob.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for job in jobs:
+        job.status = OutboundStatus.claimed
+        job.claimed_by_session_id = session.id
+        job.updated_at = datetime.utcnow()
+        result.append({
+            "id": job.id,
+            "account_id": job.account_id,
+            "lead_id": job.lead_id,
+            "target_name": job.target_name,
+            "target_jid": job.target_jid or "",
+            "body": job.body,
+            "sender_type": job.sender_type.value,
+            "status": job.status.value,
+        })
+    db.commit()
+    return {"jobs": result}
+
+
+@router.post("/jobs/{job_id}/complete")
+def complete_job(
+    job_id: str,
+    ok: bool = True,
+    error: str = "",
+    _: None = Depends(require_instagram_connector_key),
+    db: Session = Depends(get_db),
+):
+    job = db.get(OutboundJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    account = _account(db, job.account_id)
+    job.status = OutboundStatus.sent if ok else OutboundStatus.failed
+    job.error = (error or "")[:1000]
+    job.updated_at = datetime.utcnow()
+    db.add(job)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/sessions/{account_id}/events")
