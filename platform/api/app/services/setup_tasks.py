@@ -1,4 +1,4 @@
-"""Default post-onboarding tasks: connect WhatsApp and Divar."""
+"""Default post-onboarding tasks for supported communication channels."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.services.contact_tasks import next_board_order
 SETUP_WHATSAPP = "setup:whatsapp"
 SETUP_DIVAR = "setup:divar"
 SETUP_BALE = "setup:bale"
+SETUP_INSTAGRAM = "setup:instagram"
 
 SETUP_SPECS: tuple[dict[str, str], ...] = (
     {
@@ -31,6 +32,12 @@ SETUP_SPECS: tuple[dict[str, str], ...] = (
         "channel": "bale",
         "title": "اتصال بله",
         "message": "حساب بله را از صفحه کانال‌ها وصل کنید.",
+    },
+    {
+        "key": SETUP_INSTAGRAM,
+        "channel": "instagram",
+        "title": "اتصال اینستاگرام",
+        "message": "حساب اینستاگرام را از صفحه کانال‌ها وصل کنید.",
     },
 )
 
@@ -55,6 +62,8 @@ def _key_for_channel(channel: ChannelType | str) -> str | None:
         return SETUP_DIVAR
     if raw == "bale":
         return SETUP_BALE
+    if raw == "instagram":
+        return SETUP_INSTAGRAM
     return None
 
 

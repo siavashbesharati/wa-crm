@@ -69,7 +69,7 @@ type Message = {
   wa_message_id?: string;
 };
 
-type ChannelFilter = "all" | "whatsapp" | "divar" | "bale";
+type ChannelFilter = "all" | "whatsapp" | "divar" | "bale" | "instagram";
 
 type SuggestDraft = {
   reply: string;
@@ -485,7 +485,7 @@ export default function InboxPage() {
   const suggestedStage = (active?.lead.ai_meta?.suggested_stage || "").trim();
 
   return (
-    <Shell title="اینباکس" sub="گفتگوهای واتساپ، دیوار و بله در یک جا" search={q} onSearch={setQ}>
+    <Shell title="اینباکس" sub="گفتگوهای واتساپ، دیوار، بله و اینستاگرام در یک جا" search={q} onSearch={setQ}>
       {loading ? (
         <PageLoading variant="list" />
       ) : (
@@ -497,7 +497,8 @@ export default function InboxPage() {
                   ["all", "همه"],
                   ["whatsapp", "واتساپ"],
                   ["divar", "دیوار"],
-                  ["bale", "بله"]
+                  ["bale", "بله"],
+                  ["instagram", "اینستاگرام"]
                 ] as const
               ).map(([id, label]) => (
                 <button

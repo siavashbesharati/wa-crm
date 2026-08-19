@@ -168,7 +168,7 @@ export default function AutomationsPage() {
               </div>
               {editingId ? <Button variant="ghost" onClick={reset}>انصراف</Button> : null}
             </div>
-            {accounts.length === 0 ? <EmptyState title="اکانت اینستاگرام ندارید" body="ابتدا از صفحه کانال‌ها یک حساب اینستاگرام وصل کنید." /> : (
+            {accounts.length === 0 ? <EmptyState title="اکانت اینستاگرام ندارید" text="ابتدا از صفحه کانال‌ها یک حساب اینستاگرام وصل کنید." /> : (
               <div className="form-stack">
                 <label>نام قانون<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
                 <label>اکانت اینستاگرام<select value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })}>{accounts.map((account) => <option key={account.id} value={account.id}>{accountName(account)}</option>)}</select></label>
@@ -184,7 +184,7 @@ export default function AutomationsPage() {
           </Card>
           <Card>
             <div className="card-head"><div><h2>قوانین فعال</h2><p className="muted">قوانین به ترتیب اولویت بررسی می‌شوند.</p></div></div>
-            {rules.length === 0 ? <EmptyState title="هنوز قانونی ساخته نشده" body="اولین پاسخ خودکار کامنت را از فرم کنار صفحه بسازید." /> : (
+            {rules.length === 0 ? <EmptyState title="هنوز قانونی ساخته نشده" text="اولین پاسخ خودکار کامنت را از فرم کنار صفحه بسازید." /> : (
               <div className="list-stack">
                 {rules.map((rule) => (
                   <div className="list-row" key={rule.id}>

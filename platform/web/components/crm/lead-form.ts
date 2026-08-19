@@ -53,7 +53,7 @@ export function toEditForm(l: Lead): EditForm {
 }
 
 export function sortLeadsForBoard(leads: Lead[]): Lead[] {
-  const stageRank = new Map(STAGES.map((s, i) => [s, i]));
+  const stageRank = new Map<string, number>(STAGES.map((s, i) => [s, i]));
   return [...leads].sort((a, b) => {
     const sa = stageRank.get(a.stage) ?? STAGES.length;
     const sb = stageRank.get(b.stage) ?? STAGES.length;

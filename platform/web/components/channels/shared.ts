@@ -20,10 +20,10 @@ const PAIRING_STATE_FA: Record<string, string> = {
   reconnecting: "در حال اتصال مجدد",
   auth_required: "نیاز به ورود دوباره",
   connecting: "در حال اتصال",
-  error: "خطا"
-  ,authenticating: "در حال ورود"
-  ,two_factor_required: "نیاز به کد دومرحله‌ای"
-  ,challenge_required: "نیاز به تأیید اینستاگرام"
+  error: "خطا",
+  authenticating: "در حال ورود",
+  two_factor_required: "نیاز به کد دومرحله‌ای",
+  challenge_required: "نیاز به تأیید اینستاگرام"
 };
 
 const ACCOUNT_STATUS_FA: Record<string, string> = {
@@ -55,7 +55,7 @@ export function isAccountOn(status: string, pairing?: string) {
   if (s === "offline" || s === "disconnected") return false;
   if (s === "online" || s === "connected" || s === "ready" || s === "on") return true;
   const p = (pairing || "").toLowerCase();
-  if (p === "reconnecting" || p === "disconnected" || p === "qr_pending" || p === "otp_pending" || p === "code_pending" || p === "auth_required") {
+  if (p === "reconnecting" || p === "disconnected" || p === "qr_pending" || p === "otp_pending" || p === "code_pending" || p === "auth_required" || p === "authenticating" || p === "two_factor_required" || p === "challenge_required") {
     return false;
   }
   return p === "connected";
@@ -118,6 +118,6 @@ export function isAccountNeedsReconnect(a: ChannelAccount) {
   if (isAccountOn(a.status, a.pairing_state)) return false;
   const p = (a.pairing_state || "").toLowerCase();
   // Intentional pairing flows — don't nag with the global banner
-  if (p === "qr_pending" || p === "otp_pending" || p === "code_pending") return false;
+  if (p === "qr_pending" || p === "otp_pending" || p === "code_pending" || p === "authenticating" || p === "two_factor_required" || p === "challenge_required") return false;
   return true;
 }

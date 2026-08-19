@@ -36,19 +36,20 @@ export function PersianDateField({ value, onChange, label = "سررسید" }: Pr
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
+    const input = el;
 
     function emit() {
-      const raw = el.value.trim();
+      const raw = input.value.trim();
       onChangeRef.current(raw ? jalaliSlashToIso(raw) : "");
     }
 
-    el.addEventListener("jdp:change", emit);
-    el.addEventListener("change", emit);
-    el.addEventListener("input", emit);
+    input.addEventListener("jdp:change", emit);
+    input.addEventListener("change", emit);
+    input.addEventListener("input", emit);
     return () => {
-      el.removeEventListener("jdp:change", emit);
-      el.removeEventListener("change", emit);
-      el.removeEventListener("input", emit);
+      input.removeEventListener("jdp:change", emit);
+      input.removeEventListener("change", emit);
+      input.removeEventListener("input", emit);
       window.jalaliDatepicker?.hide();
     };
   }, []);

@@ -19,6 +19,10 @@ def upgrade() -> None:
     inspector = sa.inspect(bind)
     tables = set(inspector.get_table_names())
 
+    if bind.dialect.name == "postgresql":
+        op.execute("ALTER TYPE channeltype ADD VALUE IF NOT EXISTS 'instagram'")
+        op.execute("ALTER TYPE connectorrole ADD VALUE IF NOT EXISTS 'instagram'")
+
     if "instagram_auth_states" not in tables:
         op.create_table(
             "instagram_auth_states",

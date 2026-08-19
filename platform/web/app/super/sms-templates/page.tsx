@@ -25,7 +25,16 @@ type SmsTemplate = {
   is_default: boolean;
 };
 
-const emptyForm = () => ({
+type SmsForm = {
+  name: string;
+  template_id: string | number;
+  purpose: string;
+  is_active: boolean;
+  is_default: boolean;
+  parameters: SmsParam[];
+};
+
+const emptyForm = (): SmsForm => ({
   name: "",
   template_id: "" as string | number,
   purpose: "otp",
@@ -40,7 +49,7 @@ export default function SuperSmsTemplatesPage() {
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<SmsTemplate[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState<SmsForm>(emptyForm());
 
   const load = useCallback(async () => {
     setLoading(true);
