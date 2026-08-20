@@ -11,7 +11,10 @@ from config import POLL_SECONDS
 from session import SessionHandle
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [instagram] %(levelname)s %(name)s %(message)s",
+)
 log = logging.getLogger("instagram-connector")
 
 

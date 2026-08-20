@@ -22,7 +22,10 @@ import {
 import pino from "pino";
 import { api } from "./api-client.js";
 
-const log = pino({ level: process.env.LOG_LEVEL || "info" });
+const log = pino({
+  level: process.env.LOG_LEVEL || "info",
+  base: { source: "whatsapp" },
+});
 
 type KeyStore = {
   [T in keyof SignalDataTypeMap]?: { [id: string]: SignalDataTypeMap[T] };

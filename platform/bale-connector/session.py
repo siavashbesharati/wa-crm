@@ -65,7 +65,7 @@ class SessionHandle:
                 await self._connect_and_listen()
                 attempt = 0
             except AuthRequired:
-                log.warning("[Bale] Invalid/expired session account=%s — auth required", self.account_id)
+                log.warning("Invalid/expired session account=%s — auth required", self.account_id)
                 try:
                     api.put_pair_state(
                         self.account_id,
@@ -79,7 +79,7 @@ class SessionHandle:
                 raise
             except Exception as exc:  # noqa: BLE001
                 if is_auth_failure(exc):
-                    log.warning("[Bale] Session rejected account=%s", self.account_id)
+                    log.warning("Session rejected account=%s", self.account_id)
                     try:
                         api.put_pair_state(
                             self.account_id,
@@ -92,7 +92,7 @@ class SessionHandle:
                 delay = RECONNECT_BACKOFF[min(attempt, len(RECONNECT_BACKOFF) - 1)]
                 attempt += 1
                 log.warning(
-                    "[Bale] Disconnected account=%s — reconnecting in %ss (%s)",
+                    "Disconnected account=%s — reconnecting in %ss (%s)",
                     self.account_id,
                     delay,
                     type(exc).__name__,
@@ -114,7 +114,7 @@ class SessionHandle:
                 return
             delay = RECONNECT_BACKOFF[min(attempt, len(RECONNECT_BACKOFF) - 1)]
             attempt += 1
-            log.info("[Bale] Reconnecting account=%s in %ss", self.account_id, delay)
+            log.info("Reconnecting account=%s in %ss", self.account_id, delay)
             try:
                 api.put_pair_state(
                     self.account_id,
@@ -146,14 +146,14 @@ class SessionHandle:
 
         token = str(blob["access_token"])
         client = BaleClient(token)
-        log.info("[Bale] Connecting account=%s", self.account_id)
+        log.info("Connecting account=%s", self.account_id)
         await client.connect()
-        log.info("[Bale] Connected account=%s", self.account_id)
+        log.info("Connected account=%s", self.account_id)
 
         me = await client.get_me()
         self._me_id = int(getattr(me.peer, "id", 0) or client.me_id or blob.get("user_id") or 0)
         title = str(getattr(me, "title", "") or blob.get("user_name") or "")
-        log.info("[Bale] Account loaded id=%s name=%s", self._me_id, title or "—")
+        log.info("Account loaded id=%s name=%s", self._me_id, title or "—")
 
         self.connected = True
         try:
@@ -172,14 +172,14 @@ class SessionHandle:
             await self._handle_event(client, event)
 
         client.add_event_handler(on_new_message, events.NewMessage)
-        log.info("[Bale] Listening account=%s", self.account_id)
+        log.info("Listening account=%s", self.account_id)
 
         if not self._synced:
             try:
                 await self._initial_sync(client)
                 self._synced = True
             except Exception as exc:  # noqa: BLE001
-                log.warning("[Bale] Dialog/message sync failed account=%s: %s", self.account_id, type(exc).__name__)
+                log.warning("Dialog/message sync failed account=%s: %s", self.account_id, type(exc).__name__)
 
         outbound = asyncio.create_task(self._outbound_loop(client, Peer), name=f"bale-out-{self.account_id}")
         heartbeat = asyncio.create_task(self._heartbeat_loop(), name=f"bale-hb-{self.account_id}")
@@ -202,7 +202,7 @@ class SessionHandle:
                 await client.close()
             except Exception:  # noqa: BLE001
                 pass
-            log.info("[Bale] Disconnected account=%s", self.account_id)
+            log.info("Disconnected account=%s", self.account_id)
 
     async def _resolve_profile(self, client: Any, peer: Any) -> tuple[str, str, str]:
         """Return (title, username, phone) for a Bale peer. Cached per session."""
@@ -251,7 +251,7 @@ class SessionHandle:
                     username = str(getattr(info, "username", None) or "")
                     phone = phone_from_contact_records(list(getattr(resp.fullUser, "contactInfo", []) or []))
             except Exception as exc:  # noqa: BLE001
-                log.debug("[Bale] full user profile %s: %s", key, type(exc).__name__)
+                log.debug("full user profile %s: %s", key, type(exc).__name__)
                 try:
                     from bale.peer import Peer
 
@@ -273,11 +273,11 @@ class SessionHandle:
         return profile
 
     async def _initial_sync(self, client: Any) -> None:
-        log.info("[Bale] Dialog sync started account=%s", self.account_id)
+        log.info("Dialog sync started account=%s", self.account_id)
         try:
             dialogs = await client.get_dialogs(limit=FIRST_SYNC_DIALOGS)
         except Exception as exc:  # noqa: BLE001
-            log.warning("[Bale] get_dialogs failed: %s", type(exc).__name__)
+            log.warning("get_dialogs failed: %s", type(exc).__name__)
             return
 
         dirty = False
@@ -299,7 +299,7 @@ class SessionHandle:
             try:
                 messages = await client.get_messages(peer, limit=FIRST_SYNC_LIMIT)
             except Exception as exc:  # noqa: BLE001
-                log.debug("[Bale] history %s failed: %s", key, type(exc).__name__)
+                log.debug("history %s failed: %s", key, type(exc).__name__)
                 continue
 
             last_seen = self._cursors.get(key, "")
@@ -332,7 +332,7 @@ class SessionHandle:
                 try:
                     api.ingest(self.account_id, payload)
                 except Exception as exc:  # noqa: BLE001
-                    log.warning("[Bale] ingest failed: %s", type(exc).__name__)
+                    log.warning("ingest failed: %s", type(exc).__name__)
 
             # Already-synced chats: re-ingest latest so name/phone heal in CRM
             if already and not incoming and messages:
@@ -350,7 +350,7 @@ class SessionHandle:
                     try:
                         api.ingest(self.account_id, payload)
                     except Exception as exc:  # noqa: BLE001
-                        log.debug("[Bale] name refresh ingest: %s", type(exc).__name__)
+                        log.debug("name refresh ingest: %s", type(exc).__name__)
 
             if messages:
                 top = str(int(getattr(messages[0], "rid", 0) or 0))
@@ -366,7 +366,7 @@ class SessionHandle:
                 api.put_cursors(self.account_id, self._cursors)
             except Exception:  # noqa: BLE001
                 pass
-        log.info("[Bale] Dialog sync completed account=%s dialogs=%s", self.account_id, len(dialogs))
+        log.info("Dialog sync completed account=%s dialogs=%s", self.account_id, len(dialogs))
 
     async def _handle_event(self, client: Any, event: Any) -> None:
         title = ""
@@ -388,11 +388,11 @@ class SessionHandle:
         )
         if not payload:
             return
-        log.info("[Bale] Incoming message received account=%s", self.account_id)
+        log.info("Incoming message received account=%s", self.account_id)
         try:
             api.ingest(self.account_id, payload)
         except Exception as exc:  # noqa: BLE001
-            log.warning("[Bale] ingest failed: %s", type(exc).__name__)
+            log.warning("ingest failed: %s", type(exc).__name__)
             return
         ext = payload.get("external_chat_id") or ""
         mid = str(payload.get("external_message_id") or "").rsplit(":", 1)[-1]
@@ -419,7 +419,7 @@ class SessionHandle:
             try:
                 await self._claim_and_send(client, peer_cls)
             except Exception as exc:  # noqa: BLE001
-                log.warning("[Bale] outbound %s: %s", self.account_id, type(exc).__name__)
+                log.warning("outbound %s: %s", self.account_id, type(exc).__name__)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=POLL_OUTBOUND_SEC)
             except asyncio.TimeoutError:
@@ -429,7 +429,7 @@ class SessionHandle:
         try:
             jobs = await asyncio.to_thread(api.claim_jobs, self.account_id, 5)
         except Exception as exc:  # noqa: BLE001
-            log.warning("[Bale] claim failed: %s", type(exc).__name__)
+            log.warning("claim failed: %s", type(exc).__name__)
             return
         for job in jobs:
             if self._stop.is_set():
@@ -457,7 +457,7 @@ class SessionHandle:
                 rid = random.getrandbits(63)
                 await client.send_message(ref, body, rid=rid)
                 api.complete_job(job_id, ok=True)
-                log.info("[Bale] Message sent account=%s", self.account_id)
+                log.info("Message sent account=%s", self.account_id)
                 peer_type = 1 if kind == "user" else 2
                 ext = peer_key(peer_type, pid)
                 self._cursors[ext] = str(rid)
@@ -466,7 +466,7 @@ class SessionHandle:
                 except Exception:  # noqa: BLE001
                     pass
             except Exception as exc:  # noqa: BLE001
-                log.warning("[Bale] send failed job=%s: %s", job_id, type(exc).__name__)
+                log.warning("send failed job=%s: %s", job_id, type(exc).__name__)
                 try:
                     api.complete_job(job_id, ok=False, error=type(exc).__name__)
                 except Exception:  # noqa: BLE001

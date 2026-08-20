@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+import logging
+
 from app.services.stdio_utf8 import configure_stdio
 
 configure_stdio()
@@ -38,6 +40,33 @@ from app.routers import (
 from app.services.sse_hub import sse_hub
 
 settings = get_settings()
+
+
+class _AccessSourceFilter(logging.Filter):
+    """Prefix Uvicorn access logs with the channel identified by their path."""
+
+    _SOURCES = (
+        ("/api/internal/instagram/", "instagram"),
+        ("/api/internal/divar/", "divar"),
+        ("/api/internal/bale/", "bale"),
+        ("/api/internal/wa/", "whatsapp"),
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        path = ""
+        if isinstance(record.args, tuple) and len(record.args) >= 3:
+            path = str(record.args[2] or "")
+        source = next(
+            (name for prefix, name in self._SOURCES if path.startswith(prefix)),
+            "api",
+        )
+        message = record.getMessage()
+        if not message.startswith("["):
+            record.msg = f"[{source}] {record.msg}"
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_AccessSourceFilter())
 
 
 @asynccontextmanager

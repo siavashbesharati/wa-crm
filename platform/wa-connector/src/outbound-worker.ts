@@ -2,7 +2,10 @@ import pino from "pino";
 import { api, type ClaimedJob } from "./api-client.js";
 import type { SessionHandle } from "./session.js";
 
-const log = pino({ level: process.env.LOG_LEVEL || "info" });
+const log = pino({
+  level: process.env.LOG_LEVEL || "info",
+  base: { source: "whatsapp" },
+});
 
 /** Last successful/attempted outbound per account — used for random inter-send gaps. */
 const lastOutboundAt = new Map<string, number>();

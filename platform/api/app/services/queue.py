@@ -50,14 +50,20 @@ class FileQueue:
         with self._lock:
             if not path.exists():
                 return None
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = path.read_bytes().splitlines()
             if not lines:
                 return None
             first, rest = lines[0], lines[1:]
-            path.write_text("\n".join(rest) + ("\n" if rest else ""), encoding="utf-8")
+            path.write_bytes(b"\n".join(rest) + (b"\n" if rest else b""))
             try:
-                return json.loads(first)
+                decoded = first.decode("utf-8")
+            except UnicodeDecodeError:
+                decoded = first.decode("utf-8", errors="replace")
+                logger.warning("Invalid UTF-8 in %s queue item; replacement characters used", name)
+            try:
+                return json.loads(decoded)
             except json.JSONDecodeError:
+                logger.warning("Invalid JSON in %s queue item; item discarded", name)
                 return None
 
 

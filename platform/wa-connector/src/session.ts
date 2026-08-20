@@ -15,7 +15,10 @@ import { mapBaileysMessage } from "./inbound-mapper.js";
 import { maybeTranscribeAudio } from "./media.js";
 import { phoneFromConnectedUser, phoneFromJid, preferPnJid, isLidJid, isPnJid, stripDevice } from "./jid.js";
 
-const log = pino({ level: process.env.LOG_LEVEL || "info" });
+const log = pino({
+  level: process.env.LOG_LEVEL || "info",
+  base: { source: "whatsapp" },
+});
 
 export type SessionHandle = {
   accountId: string;

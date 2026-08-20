@@ -19,7 +19,7 @@ from session import SessionHandle, start_session
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    format="%(asctime)s [divar] %(levelname)s %(name)s %(message)s",
 )
 log = logging.getLogger("divar-connector")
 

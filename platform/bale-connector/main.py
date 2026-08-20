@@ -14,7 +14,7 @@ from session import SessionHandle, start_session
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    format="%(asctime)s [bale] %(levelname)s %(name)s %(message)s",
 )
 log = logging.getLogger("bale-connector")
 
@@ -40,7 +40,7 @@ async def ensure_session(info: dict) -> None:
     if state in ("disconnected", "otp_pending", "auth_required"):
         return
     if state in ("connected", "reconnecting"):
-        log.info("[Bale] Session restore account=%s", account_id)
+        log.info("Session restore account=%s", account_id)
         sessions[account_id] = start_session(account_id, _loop_or_raise())
 
 
@@ -48,7 +48,7 @@ async def stop_session(account_id: str) -> None:
     h = sessions.pop(account_id, None)
     if h:
         await h.stop()
-        log.info("[Bale] stopped session %s", account_id)
+        log.info("stopped session %s", account_id)
     _last_pair.pop(account_id, None)
 
 

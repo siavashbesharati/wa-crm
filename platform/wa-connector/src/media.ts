@@ -1,6 +1,9 @@
 import pino from "pino";
 
-const log = pino({ level: process.env.LOG_LEVEL || "info" });
+const log = pino({
+  level: process.env.LOG_LEVEL || "info",
+  base: { source: "whatsapp" },
+});
 
 /**
  * Optional voice transcription via OpenAI-compatible Whisper endpoint.

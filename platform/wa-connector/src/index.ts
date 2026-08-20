@@ -5,7 +5,10 @@ import { config } from "./config.js";
 import { claimAndSend } from "./outbound-worker.js";
 import { startSession, type SessionHandle } from "./session.js";
 
-const log = pino({ level: process.env.LOG_LEVEL || "info" });
+const log = pino({
+  level: process.env.LOG_LEVEL || "info",
+  base: { source: "whatsapp" },
+});
 
 const sessions = new Map<string, SessionHandle>();
 const lastPairState = new Map<string, string>();
