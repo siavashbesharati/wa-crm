@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import logging
 from datetime import datetime, timezone
 
 from app.services.stdio_utf8 import safe_print
@@ -12,6 +13,7 @@ _job_traces: dict[str, str] = {}
 _trace_log: dict[str, list[dict]] = {}
 _MAX_EVENTS_PER_TRACE = 80
 _MAX_TRACES = 300
+_logger = logging.getLogger("reply-trace")
 
 
 def _now_iso() -> str:
@@ -41,7 +43,18 @@ def trace_event(trace_id: str | None, stage: str, **fields: object) -> None:
         if value is not None and str(value) != ""
     )
     suffix = f" {extra}" if extra else ""
-    safe_print(f"[reply-trace] {_now_iso()} +{elapsed_ms}ms {tid or '-'} {stage}{suffix}")
+    message = f"[reply-trace] {_now_iso()} +{elapsed_ms}ms {tid or '-'} {stage}{suffix}"
+    safe_print(message)
+    _logger.info(
+        message,
+        extra={
+            "service": "api",
+            "trace_id": tid or "-",
+            "stage": stage,
+            "elapsed_ms": elapsed_ms,
+            **{key: value for key, value in fields.items() if value is not None and str(value) != ""},
+        },
+    )
     if tid:
         log = _trace_log.setdefault(tid, [])
         log.append(

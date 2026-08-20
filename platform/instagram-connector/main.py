@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 
 from api_client import BidarApi
 from config import POLL_SECONDS
 from session import SessionHandle
+from app.services.seq_logging import configure_seq_logging
 
 
 logging.basicConfig(
@@ -16,6 +21,7 @@ logging.basicConfig(
     format="%(asctime)s [instagram] %(levelname)s %(name)s %(message)s",
 )
 log = logging.getLogger("instagram-connector")
+configure_seq_logging("instagram")
 
 
 def main() -> None:

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+
 from api_client import api
+from app.services.seq_logging import configure_seq_logging
 from config import (
     FORCE_ACCOUNT_ID,
     HEALTH_PORT,
@@ -22,6 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [divar] %(levelname)s %(name)s %(message)s",
 )
 log = logging.getLogger("divar-connector")
+configure_seq_logging("divar")
 
 sessions: dict[str, SessionHandle] = {}
 _last_pair: dict[str, str] = {}

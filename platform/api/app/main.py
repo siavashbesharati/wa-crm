@@ -38,8 +38,10 @@ from app.routers import (
     instagram_pair,
 )
 from app.services.sse_hub import sse_hub
+from app.services.seq_logging import configure_seq_logging
 
 settings = get_settings()
+configure_seq_logging("api")
 
 
 class _AccessSourceFilter(logging.Filter):

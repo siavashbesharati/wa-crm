@@ -5,10 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+
 from api_client import api
+from app.services.seq_logging import configure_seq_logging
 from config import FORCE_ACCOUNT_ID, HEALTH_PORT, POLL_SESSIONS_SEC
 from session import SessionHandle, start_session
 
@@ -17,6 +22,7 @@ logging.basicConfig(
     format="%(asctime)s [bale] %(levelname)s %(name)s %(message)s",
 )
 log = logging.getLogger("bale-connector")
+configure_seq_logging("bale")
 
 sessions: dict[str, SessionHandle] = {}
 _last_pair: dict[str, str] = {}
