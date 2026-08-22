@@ -198,6 +198,9 @@ class InstagramAuthStateIn(BaseModel):
 
 class InstagramAuthStateOut(BaseModel):
     account_id: str
+    session_id: str = ""
+    username: str = ""
+    user_id: str = ""
     cursors_json: str = ""
 
 

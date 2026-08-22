@@ -29,7 +29,7 @@ def normalize_to_jid(value: str | None) -> str:
     raw = (value or "").strip()
     if not raw:
         return ""
-    if raw.startswith("bale:") or raw.startswith("divar:"):
+    if raw.startswith("bale:") or raw.startswith("divar:") or raw.startswith("instagram:"):
         return raw
     if _is_wa_jid(raw):
         # Legacy @c.us → @s.whatsapp.net
@@ -54,13 +54,27 @@ def _looks_like_display_name(value: str) -> bool:
 def resolve_target_jid(lead: Lead | None, link: LeadAccountLink | None = None) -> str:
     """Prefer stable chat ids; never return a display name as JID.
 
-    Also returns Divar conversation ids and Bale peer keys (`bale:user:…` / `bale:group:…`).
+    Also returns Divar conversation ids, Bale peer keys (`bale:user:…` / `bale:group:…`)
+    and Instagram thread ids (`instagram:thread:…`).
     """
     from app.services.bale_identity import (
         heal_bale_lead,
         is_bale_channel,
         reconstruct_bale_key,
     )
+
+    if (
+        lead is not None
+        and str(getattr(lead, "source_channel", "") or "") == "instagram"
+    ):
+        for c in (
+            (link.external_chat_id if link else None),
+            getattr(lead, "external_chat_id", None),
+        ):
+            t = (c or "").strip()
+            if t and t.lstrip("0").isdigit():
+                return f"instagram:thread:{t}"
+        return ""
 
     if lead is not None and is_bale_channel(getattr(lead, "source_channel", None), getattr(lead, "external_chat_id", None)):
         heal_bale_lead(lead)

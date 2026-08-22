@@ -18,6 +18,7 @@ def process_message_ingest(
     allow_baileys_extension: bool = False,
     allow_divar_api: bool = False,
     allow_bale_api: bool = False,
+    allow_instagram_api: bool = False,
 ) -> MessageIngestOut:
     """
     Persist inbound/outbound channel messages and run bot/AI post-handlers.
@@ -58,6 +59,12 @@ def process_message_ingest(
         raise HTTPException(
             status_code=409,
             detail="این اکانت بله روی کانکتور سرور است؛ ingest فقط از bale-connector مجاز است",
+        )
+
+    if not allow_instagram_api and connector == "instagram_api" and channel == "instagram":
+        raise HTTPException(
+            status_code=409,
+            detail="این اکانت اینستاگرام روی کانکتور سرور است؛ ingest فقط از instagram-connector مجاز است",
         )
 
     return messages_router.process_message_ingest(

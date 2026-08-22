@@ -12,6 +12,7 @@
     "wa:dev": "cd platform/wa-connector && npm run dev",
     "divar:dev": "cd platform/divar-connector && python main.py",
     "bale:dev": "cd platform/bale-connector && python main.py",
+    "instagram:dev": "cd platform/instagram-connector && python main.py",
     "api:seed": "cd platform/api && python scripts/seed_demo.py"
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Start API + Web + Workers + WA/Divar/Bale connectors.
+ * Start API + Web + Workers + WA/Divar/Bale/Instagram connectors.
  *
  * Usage (repo root):
  *   node scripts/start-all.mjs
@@ -7,6 +7,7 @@
  *   node scripts/start-all.mjs --no-wa
  *   node scripts/start-all.mjs --no-divar
  *   node scripts/start-all.mjs --no-bale
+ *   node scripts/start-all.mjs --no-instagram
  *   node scripts/start-all.mjs --seed
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -22,6 +23,7 @@ const noWorkers = args.has("--no-workers");
 const noWa = args.has("--no-wa");
 const noDivar = args.has("--no-divar");
 const noBale = args.has("--no-bale");
+const noInstagram = args.has("--no-instagram");
 const seed = args.has("--seed");
 
 const apiDir = join(root, "platform", "api");
@@ -29,6 +31,7 @@ const webDir = join(root, "platform", "web");
 const waDir = join(root, "platform", "wa-connector");
 const divarDir = join(root, "platform", "divar-connector");
 const baleDir = join(root, "platform", "bale-connector");
+const instagramDir = join(root, "platform", "instagram-connector");
 const children = [];
 
 function log(msg) {
@@ -141,6 +144,17 @@ async function main() {
     }
   }
 
+  if (!noInstagram) {
+    log("Ensure instagram-connector deps");
+    try {
+      runSync("python", ["-m", "pip", "install", "-q", "-r", "requirements.txt"], instagramDir, {
+        shell: true
+      });
+    } catch {
+      console.warn("instagram-connector pip install skipped/failed");
+    }
+  }
+
   start("api", "python", ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"], apiDir);
   start("web", "npm", ["run", "dev"], webDir);
   if (!noWorkers) {
@@ -155,17 +169,21 @@ async function main() {
   if (!noBale) {
     start("bale-connector", "python", ["main.py"], baleDir);
   }
+  if (!noInstagram) {
+    start("instagram-connector", "python", ["main.py"], instagramDir);
+  }
 
   console.log(`
 --------------------------------------------------
  Platform running
-  API:        http://localhost:8000/api/health
-  Business:   http://localhost:3000/login
-  Super:      http://localhost:3000/super/login
-  WA conn:    http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
-  Divar conn: http://127.0.0.1:8091/health${noDivar ? " (skipped)" : ""}
-  Bale conn:  http://127.0.0.1:8092/health${noBale ? " (skipped)" : ""}
- Press Ctrl+C to stop all
+   API:        http://localhost:8000/api/health
+   Business:   http://localhost:3000/login
+   Super:      http://localhost:3000/super/login
+   WA conn:    http://127.0.0.1:8090/health${noWa ? " (skipped)" : ""}
+   Divar conn: http://127.0.0.1:8091/health${noDivar ? " (skipped)" : ""}
+   Bale conn:  http://127.0.0.1:8092/health${noBale ? " (skipped)" : ""}
+   IG conn:    http://127.0.0.1:8093/health${noInstagram ? " (skipped)" : ""}
+  Press Ctrl+C to stop all
 --------------------------------------------------
 `);
 

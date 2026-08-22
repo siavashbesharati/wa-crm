@@ -19,6 +19,7 @@ _ext_zip_stage/
 .env.*
 !.env.example
 !.env.local.example
+platform/api/.local/
 platform/api/wa_crm.db
 platform/api/**/__pycache__/
 platform/web/.next/
