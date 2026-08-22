@@ -7,6 +7,27 @@ class InstagramAuthError(Exception):
     """Raised when Instagram rejects the supplied session ID."""
 
 
+class InstagramRateLimited(Exception):
+    """Raised when Instagram throttles us (HTTP 429) — session may still be valid."""
+
+
+_RATE_LIMIT_NEEDLES = (
+    "429",
+    "too many requests",
+    "rate limit",
+    "please wait a few minutes",
+)
+
+
+def is_rate_limited(exc: BaseException) -> bool:
+    name = type(exc).__name__.lower()
+    msg = str(exc or "").lower()
+    for needle in _RATE_LIMIT_NEEDLES:
+        if needle in name or needle in msg:
+            return True
+    return False
+
+
 async def validate_session(session_id: str) -> tuple[str, str]:
     """Authenticate with aiograpi and return public account metadata."""
     if not session_id:
@@ -33,4 +54,6 @@ async def validate_session(session_id: str) -> tuple[str, str]:
     except InstagramAuthError:
         raise
     except Exception as exc:  # noqa: BLE001
+        if is_rate_limited(exc):
+            raise InstagramRateLimited(str(exc)) from exc
         raise InstagramAuthError("Instagram rejected session") from exc

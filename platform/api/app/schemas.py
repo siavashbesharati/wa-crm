@@ -193,6 +193,7 @@ class InstagramPairStatusOut(BaseModel):
 
 class InstagramAuthStateIn(BaseModel):
     session_id: str = ""
+    client_settings_json: str = ""
     cursors_json: str = ""
 
 
@@ -201,6 +202,7 @@ class InstagramAuthStateOut(BaseModel):
     session_id: str = ""
     username: str = ""
     user_id: str = ""
+    client_settings_json: str = ""
     cursors_json: str = ""
 
 

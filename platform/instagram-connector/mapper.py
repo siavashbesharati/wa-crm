@@ -20,15 +20,31 @@ _AUTH_NEEDLES = (
     "sessionid",
     "invalid session",
     "not logged in",
-    "please wait",
 )
+
+_RATE_LIMIT_NEEDLES = ("429", "too many requests", "rate limit")
+
+
+def is_rate_limited(exc: BaseException) -> bool:
+    name = type(exc).__name__.lower()
+    msg = str(exc or "").lower()
+    for needle in _RATE_LIMIT_NEEDLES:
+        if needle in name or needle in msg:
+            return True
+    return False
 
 
 class AuthRequired(Exception):
     """Stored Instagram session is missing or rejected by the server."""
 
 
+class RateLimited(Exception):
+    """Instagram throttled us (429) — session may still be valid; retry later."""
+
+
 def is_auth_failure(exc: BaseException) -> bool:
+    if is_rate_limited(exc):
+        return False
     name = type(exc).__name__.lower()
     msg = str(exc or "").lower()
     for needle in _AUTH_NEEDLES:

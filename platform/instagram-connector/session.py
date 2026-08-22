@@ -7,11 +7,13 @@ import logging
 from typing import Any
 
 from api_client import api
-from config import HEARTBEAT_SEC, POLL_OUTBOUND_SEC, RECONNECT_BACKOFF
+from config import HEARTBEAT_SEC, POLL_OUTBOUND_SEC, RATE_LIMIT_COOLDOWN_SEC, RECONNECT_BACKOFF
 from mapper import (
     AuthRequired,
+    RateLimited,
     display_name,
     is_auth_failure,
+    is_rate_limited,
     map_realtime_dm,
     parse_thread_target,
 )
@@ -54,6 +56,27 @@ class SessionHandle:
             try:
                 await self._connect_and_listen()
                 attempt = 0
+            except RateLimited:
+                # Instagram throttled us — back off for a fixed cooldown, then retry.
+                log.warning(
+                    "[Instagram] Rate limited account=%s — cooling down %ss",
+                    self.account_id,
+                    RATE_LIMIT_COOLDOWN_SEC,
+                )
+                try:
+                    api.put_pair_state(
+                        self.account_id,
+                        pairing_state="reconnecting",
+                        status="offline",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                attempt = 0
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=RATE_LIMIT_COOLDOWN_SEC)
+                except asyncio.TimeoutError:
+                    continue
+                return
             except AuthRequired:
                 log.warning("[Instagram] Invalid/expired session account=%s — auth required", self.account_id)
                 try:
@@ -106,6 +129,8 @@ class SessionHandle:
                 return
 
     async def _connect_and_listen(self) -> None:
+        import json as _json
+
         from aiograpi import Client
 
         auth = api.get_auth(self.account_id)
@@ -118,11 +143,39 @@ class SessionHandle:
 
         client = Client()
         self._client = client
+
+        # Restore saved device/cookie settings so Instagram sees the same
+        # device fingerprint as previous logins (fewer challenges, less 429).
+        saved_settings_json = (auth.get("client_settings_json") or "").strip()
+        if saved_settings_json:
+            try:
+                client.set_settings(_json.loads(saved_settings_json))
+                log.info("[Instagram] Restored client settings account=%s", self.account_id)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[Instagram] Could not restore client settings account=%s (%s)",
+                    self.account_id,
+                    type(exc).__name__,
+                )
+
         log.info("[Instagram] Authenticating account=%s", self.account_id)
-        await client.login_by_sessionid(session_id)
+        try:
+            await client.login_by_sessionid(session_id)
+        except Exception as exc:  # noqa: BLE001
+            if is_rate_limited(exc):
+                raise RateLimited(str(exc)) from exc
+            raise
         self._me_id = getattr(client, "user_id", None) or self._me_id
         if not self._username:
             self._username = str(getattr(client, "username", "") or "")
+
+        # Persist updated client settings for the next reconnect.
+        try:
+            api.put_auth_settings(self.account_id, client.get_settings())
+            log.info("[Instagram] Saved client settings account=%s", self.account_id)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("save client settings: %s", type(exc).__name__)
+
         log.info(
             "[Instagram] Authenticated %s user=%s account=%s",
             display_name(self._username, self._me_id),
@@ -131,7 +184,12 @@ class SessionHandle:
         )
 
         log.info("[Instagram] Realtime connecting account=%s", self.account_id)
-        await client.realtime_connect()
+        try:
+            await client.realtime_connect()
+        except Exception as exc:  # noqa: BLE001
+            if is_rate_limited(exc):
+                raise RateLimited(str(exc)) from exc
+            raise
         log.info("[Instagram] Realtime connected account=%s", self.account_id)
 
         # Handlers must be registered AFTER realtime_connect() in this aiograpi version.

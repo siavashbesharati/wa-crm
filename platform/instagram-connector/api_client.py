@@ -32,6 +32,17 @@ class ApiClient:
         r.raise_for_status()
         return r.json()
 
+    def put_auth_settings(self, account_id: str, settings: dict[str, Any]) -> None:
+        """Persist aiograpi client settings (device/cookies) for session restore."""
+        import json
+
+        r = self._s.put(
+            self._url(f"/internal/instagram/sessions/{account_id}/auth"),
+            json={"client_settings_json": json.dumps(settings, ensure_ascii=False)},
+            timeout=30,
+        )
+        r.raise_for_status()
+
     def put_cursors(self, account_id: str, cursors: dict[str, Any]) -> None:
         r = self._s.put(
             self._url(f"/internal/instagram/sessions/{account_id}/cursors"),

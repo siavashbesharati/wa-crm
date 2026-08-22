@@ -16,7 +16,11 @@ from app.schemas import (
     InstagramPairStartIn,
     InstagramPairStatusOut,
 )
-from app.services.instagram_auth import InstagramAuthError, validate_session
+from app.services.instagram_auth import (
+    InstagramAuthError,
+    InstagramRateLimited,
+    validate_session,
+)
 from app.services.wa_crypto import decrypt_text, encrypt_text
 
 router = APIRouter(prefix="/channels", tags=["instagram-pair"])
@@ -107,9 +111,23 @@ def instagram_pair_start(
     account.status = "offline"
     db.add(account)
     db.commit()
+    import logging as _logging
+
+    _log = _logging.getLogger("instagram-pair")
     try:
         username, user_id = asyncio.run(validate_session(body.session_id.strip()))
+    except InstagramRateLimited as exc:
+        _log.warning("[Instagram] pair/start rate limited: %s", exc)
+        account.pairing_state = "connecting"
+        account.status = "offline"
+        db.add(account)
+        db.commit()
+        raise HTTPException(
+            status_code=429,
+            detail="اینستاگرام موقتاً درخواست‌ها را محدود کرده — چند دقیقه بعد دوباره تلاش کنید.",
+        ) from exc
     except InstagramAuthError as exc:
+        _log.warning("[Instagram] pair/start auth error: %s: %s", type(exc).__name__, exc)
         account.pairing_state = "auth_required"
         account.status = "offline"
         db.add(account)

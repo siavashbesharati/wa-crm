@@ -216,6 +216,11 @@ def _ensure_sqlite_columns() -> None:
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE instagram_auth_states"))
             Base.metadata.create_all(bind=engine, tables=[InstagramAuthState.__table__])
+        elif "client_settings_enc" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE instagram_auth_states ADD COLUMN client_settings_enc TEXT DEFAULT ''")
+                )
 
 
 _mount_routers()

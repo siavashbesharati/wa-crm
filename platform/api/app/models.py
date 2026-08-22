@@ -306,6 +306,7 @@ class InstagramAuthState(Base):
     session_id_enc: Mapped[str] = mapped_column(Text, default="")
     username: Mapped[str] = mapped_column(String(120), default="")
     user_id: Mapped[str] = mapped_column(String(80), default="")
+    client_settings_enc: Mapped[str] = mapped_column(Text, default="")
     cursors_json: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 

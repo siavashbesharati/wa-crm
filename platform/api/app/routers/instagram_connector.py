@@ -96,6 +96,7 @@ def get_auth(
         session_id=decrypt_text(row.session_id_enc or ""),
         username=row.username or "",
         user_id=row.user_id or "",
+        client_settings_json=decrypt_text(row.client_settings_enc or ""),
         cursors_json=row.cursors_json or "",
     )
 
@@ -116,6 +117,8 @@ def put_auth(
         row.session_id_enc = encrypt_text(body.session_id.strip())
         if not row.user_id and acc.external_id:
             row.user_id = acc.external_id
+    if body.client_settings_json:
+        row.client_settings_enc = encrypt_text(body.client_settings_json.strip())
     if body.cursors_json is not None:
         row.cursors_json = body.cursors_json
     row.updated_at = datetime.utcnow()
@@ -126,6 +129,7 @@ def put_auth(
         session_id=decrypt_text(row.session_id_enc or ""),
         username=row.username or "",
         user_id=row.user_id or "",
+        client_settings_json=decrypt_text(row.client_settings_enc or ""),
         cursors_json=row.cursors_json or "",
     )
 
