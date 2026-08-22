@@ -205,6 +205,17 @@ def _ensure_sqlite_columns() -> None:
                 conn.execute(
                     text("ALTER TABLE messages ADD COLUMN delivery_status VARCHAR(20) DEFAULT ''")
                 )
+    if "instagram_auth_states" in tables:
+        cols = {c["name"] for c in insp.get_columns("instagram_auth_states")}
+        legacy_cols = {"settings_enc", "credentials_enc", "pending_enc", "profile_json"}
+        if cols & legacy_cols:
+            # Pre-realtime schema from the removed polling connector. The table only
+            # holds re-pairable session state, so rebuild it with the current model.
+            from app.models import InstagramAuthState
+
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE instagram_auth_states"))
+            Base.metadata.create_all(bind=engine, tables=[InstagramAuthState.__table__])
 
 
 _mount_routers()
