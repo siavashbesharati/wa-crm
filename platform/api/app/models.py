@@ -42,12 +42,14 @@ class ConnectorRole(str, enum.Enum):
     baileys = "baileys"
     divar = "divar"
     bale = "bale"
+    instagram = "instagram"
 
 
 class ChannelType(str, enum.Enum):
     whatsapp = "whatsapp"
     divar = "divar"
     bale = "bale"
+    instagram = "instagram"
 
 
 class TaskStatus(str, enum.Enum):
@@ -288,6 +290,22 @@ class BaleAuthState(Base):
     )
     token_enc: Mapped[str] = mapped_column(Text, default="")
     pending_enc: Mapped[str] = mapped_column(Text, default="")
+    cursors_json: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class InstagramAuthState(Base):
+    """Encrypted Instagram session ID and connector cursors per account."""
+
+    __tablename__ = "instagram_auth_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("channel_accounts.id"), unique=True, index=True
+    )
+    session_id_enc: Mapped[str] = mapped_column(Text, default="")
+    username: Mapped[str] = mapped_column(String(120), default="")
+    user_id: Mapped[str] = mapped_column(String(80), default="")
     cursors_json: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 

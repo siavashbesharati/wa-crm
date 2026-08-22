@@ -35,7 +35,8 @@ type PairStatus = {
 type PairModal =
   | { kind: "whatsapp"; accountId: string; mode: "qr" | "code"; step: "choose" | "active" }
   | { kind: "divar"; accountId: string; step: "otp" | "code" }
-  | { kind: "bale"; accountId: string; step: "phone" | "otp" | "done" };
+  | { kind: "bale"; accountId: string; step: "phone" | "otp" | "done" }
+  | { kind: "instagram"; accountId: string };
 
 type BalePairStatus = {
   account_id: string;
@@ -43,6 +44,15 @@ type BalePairStatus = {
   status: string;
   phone?: string;
   display_name?: string;
+  user_id?: string;
+  message?: string;
+};
+
+type InstagramPairStatus = {
+  account_id: string;
+  pairing_state: string;
+  status: string;
+  username?: string;
   user_id?: string;
   message?: string;
 };
@@ -61,6 +71,7 @@ export default function ChannelsPage() {
   const [balePhone, setBalePhone] = useState("");
   const [baleCode, setBaleCode] = useState("");
   const [baleProfile, setBaleProfile] = useState<{ name: string; userId: string; phone: string } | null>(null);
+  const [instagramSessionId, setInstagramSessionId] = useState("");
   const [waPhone, setWaPhone] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ChannelAccount | null>(null);
   const toast = useToast();
@@ -75,6 +86,10 @@ export default function ChannelsPage() {
   );
   const baleAccounts = useMemo(
     () => accounts.filter((a) => a.channel === "bale"),
+    [accounts]
+  );
+  const instagramAccounts = useMemo(
+    () => accounts.filter((a) => a.channel === "instagram"),
     [accounts]
   );
 
@@ -213,9 +228,9 @@ export default function ChannelsPage() {
 
   useEffect(() => {
     if (loading || autoConnectRef.current) return;
-    if (connectHint !== "whatsapp" && connectHint !== "divar" && connectHint !== "bale") return;
+    if (connectHint !== "whatsapp" && connectHint !== "divar" && connectHint !== "bale" && connectHint !== "instagram") return;
     const list =
-      connectHint === "whatsapp" ? waAccounts : connectHint === "divar" ? divarAccounts : baleAccounts;
+      connectHint === "whatsapp" ? waAccounts : connectHint === "divar" ? divarAccounts : connectHint === "bale" ? baleAccounts : instagramAccounts;
     if (list.some((a) => isAccountOn(a.status, a.pairing_state))) {
       autoConnectRef.current = true;
       return;
@@ -225,15 +240,17 @@ export default function ChannelsPage() {
     if (existing) {
       if (connectHint === "whatsapp") openWhatsAppPair(existing.id);
       else if (connectHint === "divar") openDivarOtp(existing);
-      else openBaleOtp(existing);
+      else if (connectHint === "bale") openBaleOtp(existing);
+      else openInstagram(existing);
       return;
     }
     if (connectHint === "whatsapp") void addWhatsApp();
     else if (connectHint === "divar") void addDivar();
-    else void addBale();
+    else if (connectHint === "bale") void addBale();
+    else void addInstagram();
     // Open the matching pair flow once when arriving from a setup task.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, connectHint, waAccounts, divarAccounts, baleAccounts]);
+  }, [loading, connectHint, waAccounts, divarAccounts, baleAccounts, instagramAccounts]);
 
   async function startDivarOtp() {
     if (!modal || modal.kind !== "divar") return;
@@ -383,6 +400,63 @@ export default function ChannelsPage() {
     }
   }
 
+  async function addInstagram() {
+    setBusy(true);
+    try {
+      const acc = await api<ChannelAccount>("/channels/accounts/instagram-api", { method: "POST" });
+      setInstagramSessionId("");
+      setModal({ kind: "instagram", accountId: acc.id });
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openInstagram(account: ChannelAccount) {
+    setInstagramSessionId("");
+    setModal({ kind: "instagram", accountId: account.id });
+  }
+
+  async function connectInstagram() {
+    if (!modal || modal.kind !== "instagram") return;
+    const sessionId = instagramSessionId.trim();
+    if (sessionId.length < 20) {
+      toast.push("شناسه نشست اینستاگرام معتبر نیست", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api<InstagramPairStatus>(`/channels/accounts/${modal.accountId}/instagram/pair/start`, {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      toast.push("اینستاگرام متصل شد", "ok");
+      setModal(null);
+      setInstagramSessionId("");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "نشست اینستاگرام نامعتبر یا منقضی است", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logoutInstagram(accountId: string) {
+    setBusy(true);
+    try {
+      await api(`/channels/accounts/${accountId}/instagram/pair/logout`, { method: "POST" });
+      if (modal?.kind === "instagram" && modal.accountId === accountId) setModal(null);
+      toast.push("اتصال اینستاگرام قطع شد", "ok");
+      await load();
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removeAccount() {
     if (!removeTarget) return;
     const id = removeTarget.id;
@@ -407,6 +481,7 @@ export default function ChannelsPage() {
     setModal(null);
     setPair(null);
     setBaleProfile(null);
+    setInstagramSessionId("");
   }
 
   const connectedCount = accounts.filter((a) => isAccountOn(a.status, a.pairing_state)).length;
@@ -466,6 +541,18 @@ export default function ChannelsPage() {
               onAdd={() => void addBale()}
               onConnect={(a) => openBaleOtp(a)}
               onDisconnect={(a) => void logoutBale(a.id)}
+              onRemove={setRemoveTarget}
+            />
+            <ChannelCard
+              channel="instagram"
+              title="اینستاگرام"
+              hint="اتصال با Instagram Session ID"
+              accounts={instagramAccounts}
+              busy={busy}
+              highlight={connectHint === "instagram"}
+              onAdd={() => void addInstagram()}
+              onConnect={(a) => openInstagram(a)}
+              onDisconnect={(a) => void logoutInstagram(a.id)}
               onRemove={setRemoveTarget}
             />
           </div>
@@ -586,6 +673,36 @@ export default function ChannelsPage() {
             </Button>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={modal?.kind === "instagram"}
+        title="اتصال اینستاگرام"
+        onClose={closeModal}
+        panelClassName="pair-modal"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeModal}>انصراف</Button>
+            <Button loading={busy} onClick={() => void connectInstagram()}>اتصال اینستاگرام</Button>
+          </>
+        }
+      >
+        <div className="pair-form">
+          <p className="pair-lead">شناسه نشست اینستاگرام را وارد کنید.</p>
+          <label>
+            Instagram Session ID
+            <input
+              className="ltr-text"
+              value={instagramSessionId}
+              onChange={(e) => setInstagramSessionId(e.target.value)}
+              placeholder="Session ID"
+              dir="ltr"
+              autoComplete="off"
+              autoFocus
+            />
+          </label>
+          <p className="hint">رمز عبور اینستاگرام لازم نیست. شناسه نشست پس از ذخیره نمایش داده نمی‌شود.</p>
+        </div>
       </Modal>
 
       <Modal
@@ -754,7 +871,7 @@ const STATUS_HELP = [
 ];
 
 const CHANNEL_CARD_COPY: Record<
-  "whatsapp" | "divar" | "bale",
+  "whatsapp" | "divar" | "bale" | "instagram",
   { helpTitle: string; helpBody: string; helpTips: string[]; connect: string }
 > = {
   whatsapp: {
@@ -777,6 +894,13 @@ const CHANNEL_CARD_COPY: Record<
       "شماره موبایل حساب بله را وارد کنید. کد ۵رقمی معمولاً داخل برنامه بله می‌آید (گاهی پیامک). همان را وارد کنید تا نشست وصل شود. عدد کنار نام تعداد حساب‌های متصل است.",
     helpTips: ["سرویس bale-connector روی سرور باید روشن باشد.", ...STATUS_HELP],
     connect: "اتصال"
+  },
+  instagram: {
+    helpTitle: "اینستاگرام سرور",
+    helpBody:
+      "شناسه نشست اینستاگرام را وارد کنید تا حساب به Bidar وصل شود. رمز عبور اینستاگرام در Bidar درخواست یا ذخیره نمی‌شود.",
+    helpTips: ["سرویس Instagram connector روی سرور باید روشن باشد.", ...STATUS_HELP],
+    connect: "اتصال"
   }
 };
 
@@ -793,7 +917,7 @@ function ChannelCard({
   onDisconnect,
   onRemove
 }: {
-  channel: "whatsapp" | "divar" | "bale";
+  channel: "whatsapp" | "divar" | "bale" | "instagram";
   title: string;
   hint: string;
   accounts: ChannelAccount[];

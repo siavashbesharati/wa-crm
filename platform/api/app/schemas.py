@@ -99,7 +99,7 @@ class ChannelAccountIn(BaseModel):
     label: str = ""
     external_id: str = ""
     phone: str = ""  # WA alias for external_id
-    connector_type: str = "baileys"  # baileys | divar_api | bale_api
+    connector_type: str = "baileys"  # baileys | divar_api | bale_api | instagram_api
 
 
 class ChannelAccountOut(BaseModel):
@@ -174,6 +174,30 @@ class BaleAuthStateOut(BaseModel):
     account_id: str
     token_json: str = ""
     pending_json: str = ""
+    cursors_json: str = ""
+
+
+class InstagramPairStartIn(BaseModel):
+    session_id: str = Field(min_length=20, max_length=512)
+
+
+class InstagramPairStatusOut(BaseModel):
+    account_id: str
+    pairing_state: str
+    status: str
+    username: str = ""
+    user_id: str = ""
+    connector_type: str = "instagram_api"
+    message: str = ""
+
+
+class InstagramAuthStateIn(BaseModel):
+    session_id: str = ""
+    cursors_json: str = ""
+
+
+class InstagramAuthStateOut(BaseModel):
+    account_id: str
     cursors_json: str = ""
 
 

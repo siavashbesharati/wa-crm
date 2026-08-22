@@ -68,7 +68,8 @@ export function tagLabel(key: string) {
 export const CHANNEL_LABELS: Record<string, string> = {
   whatsapp: "واتساپ",
   divar: "دیوار",
-  bale: "بله"
+  bale: "بله",
+  instagram: "اینستاگرام"
 };
 
 export function leadPhone(l: Lead) {

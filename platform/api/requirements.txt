@@ -14,3 +14,4 @@ python-multipart>=0.0.20
 zibal>=1.0.0
 pinecone>=5.0.0
 bale-sdk>=0.1.0
+aiograpi>=0.0.42

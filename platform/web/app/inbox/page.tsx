@@ -69,7 +69,7 @@ type Message = {
   wa_message_id?: string;
 };
 
-type ChannelFilter = "all" | "whatsapp" | "divar" | "bale";
+type ChannelFilter = "all" | "whatsapp" | "divar" | "bale" | "instagram";
 
 type SuggestDraft = {
   reply: string;
@@ -497,7 +497,8 @@ export default function InboxPage() {
                   ["all", "همه"],
                   ["whatsapp", "واتساپ"],
                   ["divar", "دیوار"],
-                  ["bale", "بله"]
+                  ["bale", "بله"],
+                                  ["instagram", "اینستاگرام"]
                 ] as const
               ).map(([id, label]) => (
                 <button
