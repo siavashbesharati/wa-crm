@@ -54,6 +54,27 @@ def peer_kind(peer_type: int) -> str:
     return "user" if int(peer_type) == PEER_USER else "group"
 
 
+def is_bot_peer(peer_type: int, username: str | None, title: str | None = "") -> bool:
+    """
+    Bale bots are user peers whose handle ends with 'bot' (e.g. @mybot, @shop_bot).
+    Official Bale service bots use the bare handle 'bale'.
+    The handle may surface as the username OR as the display title ('@post_bot')
+    when the username lookup fails — check both.
+    """
+    if int(peer_type) == PEER_GROUP:
+        return False
+
+    def _is_bot_handle(handle: str | None) -> bool:
+        h = (handle or "").strip().lstrip("@").lower()
+        return bool(h) and (h.endswith("bot") or h == "bale")
+
+    if _is_bot_handle(username):
+        return True
+    t = (title or "").strip()
+    # Only trust the title when it is clearly a handle, not a human name
+    return t.startswith("@") and _is_bot_handle(t)
+
+
 def peer_key(peer_type: int, peer_id: int) -> str:
     return f"bale:{peer_kind(peer_type)}:{int(peer_id)}"
 
@@ -175,6 +196,12 @@ def map_history_message(
     ext = peer_key(peer_type, peer_id)
     phone = "" if is_group else normalize_visible_phone(phone)
     chat_name = peer_display_name(title, username, ext)
+    if is_group:
+        chat_type = "group"
+    elif is_bot_peer(peer_type, username, title):
+        chat_type = "bot"
+    else:
+        chat_type = "pv"
     return {
         "account_id": account_id,
         "chat_name": chat_name,
@@ -183,7 +210,7 @@ def map_history_message(
         "phone": phone,
         "group_id": str(peer_id) if is_group else "",
         "external_chat_id": ext,
-        "chat_type": "group" if is_group else "pv",
+        "chat_type": chat_type,
         "external_message_id": message_external_id(peer_type, peer_id, rid),
         "sender_type": "agent" if from_me else "customer",
         "media_type": media_type,
@@ -219,6 +246,12 @@ def map_new_message_event(
     from_me = bool(me_id and sender_id and sender_id == int(me_id))
     ext = peer_key(peer_type, peer_id)
     chat_name = peer_display_name(title, username, ext)
+    if is_group:
+        chat_type = "group"
+    elif is_bot_peer(peer_type, username, title):
+        chat_type = "bot"
+    else:
+        chat_type = "pv"
     return {
         "account_id": account_id,
         "chat_name": chat_name,
@@ -227,7 +260,7 @@ def map_new_message_event(
         "phone": "" if is_group else normalize_visible_phone(phone),
         "group_id": str(peer_id) if is_group else "",
         "external_chat_id": ext,
-        "chat_type": "group" if is_group else "pv",
+        "chat_type": chat_type,
         "external_message_id": message_external_id(peer_type, peer_id, rid),
         "sender_type": "agent" if from_me else "customer",
         "media_type": media_type,

@@ -197,7 +197,9 @@ export default function LeadsPage() {
   const filtered = useMemo(() => {
     return leads.filter((l) => {
       if (typeFilter === "group" && l.chat_type !== "group") return false;
-      if (typeFilter === "pv" && l.chat_type === "group") return false;
+      if (typeFilter === "bot" && l.chat_type !== "bot") return false;
+      if (typeFilter === "pv" && (l.chat_type === "group" || l.chat_type === "bot"))
+        return false;
       if (stageFilter && l.stage !== stageFilter) return false;
       if (assigneeFilter === "__none__" && l.assignee_id) return false;
       if (
@@ -473,6 +475,7 @@ export default function LeadsPage() {
                       <option value="">همه</option>
                       <option value="pv">مخاطب</option>
                       <option value="group">گروه</option>
+                      <option value="bot">ربات</option>
                     </select>
                   </label>
                   <label className="leads-toolbar-field">
@@ -659,6 +662,8 @@ export default function LeadsPage() {
                               <td>
                                 {l.chat_type === "group" ? (
                                   <Badge tone="accent">گروه</Badge>
+                                ) : l.chat_type === "bot" ? (
+                                  <Badge tone="accent">ربات</Badge>
                                 ) : (
                                   <span className="muted-cell">مخاطب</span>
                                 )}

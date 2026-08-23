@@ -43,7 +43,8 @@ export function toEditForm(l: Lead): EditForm {
     phone: phoneLooksLikeId ? "" : phone,
     contact_id: (l.wa_lid || l.external_chat_id || (phoneLooksLikeId ? phone : "") || "").trim(),
     group_id: l.group_id || "",
-    chat_type: l.chat_type === "group" ? "group" : "pv",
+    chat_type:
+      l.chat_type === "group" ? "group" : l.chat_type === "bot" ? "bot" : "pv",
     stage: l.stage || STAGES[0],
     notes: l.notes || "",
     tags: (l.tags || []).join(", "),

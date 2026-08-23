@@ -233,7 +233,8 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
     name = body.name.strip()
     external_chat_id = (body.external_chat_id or "").strip() or None
     chat_type = (body.chat_type or "pv").strip().lower() or "pv"
-    if chat_type != "group":
+    if chat_type not in ("group", "bot"):
+        # Bale bots (username ends with 'bot') keep their type; everything else is pv
         chat_type = "pv"
     phone = _sanitize_phone(body.phone, chat_type=chat_type)
     from app.services.lead_identity import normalize_lid
@@ -414,7 +415,7 @@ def patch_lead(
         data["name"] = str(data["name"]).strip() or lead.name
     if "chat_type" in data and data["chat_type"] is not None:
         ct = str(data["chat_type"]).strip().lower() or "pv"
-        data["chat_type"] = "group" if ct == "group" else "pv"
+        data["chat_type"] = ct if ct in ("group", "bot") else "pv"
     if "phone" in data and data["phone"] is not None:
         ct = data.get("chat_type") or lead.chat_type or "pv"
         data["phone"] = _sanitize_phone(str(data["phone"]).strip(), chat_type=str(ct))

@@ -559,6 +559,9 @@ def _touch_lead_from_ingest(
         if not lead.chat_type or lead.chat_type == "group":
             # Do not demote an established group here; guarded above
             lead.chat_type = "pv"
+        elif (body.chat_type or "").strip().lower() == "bot" and lead.chat_type != "bot":
+            # Bale bots (username ends with "bot") — deterministic per peer, safe to label
+            lead.chat_type = "bot"
 
     if external_chat_id and not lead.external_chat_id:
         # Avoid locking display names into external_chat_id when we have a better id later
@@ -947,7 +950,8 @@ def _upsert_lead_from_ingest(db: Session, org_id: str, body: MessageIngestIn, ac
         if ingest_group and (display.endswith("@g.us") or display == external_chat_id):
             # Keep jid as placeholder name until a human title is known
             display = (external_chat_id or chat_name or "گروه")[:200]
-        inferred_type = "group" if ingest_group else "pv"
+        raw_type = (body.chat_type or "").strip().lower()
+        inferred_type = "group" if ingest_group else ("bot" if raw_type == "bot" else "pv")
         phone_val = ""
         if not ingest_group:
             phone_val = _sanitize_lead_phone(
