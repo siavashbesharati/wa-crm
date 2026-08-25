@@ -1,0 +1,74 @@
+# Development override — opt in with:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up
+#
+# This file:
+#   - Mounts source code so edits are picked up without rebuilding
+#   - Runs the API with --reload (uvicorn auto-reloads on Python changes)
+#   - Runs the connectors in dev mode (tsx watch for the WA sidecar)
+#   - Exposes the connector health ports to your host (so you can curl
+#     http://localhost:8090/health from your browser)
+#
+# Production users should ignore this file — it is auto-merged by
+# `docker compose up` only if you do NOT pass -f explicitly.
+
+name: iranexpedia
+
+services:
+
+  api:
+    # Override CMD: uvicorn with --reload, skip the migration entrypoint
+    # (you can re-run migrations manually with `docker compose exec api
+    # python scripts/migrate_baileys.py`).
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      APP_ENV: development
+      # The entrypoint script also runs migrations, which is fine in dev.
+      # Set SKIP_MIGRATIONS=1 to skip them on every restart.
+      SKIP_MIGRATIONS: "0"
+    volumes:
+      # Live source mount for the reload to work
+      - ./platform/api/app:/app/app
+      - ./platform/api/scripts:/app/scripts
+      - ./platform/api/alembic:/app/alembic
+      - ./platform/api/alembic.ini:/app/alembic.ini
+      # Persistent secrets still in the named volume
+      - api_secrets:/app/.local
+
+  worker:
+    command: ["python", "-m", "app.workers.runner"]
+    volumes:
+      - ./platform/api/app:/app/app
+      - ./platform/api/scripts:/app/scripts
+      - api_secrets:/app/.local
+
+  wa-connector:
+    # Use the `dev` stage of the WA Dockerfile (tsx watch)
+    build:
+      target: dev
+    volumes:
+      - ./platform/wa-connector/src:/app/src
+    ports:
+      - "8090:8090"  # exposed to host for local debugging
+
+  divar-connector:
+    volumes:
+      - ./platform/divar-connector:/app
+    ports:
+      - "8091:8091"
+
+  bale-connector:
+    volumes:
+      - ./platform/bale-connector:/app
+    ports:
+      - "8092:8092"
+
+  web:
+    # `next dev` instead of `next start`
+    command: ["npx", "next", "dev", "-p", "3000"]
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    volumes:
+      - ./platform/web/app:/app/app
+      - ./platform/web/public:/app/public
+      - ./platform/web/next.config.ts:/app/next.config.ts:ro
+      # node_modules from the image stays intact

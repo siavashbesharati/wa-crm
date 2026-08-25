@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Local secrets + SQLite DBs (regenerated in the container)
+.local/
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Tests (not needed at runtime in the image; mount if you need them)
+tests/
+
+# Docker itself
+Dockerfile
+.dockerignore
+docker-compose*.yml

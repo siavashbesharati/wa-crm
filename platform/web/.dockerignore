@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+
+npm-debug.log*
+yarn-error.log
+yarn-debug.log*
+
+# Local env files (passed at runtime via docker-compose / -e)
+.env*.local
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml

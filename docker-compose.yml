@@ -1,0 +1,186 @@
+# Iranexpedia platform — full local stack
+#
+# Usage:
+#   docker compose up -d --build
+#   docker compose logs -f api web
+#   docker compose down
+#
+# All long-lived state (Postgres data, Redis data, Baileys auth, .local
+# secrets) lives in named volumes so `docker compose down` does not
+# delete your paired WhatsApp sessions.
+
+name: iranexpedia
+
+x-app-env: &app_env
+  APP_ENV: production
+  CORS_ORIGINS: http://localhost:3000
+  PUBLIC_BASE_URL: http://localhost:8000
+  WEB_BASE_URL: http://localhost:3000
+  SUPER_ADMIN_PHONE: "09120674032"
+  SMS_IR_DEV_FALLBACK: "true"
+  TZ: Asia/Tehran
+
+services:
+
+  # --- data plane ----------------------------------------------------
+
+  db:
+    image: postgres:16-alpine
+    container_name: iranexpedia-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: crm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: iranexpedia-redis
+    restart: unless-stopped
+    # Append-only file persistence survives restarts
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- API + worker --------------------------------------------------
+
+  api:
+    build:
+      context: ./platform/api
+      dockerfile: Dockerfile
+    image: iranexpedia-api:latest
+    container_name: iranexpedia-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *app_env
+      DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/crm
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      # Persist auto-generated secrets + SQLite fallback
+      - api_secrets:/app/.local
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ./platform/api
+      dockerfile: Dockerfile
+    image: iranexpedia-api:latest
+    container_name: iranexpedia-worker
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      <<: *app_env
+      DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/crm
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - api_secrets:/app/.local
+    command: ["python", "-m", "app.workers.runner"]
+    # No exposed port
+
+  # --- Connector sidecars -------------------------------------------
+
+  wa-connector:
+    build:
+      context: ./platform/wa-connector
+      dockerfile: Dockerfile
+    image: iranexpedia-wa-connector:latest
+    container_name: iranexpedia-wa
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      WA_API_BASE_URL: http://api:8000/api
+      WA_CONNECTOR_PORT: "8090"
+      WA_CONNECTOR_KEY_FILE: /run/secrets/wa_connector_key
+      LOG_LEVEL: info
+    volumes:
+      - wa_auth:/app/baileys_auth
+      - api_secrets:/app/api_secrets:ro
+    # Health endpoint exposed on the docker network only (use docker
+    # compose exec wa-connector curl http://localhost:8090/health)
+    expose:
+      - "8090"
+
+  divar-connector:
+    build:
+      context: ./platform/divar-connector
+      dockerfile: Dockerfile
+    image: iranexpedia-divar-connector:latest
+    container_name: iranexpedia-divar
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      CRM_API_BASE: http://api:8000/api
+      DIVAR_CONNECTOR_PORT: "8091"
+    volumes:
+      - api_secrets:/app/api_secrets:ro
+    expose:
+      - "8091"
+
+  bale-connector:
+    build:
+      context: ./platform/bale-connector
+      dockerfile: Dockerfile
+    image: iranexpedia-bale-connector:latest
+    container_name: iranexpedia-bale
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      CRM_API_BASE: http://api:8000/api
+      BALE_CONNECTOR_PORT: "8092"
+    volumes:
+      - api_secrets:/app/api_secrets:ro
+    expose:
+      - "8092"
+
+  # --- Web (Next.js) ------------------------------------------------
+
+  web:
+    build:
+      context: ./platform/web
+      dockerfile: Dockerfile
+      args:
+        # Build-time: the API URL is baked into the JS bundle.
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    image: iranexpedia-web:latest
+    container_name: iranexpedia-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  redisdata:
+  api_secrets:
+  wa_auth:
+
+networks:
+  default:
+    name: iranexpedia-net
