@@ -498,9 +498,27 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
     groupParticipants: async (jid: string) => {
       if (!sock || !connected) return { subject: "", participants: [] };
       const meta = await sock.groupMetadata(jid);
-      // Best-effort: pull display names from the socket's contact cache.
-      // We look up by every identifier we have for the contact (pnJid, lid,
-      // raw id) because Baileys may store the contact under any of them.
+      // ============================================================
+      // NAME RESOLUTION — INTENTIONALLY LOCAL-ONLY
+      // ============================================================
+      // We resolve display names from the in-memory `sock.contacts` cache.
+      // This is a plain object lookup — it makes ZERO network requests to
+      // WhatsApp. The cache is populated passively by the server (push
+      // notifications, contact cards in messages, etc.), so any contact
+      // we've ever interacted with is usually already there.
+      //
+      // DO NOT replace this with per-participant `sock.getContactInfo(jid)`,
+      // `sock.onWhatsApp(jids)`, `sock.profilePictureUrl(jid)` or any other
+      // per-user IQ/HTTP call inside a loop. A 500-member group would mean
+      // 500 round-trips to WhatsApp in seconds, which is the exact pattern
+      // their anti-abuse classifier flags as enumeration. See:
+      //   https://github.com/WhiskeySockets/Baileys/issues/1869
+      //   https://github.com/kobie3717/baileys-antiban  (community guidance)
+      //
+      // The lookup tries every identifier we have for the contact
+      // (pnJid, raw id, lid) because Baileys may key the cache by any of
+      // them depending on how the contact was first observed.
+      // ============================================================
       const contacts = (sock as unknown as {
         contacts?: Record<string, { name?: string; pushname?: string; verifiedName?: string }>;
       }).contacts;
