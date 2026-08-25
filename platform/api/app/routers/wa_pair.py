@@ -12,6 +12,7 @@ from app.database import get_db
 from app.deps import AuthContext, get_auth, require_roles
 from app.models import ChannelAccount, ChannelType, MemberRole, WaAuthState
 from app.schemas import ChannelAccountOut, WaPairCodeStartIn, WaPairStatusOut
+from app.services.pair_rate_limit import check_and_record, raise_too_soon
 from app.services.phone import ascii_digits, normalize_phone_for_storage, to_cc_digits
 
 router = APIRouter(prefix="/channels", tags=["wa-pair"])
@@ -87,6 +88,12 @@ def pair_start(
 ):
     acc = _get_org_account(db, auth.org.id, account_id)
     _require_baileys_wa(acc)
+    # QR pairing has no phone in the body, so the rate-limit key is the
+    # account itself (one WhatsApp number per account). This stops the user
+    # from repeatedly asking the sidecar to mint new QR codes back-to-back.
+    allowed, retry = check_and_record("whatsapp", account_id)
+    if not allowed:
+        raise_too_soon("whatsapp", retry)
     acc.pairing_state = "qr_pending"
     acc.qr_payload = ""
     acc.status = "offline"
@@ -112,6 +119,12 @@ def pair_code_start(
             status_code=400,
             detail="شماره را با کد کشور وارد کنید (مثلاً 98912… یا 0912…)",
         )
+    # Rate-limit per phone (same number across +98 / 0912 / Persian digits
+    # all collapse to the same bucket via to_cc_digits).
+    cc_digits = to_cc_digits(phone)
+    allowed, retry = check_and_record("whatsapp", cc_digits)
+    if not allowed:
+        raise_too_soon("whatsapp", retry)
     # Fresh pair — wipe auth so Baileys issues a new code
     row = db.query(WaAuthState).filter(WaAuthState.account_id == account_id).first()
     if row:

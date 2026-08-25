@@ -498,12 +498,26 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
     groupParticipants: async (jid: string) => {
       if (!sock || !connected) return { subject: "", participants: [] };
       const meta = await sock.groupMetadata(jid);
+      // Best-effort: pull display names from the socket's contact cache.
+      // We look up by every identifier we have for the contact (pnJid, lid,
+      // raw id) because Baileys may store the contact under any of them.
+      const contacts = (sock as unknown as {
+        contacts?: Record<string, { name?: string; pushname?: string; verifiedName?: string }>;
+      }).contacts;
+      const lookupName = (key: string): string => {
+        if (!contacts || !key) return "";
+        const c = contacts[key];
+        if (!c) return "";
+        return (c.verifiedName || c.name || c.pushname || "").trim();
+      };
       const participants = (meta.participants || []).map((p) => {
         const raw = p as {
           id: string;
           lid?: string;
           jid?: string;
           phoneNumber?: string;
+          notify?: string;
+          name?: string;
           admin?: string | null;
         };
         const phone =
@@ -517,11 +531,22 @@ export async function startSession(accountId: string): Promise<SessionHandle> {
             : raw.jid
               ? stripDevice(raw.jid)
               : "";
+        // Resolve a human-friendly name. Prefer the metadata-provided
+        // `notify` / `name`, then the contact cache by pnJid, raw.id, or
+        // the LID — whichever the cache happens to use as a key.
+        const name =
+          (raw.notify && raw.notify.trim()) ||
+          (raw.name && raw.name.trim()) ||
+          lookupName(pnJid) ||
+          lookupName(raw.id) ||
+          (raw.lid ? lookupName(raw.lid) : "") ||
+          "";
         return {
           id: raw.id,
           lid: raw.lid || (isLidJid(raw.id) ? stripDevice(raw.id) : ""),
           jid: pnJid,
           phone: phone || "",
+          name,
           admin: raw.admin || null,
           is_admin: !!raw.admin,
         };

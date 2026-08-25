@@ -18,6 +18,7 @@ from app.schemas import (
     DivarPairStatusOut,
 )
 from app.services.divar_auth import DivarAuthError, consume_otp, send_otp
+from app.services.pair_rate_limit import check_and_record, raise_too_soon
 from app.services.wa_crypto import decrypt_text, encrypt_text
 
 router = APIRouter(prefix="/channels", tags=["divar-pair"])
@@ -110,6 +111,13 @@ def divar_pair_start(
 ):
     acc = _get_org_account(db, auth.org.id, account_id)
     _require_divar_api(acc)
+    # Per-phone rate limit (5 min between OTP requests for the same number).
+    from app.services.phone import to_cc_digits
+
+    cc_digits = to_cc_digits(body.phone)
+    allowed, retry = check_and_record("divar", cc_digits)
+    if not allowed:
+        raise_too_soon("divar", retry)
     try:
         pending = send_otp(body.phone)
     except DivarAuthError as exc:

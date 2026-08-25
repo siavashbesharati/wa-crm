@@ -26,6 +26,7 @@ type WaParticipant = {
   lid?: string;
   jid?: string;
   phone?: string;
+  name?: string;
   admin?: string | null;
   is_admin?: boolean;
 };
@@ -41,6 +42,23 @@ function downloadCsv(filename: string, rows: string[][]) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Force a phone-number cell to be treated as text by Excel.
+ *
+ * Excel auto-converts long digit strings to a number when opening a CSV,
+ * which strips leading zeros and breaks the readability. We prepend an
+ * apostrophe inside the quoted CSV cell — Excel honours it as a
+ * "force-as-text" marker and displays the digits cleanly.
+ */
+function asExcelText(v: string): string {
+  const s = (v ?? "").trim();
+  if (!s) return "";
+  // Only force-text if the value is purely digits (i.e. looks like a number).
+  // If the user has weird non-digit data, just return it as-is.
+  if (/^\d+$/.test(s)) return `'${s}`;
+  return s;
 }
 
 export default function GroupsPage() {
@@ -105,16 +123,21 @@ export default function GroupsPage() {
         group_jid?: string;
         participants: WaParticipant[];
       }>(`/channels/accounts/${groupsAccountId}/groups/participants?${q.toString()}`);
-      const rows: string[][] = [["phone", "jid", "id", "lid", "admin", "group_subject", "group_jid"]];
+      const groupName = res.subject || group.subject || "";
+      // 4 columns: phone, name, group name, isAdmin
+      // The `asExcelText` helper prepends an apostrophe to phone cells so
+      // Excel keeps them as text (avoids the "9.89E+11" / leading-zero loss).
+      const rows: string[][] = [["phone", "name", "group name", "isAdmin"]];
       for (const p of res.participants || []) {
+        const isAdmin =
+          p.admin === "superadmin" || p.is_admin || p.admin === "admin"
+            ? "yes"
+            : "no";
         rows.push([
-          p.phone || "",
-          p.jid || "",
-          p.id || "",
-          p.lid || "",
-          p.admin || (p.is_admin ? "admin" : ""),
-          res.subject || group.subject || "",
-          res.group_jid || group.jid
+          asExcelText(p.phone || ""),
+          p.name || "",
+          groupName,
+          isAdmin,
         ]);
       }
       const safeName = (group.subject || "group").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);

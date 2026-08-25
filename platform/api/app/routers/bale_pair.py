@@ -23,6 +23,7 @@ from app.services.bale_auth import (
     start_phone_auth,
     validate_code,
 )
+from app.services.pair_rate_limit import check_and_record, raise_too_soon
 from app.services.wa_crypto import decrypt_text, encrypt_text
 
 router = APIRouter(prefix="/channels", tags=["bale-pair"])
@@ -142,6 +143,13 @@ def bale_pair_start(
 ):
     acc = _get_org_account(db, auth.org.id, account_id)
     _require_bale_api(acc)
+    # Per-phone rate limit (5 min between OTP requests for the same number).
+    from app.services.phone import to_cc_digits
+
+    cc_digits = to_cc_digits(body.phone)
+    allowed, retry = check_and_record("bale", cc_digits)
+    if not allowed:
+        raise_too_soon("bale", retry)
     try:
         pending = start_phone_auth(body.phone)
     except BaleAuthError as exc:
