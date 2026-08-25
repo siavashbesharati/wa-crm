@@ -77,6 +77,13 @@ class SessionHandle:
                 return
             except asyncio.CancelledError:
                 raise
+            except KeyboardInterrupt:
+                # Ctrl+C during a sync `requests` call inside the loop.
+                # Treat as a graceful shutdown rather than an unhandled
+                # task exception (avoids "Task exception was never retrieved"
+                # on Python 3.12+ when the loop is closed mid-flight).
+                log.info("[Bale] Interrupted account=%s — shutting down", self.account_id)
+                return
             except Exception as exc:  # noqa: BLE001
                 if is_auth_failure(exc):
                     log.warning("[Bale] Session rejected account=%s", self.account_id)

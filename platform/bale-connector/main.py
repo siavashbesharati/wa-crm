@@ -130,6 +130,14 @@ def main() -> None:
                 _loop.run_until_complete(stop_session(aid))
             except Exception:  # noqa: BLE001
                 pass
+        # Drain any pending tasks so asyncio doesn't log
+        # "Task exception was never retrieved" on Python 3.12+.
+        try:
+            pending = [t for t in asyncio.all_tasks(_loop) if not t.done()]
+            if pending:
+                _loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:  # noqa: BLE001
+            pass
         _loop.close()
 
 

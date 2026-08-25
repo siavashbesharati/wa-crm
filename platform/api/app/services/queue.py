@@ -50,14 +50,30 @@ class FileQueue:
         with self._lock:
             if not path.exists():
                 return None
-            lines = path.read_text(encoding="utf-8").splitlines()
+            # `errors="replace"` so a stray non-UTF-8 byte (e.g. from a
+            # CP-1256 write of Persian text) doesn't kill the worker.
+            raw = path.read_bytes()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                logger.warning(
+                    "Queue file %s has non-UTF-8 bytes at offset %d; "
+                    "recovering with replacement chars.",
+                    path,
+                    exc.start,
+                )
+                text = raw.decode("utf-8", errors="replace")
+            lines = text.splitlines()
             if not lines:
                 return None
             first, rest = lines[0], lines[1:]
-            path.write_text("\n".join(rest) + ("\n" if rest else ""), encoding="utf-8")
+            path.write_text(
+                "\n".join(rest) + ("\n" if rest else ""), encoding="utf-8"
+            )
             try:
                 return json.loads(first)
             except json.JSONDecodeError:
+                logger.warning("Dropping malformed queue line in %s", name)
                 return None
 
 
