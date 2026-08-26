@@ -8,6 +8,7 @@ export type Session = {
   user_id: string;
   org_id: string;
   role: string;
+  is_demo?: boolean;
 };
 
 export type PlatformSession = {

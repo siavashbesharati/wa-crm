@@ -121,6 +121,15 @@ class Settings(BaseSettings):
     sms_ir_https_proxy: str = ""
     # If True and sms.ir is unreachable, log OTP to API console (local only)
     sms_ir_dev_fallback: bool = True
+    # Demo / sales-showcase account
+    # When enabled, /api/auth/demo/login returns a real session for the seeded
+    # "دپارتمان ملک پارامیس" business. Auto-on in development; off in prod
+    # unless explicitly turned on.
+    demo_enabled: bool = True
+    # Locked business name for the demo org (used by the seed + login endpoint)
+    demo_org_name: str = "دپارتمان ملک پارامیس"
+    demo_owner_phone: str = "09120000000"
+    demo_owner_name: str = "مدیر دمو"
 
     @classmethod
     def settings_customise_sources(

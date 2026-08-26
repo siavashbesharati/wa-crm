@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/Toast";
 type Step = "phone" | "otp";
 const OTP_TTL = 60;
 
+type DemoStatus = { enabled: boolean; org_name?: string };
+
 export default function BusinessLoginPage() {
   const router = useRouter();
   const toast = useToast();
@@ -27,6 +29,8 @@ export default function BusinessLoginPage() {
   const [exists, setExists] = useState<boolean | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [shake, setShake] = useState(false);
+  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
+  const [demoBusy, setDemoBusy] = useState(false);
   const autoSubmitRef = useRef("");
   const verifyingRef = useRef(false);
   const layoutRef = useRef<AuthLayoutHandle>(null);
@@ -81,6 +85,23 @@ export default function BusinessLoginPage() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, step]);
+
+  // Probe the demo endpoint once (only when we're on the phone step).
+  useEffect(() => {
+    if (step !== "phone") return;
+    let cancelled = false;
+    void api<DemoStatus>("/auth/demo/status", { auth: false })
+      .then((s) => {
+        if (!cancelled) setDemoStatus(s);
+      })
+      .catch(() => {
+        // Demo probe is best-effort — silently hide the button on failure.
+        if (!cancelled) setDemoStatus({ enabled: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step]);
 
   function bumpShake() {
     setShake(true);
@@ -170,6 +191,33 @@ export default function BusinessLoginPage() {
     }
   }
 
+  async function loginAsDemo() {
+    if (demoBusy) return;
+    setDemoBusy(true);
+    try {
+      const tok = await api<{
+        access_token: string;
+        refresh_token: string;
+        user_id: string;
+        org_id: string;
+        role: string;
+        is_demo?: boolean;
+        onboarding_step?: string;
+      }>("/auth/demo/login", { method: "POST", auth: false });
+      saveSession(tok);
+      layoutRef.current?.playMascot();
+      setEnterCopy({ title: "ورود موفق", sub: "در حال باز کردن حساب دمو…" });
+      setEntering(true);
+      toast.push("به حساب دمو خوش آمدید", "ok");
+      router.replace("/home");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در ورود دمو", "err");
+      bumpShake();
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
   return (
     <AuthLayout
       ref={layoutRef}
@@ -204,6 +252,30 @@ export default function BusinessLoginPage() {
             <Button className="auth-submit" loading={busy} onClick={requestOtp}>
               دریافت کد تأیید
             </Button>
+            {demoStatus?.enabled && step === "phone" && (
+              <>
+                <div className="auth-divider" role="separator">
+                  <span>یا</span>
+                </div>
+                <button
+                  type="button"
+                  className="auth-demo-btn"
+                  onClick={loginAsDemo}
+                  disabled={demoBusy}
+                  aria-busy={demoBusy}
+                >
+                  <span className="auth-demo-btn-ico" aria-hidden>
+                    ✦
+                  </span>
+                  <span className="auth-demo-btn-text">
+                    <strong>ورود به عنوان دمو</strong>
+                    <em>
+                      نمونهٔ کامل «دپارتمان ملک پارامیس» — بدون نیاز به ثبت‌نام
+                    </em>
+                  </span>
+                </button>
+              </>
+            )}
           </>
         ) : (
           <>

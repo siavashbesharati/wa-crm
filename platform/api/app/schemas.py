@@ -26,6 +26,7 @@ class TokenOut(BaseModel):
     role: str
     is_new: bool = False
     onboarding_step: str = "done"
+    is_demo: bool = False  # True when issued via /auth/demo/login (sales demo)
 
 
 class TokenRefreshIn(BaseModel):
