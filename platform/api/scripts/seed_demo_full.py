@@ -232,6 +232,26 @@ CAMPAIGNS = [
     },
 ]
 
+# Showcase target audience/sends per campaign (matched lead count == send count,
+# so the campaign card and the report always show the same numbers).
+BULK_TARGETS = {
+    "کمپین نوروزی — آپارتمان\u200cهای نیاوران": 200,
+    "کمپین فعال — پنت\u200cهاوس و ویلاهای لوکس": 150,
+}
+
+# Name pools used to generate the extra showcase leads.
+BULK_FIRST = [
+    "محمد", "علی", "حسین", "مهدی", "رضا", "امیر", "متین", "آرمان", "پویا", "سهیل",
+    "سعید", "نیما", "امید", "بهرام", "فرهاد", "کاوه", "شایان", "آرش", "پارسا", "بابک",
+    "نگار", "شیدا", "الناز", "سارا", "مریم", "فاطمه", "زهرا", "نرگس", "گلنار", "لیلا",
+    "آیدا", "شیوا", "پریسا", "رویا", "ندا", "مونا", "ترانه", "سپیده", "یاسمین", "الهام",
+]
+BULK_LAST = [
+    "رضایی", "کریمی", "احمدی", "محمدی", "حسینی", "قاسمی", "موسوی", "تقوی", "صبوری",
+    "کاظمی", "نوری", "عباسی", "همتی", "آزاد", "شریفی", "مظفری", "باقری", "صادقی",
+    "نجفی", "رستمی", "فلاحی", "ایمانی", "توکلی", "بهرامی", "مرادی",
+]
+
 OKRS = [
     {"title": "بستن ۱۵ فروش در فصل بهار",        "target": 15,  "current": 8,  "period": "quarter", "assignee": "علی محمدی"},
     {"title": "رسیدن به ۹۰٪ رضایت مشتریان",      "target": 90,  "current": 87, "period": "quarter", "assignee": "مریم احمدی"},
@@ -612,29 +632,194 @@ def _ensure_campaigns(db, org, accounts, owner):
     for c in CAMPAIGNS:
         if db.query(Campaign).filter(Campaign.org_id == org.id, Campaign.name == c["name"]).first():
             continue
+        started_at = datetime.utcnow() - timedelta(days=c["days_back"])
         camp = Campaign(
             org_id=org.id, name=c["name"], status=c["status"],
             segment_json=c["segment"], message_template=c["template"],
             channel_account_id=(wa_accounts[0].id if wa_accounts else None),
             created_by_id=owner.id,
-            started_at=datetime.utcnow() - timedelta(days=c["days_back"]),
-            finished_at=(datetime.utcnow() - timedelta(days=c["days_back"] - 5) if c["status"] == "completed" else None),
+            started_at=started_at,
+            finished_at=(started_at + timedelta(days=5) if c["status"] == "completed" else None),
         )
         db.add(camp); db.flush()
+
+        # Pick leads matching the segment
+        matched = []
         for lead in leads:
             tags = list(lead.tags or [])
             stages_ok = (not c["segment"]["stages"]) or (lead.stage in c["segment"]["stages"])
             tags_ok = (not c["segment"]["tags"]) or any(t in tags for t in c["segment"]["tags"])
             score_ok = (lead.lead_score or 0) >= c["segment"]["min_score"]
-            if not (stages_ok and tags_ok and score_ok):
+            if stages_ok and tags_ok and score_ok:
+                matched.append(lead)
+        if not matched:
+            continue
+
+        # Per-campaign reply / conversion simulation profile.
+        # - 85% of matched leads receive the send
+        # - Of those, ~65% reply (inbound)
+        # - Of those replies, ~40% are auto-handled by AI
+        # - Of sent leads, ~12% convert to "بسته‌شده"
+        for lead in matched:
+            if db.query(CampaignSend).filter(
+                CampaignSend.campaign_id == camp.id, CampaignSend.lead_id == lead.id
+            ).first():
                 continue
-            if db.query(CampaignSend).filter(CampaignSend.campaign_id == camp.id, CampaignSend.lead_id == lead.id).first():
-                continue
+            roll = random.random()
+            send_status = "sent" if roll < 0.92 else ("failed" if roll < 0.97 else "queued")
+            send_ts = started_at + timedelta(minutes=random.randint(5, 240))
             db.add(CampaignSend(
                 org_id=org.id, campaign_id=camp.id, lead_id=lead.id,
-                status=("sent" if c["status"] == "completed" else random.choice(["sent", "queued", "pending"])),
-                created_at=datetime.utcnow() - timedelta(days=c["days_back"] - 1),
+                status=send_status,
+                job_id=f"demo-job-{camp.id[:6]}-{lead.id[:6]}",
+                error=("شماره مقصد موقتاً در دسترس نیست" if send_status == "failed" else ""),
+                created_at=send_ts,
+                updated_at=send_ts,
             ))
+
+        # Simulate the "completed" campaign: 1–2 leads convert to terminal stage,
+        # several leads reply (with a mix of customer + AI auto-replies).
+        if c["status"] == "completed":
+            # Conversions
+            convert_pool = [l for l in matched if l.stage not in ("بسته‌شده",)]
+            random.shuffle(convert_pool)
+            for cl in convert_pool[:2]:
+                cl.stage = "بسته‌شده"
+                cl.updated_at = started_at + timedelta(days=random.randint(2, 5))
+                db.add(cl)
+
+        # Inbound + AI replies: walk through sent leads and synthesize activity
+        sent_leads = [
+            l for l in matched
+            if not db.query(CampaignSend).filter(
+                CampaignSend.campaign_id == camp.id,
+                CampaignSend.lead_id == l.id,
+                CampaignSend.status != "sent",
+            ).first()
+        ]
+        channel = wa_accounts[0] if wa_accounts else (accounts[0] if accounts else None)
+        if channel is None:
+            continue
+        for lead in sent_leads:
+            r = random.random()
+            if r > 0.65:
+                continue  # 35% of sent leads do not reply
+            # Customer reply
+            reply_ts = started_at + timedelta(minutes=random.randint(15, 120 * 24))
+            db.add(Message(
+                org_id=org.id, account_id=channel.id, lead_id=lead.id,
+                direction=MessageDirection.inbound, sender_type=SenderType.customer,
+                body=random.choice([
+                    "سلام، پیامتون رو دیدم. لطفاً بیشتر توضیح بدید.",
+                    "ممنون. قیمت نهایی چقدر میشه؟",
+                    "بازدید هماهنگ کنید لطفاً.",
+                    "بله هنوز دنبال ملک هستم. چه زمانی می‌تونم ببینم؟",
+                    "عالی. لطفاً فایل کامل رو بفرستید.",
+                ]),
+                wa_message_id=f"demo-camp-reply-{lead.id[:6]}",
+                media_type="text",
+                created_at=reply_ts,
+            ))
+            # ~40% of replies get an AI auto-response
+            if random.random() < 0.4:
+                ai_ts = reply_ts + timedelta(minutes=random.randint(1, 30))
+                db.add(Message(
+                    org_id=org.id, account_id=channel.id, lead_id=lead.id,
+                    direction=MessageDirection.outbound, sender_type=SenderType.ai,
+                    body="سلام، ممنون از پیامتون. یکی از همکارانم بزودی فایل کامل رو ارسال می‌کنن. 🙏",
+                    wa_message_id=f"demo-camp-ai-{lead.id[:6]}",
+                    media_type="text",
+                    delivery_status="read",
+                    created_at=ai_ts,
+                ))
+                db.add(AiEvent(
+                    org_id=org.id, lead_id=lead.id, event_type="auto_reply",
+                    payload={"body_preview": "AI auto reply", "source": "seed-demo-campaign"},
+                    created_at=ai_ts,
+                ))
+
+
+def _match_campaign_segment(lead: Lead, seg: dict) -> bool:
+    stages = [s for s in (seg.get("stages") or []) if str(s).strip()]
+    if stages and (lead.stage or "").strip() not in stages:
+        return False
+    if float(lead.lead_score or 0) < float(seg.get("min_score") or 0):
+        return False
+    tags = set(seg.get("tags") or [])
+    if tags and not tags.intersection(set(lead.tags or [])):
+        return False
+    return True
+
+
+def _ensure_bulk_campaign_leads(db, org, accounts):
+    """Grow the demo lead pool so each showcase campaign reaches its exact
+    audience/sends target (camp 1 = 200, camp 2 = 150). Idempotent: only adds
+    the shortfall up to the target, so re-seeding converges back to the same
+    numbers and the campaign card + report always agree."""
+    wa = [a for a in accounts if a.channel == ChannelType.whatsapp]
+    account = wa[0] if wa else (accounts[0] if accounts else None)
+    existing = db.query(Lead).filter(Lead.org_id == org.id).all()
+    phones = {l.phone for l in existing}
+    # lead_account_links has a UNIQUE(org, account, chat_name) constraint
+    used_names = {l.name for l in existing if l.name}
+    board = (max((l.board_order or 0) for l in existing) + 1) if existing else 0
+
+    def _next_phone():
+        nonlocal board
+        phone = f"98931{5000000 + board:07d}"
+        while phone in phones:
+            board += 1
+            phone = f"98931{5000000 + board:07d}"
+        phones.add(phone)
+        board += 1
+        return phone
+
+    for cmp_def in CAMPAIGNS:
+        target = BULK_TARGETS.get(cmp_def["name"])
+        if target is None:
+            continue
+        seg = cmp_def["segment"]
+        stages = [s for s in (seg.get("stages") or []) if str(s).strip()]
+        seg_tags = list(seg.get("tags") or [])
+        min_score = int(float(seg.get("min_score") or 0))
+        current = sum(1 for l in existing if _match_campaign_segment(l, seg))
+        need = target - current
+        for _ in range(max(0, need)):
+            phone = _next_phone()
+            stage = random.choice(stages) if stages else "جدید"
+            lead_tags = [random.choice(seg_tags)] if seg_tags else []
+            score = random.randint(min_score, 96)
+            name = f"{random.choice(BULK_FIRST)} {random.choice(BULK_LAST)}"
+            while name in used_names:
+                name = f"{random.choice(BULK_FIRST)} {random.choice(BULK_LAST)}"
+            used_names.add(name)
+            ai_meta = {
+                "sentiment": "positive" if score >= 80 else "neutral",
+                "suggested_stage": stage,
+                "confidence": round(0.6 + (score / 100) * 0.4, 2),
+                "escalation": False,
+            }
+            last_msg_at = datetime.utcnow() - timedelta(days=random.randint(0, 20))
+            lead = Lead(
+                org_id=org.id, name=name, phone=phone,
+                external_chat_id=None, post_token="",
+                source_channel="whatsapp", chat_type="pv", stage=stage,
+                board_order=board, tags=lead_tags,
+                notes=f"سرنخ دمو برای کمپین «{cmp_def['name']}». امتیاز سرنخ: {score}.",
+                lead_score=float(score), ai_meta=ai_meta,
+                assignee_id=None, bot_paused=(random.random() < 0.15),
+                last_message_at=last_msg_at,
+                created_at=last_msg_at - timedelta(days=random.randint(15, 60)),
+                updated_at=last_msg_at,
+            )
+            db.add(lead)
+            db.flush()
+            if account:
+                db.add(LeadAccountLink(
+                    org_id=org.id, lead_id=lead.id, account_id=account.id,
+                    chat_name=name, external_chat_id=None,
+                ))
+            existing.append(lead)
 
 
 def _ensure_okrs(db, org, users):
@@ -761,6 +946,7 @@ def seed():
         _ensure_conversations(db, org, accounts, users, leads)
         _ensure_tasks(db, org, leads, users)
         _ensure_knowledge(db, org)
+        _ensure_bulk_campaign_leads(db, org, accounts)
         _ensure_campaigns(db, org, accounts, owner)
         _ensure_okrs(db, org, users)
         _ensure_kpis(db, org)

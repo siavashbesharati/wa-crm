@@ -11,6 +11,77 @@ export type Session = {
   is_demo?: boolean;
 };
 
+export type CampaignReport = {
+  campaign: {
+    id: string;
+    name: string;
+    status: string;
+    segment: {
+      tags?: string[];
+      stages?: string[];
+      min_score?: number;
+      include_groups?: boolean;
+    };
+    message_template?: string;
+    channel_label?: string;
+    started_at?: string | null;
+    finished_at?: string | null;
+    created_at?: string;
+  };
+  summary: {
+    audience: number;
+    sends_total: number;
+    sends_sent: number;
+    sends_failed: number;
+    sends_pending: number;
+    sends_queued: number;
+    sends_skipped: number;
+    delivery_rate: number;
+    replied_count: number;
+    reply_rate: number;
+    human_replied: number;
+    automated_replied: number;
+    automated_reply_rate: number;
+    conversions: number;
+    conversion_rate: number;
+    conversions_from_replies: number;
+    avg_response_minutes: number | null;
+  };
+  by_status: {
+    pending: number;
+    queued: number;
+    sent: number;
+    failed: number;
+    skipped: number;
+  };
+  funnel: Array<{ stage: string; count: number }>;
+  timeline: Array<{
+    date: string;
+    sent: number;
+    replied: number;
+    converted: number;
+  }>;
+  top_leads: Array<{
+    lead_id: string;
+    name: string;
+    phone: string;
+    stage: string;
+    lead_score: number;
+    send_status: string;
+    replied: boolean;
+    ai_replied: boolean;
+    is_conversion: boolean;
+    response_minutes: number | null;
+    tags: string[];
+  }>;
+  errors_sample: string[];
+  ai_engagement: {
+    auto_reply_events: number;
+    leads_ai_replied: number;
+    leads_human_replied: number;
+  };
+};
+
 export type PlatformSession = {
   access_token: string;
   refresh_token: string;

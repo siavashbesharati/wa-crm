@@ -7,7 +7,8 @@ import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { Switch } from "@/components/ui/Switch";
 import { PageLoading } from "@/components/ui/Spinner";
 import { STAGES, TAG_LABELS_FA, tagLabel } from "@/components/crm/shared";
-import { api } from "@/lib/api";
+import { CampaignReportModal } from "@/components/campaigns/CampaignReportModal";
+import { api, type CampaignReport } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
 
@@ -67,6 +68,9 @@ export default function CampaignsPage() {
   const [stages, setStages] = useState<string[]>([]);
   const [minScore, setMinScore] = useState(0);
   const [includeGroups, setIncludeGroups] = useState(false);
+  const [reportCampaignId, setReportCampaignId] = useState<string | null>(null);
+  const [report, setReport] = useState<CampaignReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const { busy, run } = useMutation();
   const toast = useToast();
@@ -186,6 +190,25 @@ export default function CampaignsPage() {
       { success: "کمپین حذف شد" }
     );
     if (ok) await load();
+  }
+
+  async function openReport(id: string) {
+    setReportCampaignId(id);
+    setReport(null);
+    setReportLoading(true);
+    try {
+      const data = await api<CampaignReport>(`/campaigns/${id}/report`);
+      setReport(data);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا در دریافت گزارش", "err");
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  function closeReport() {
+    setReportCampaignId(null);
+    setReport(null);
   }
 
   async function previewExisting(id: string) {
@@ -461,6 +484,26 @@ export default function CampaignsPage() {
                         >
                           شمارش مخاطب
                         </Button>
+                        {reportCampaignId === c.id ? (
+                          <Button
+                            className="campaign-action-btn"
+                            size="sm"
+                            variant="secondary"
+                            loading={reportLoading}
+                            onClick={() => closeReport()}
+                          >
+                            بستن
+                          </Button>
+                        ) : (
+                          <Button
+                            className="campaign-action-btn"
+                            size="sm"
+                            loading={reportLoading}
+                            onClick={() => openReport(c.id)}
+                          >
+                            گزارش
+                          </Button>
+                        )}
                         <Button
                           className="campaign-action-btn"
                           size="sm"
@@ -479,6 +522,12 @@ export default function CampaignsPage() {
           </Card>
         </>
       )}
+      <CampaignReportModal
+        open={reportCampaignId !== null}
+        onClose={closeReport}
+        report={report}
+        loading={reportLoading}
+      />
     </Shell>
   );
 }
