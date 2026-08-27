@@ -62,10 +62,10 @@ OPERATORS = [
 ]
 
 CHANNELS = [
-    {"channel": ChannelType.whatsapp, "label": "واتساپ فروش پارامیس",  "external_id": "989121234567", "status": "connected", "pairing_state": "connected", "wa_jid": "989121234567@s.whatsapp.net", "connector_type": "baileys"},
-    {"channel": ChannelType.whatsapp, "label": "واتساپ اجاره پارامیس",  "external_id": "989121234568", "status": "connected", "pairing_state": "connected", "wa_jid": "989121234568@s.whatsapp.net", "connector_type": "baileys"},
-    {"channel": ChannelType.divar,    "label": "دیوار — شعبه مرکزی",    "external_id": "divar-paramis", "status": "connected", "pairing_state": "connected", "wa_jid": "", "connector_type": "divar_api"},
-    {"channel": ChannelType.bale,     "label": "بله — پشتیبانی پارامیس", "external_id": "bale-paramis",  "status": "connected", "pairing_state": "connected", "wa_jid": "", "connector_type": "bale_api"},
+    {"channel": ChannelType.whatsapp, "label": "واتساپ فروش پارامیس",  "external_id": "989121234567", "status": "offline", "pairing_state": "disconnected", "wa_jid": "", "connector_type": "baileys"},
+    {"channel": ChannelType.whatsapp, "label": "واتساپ اجاره پارامیس",  "external_id": "989121234568", "status": "offline", "pairing_state": "disconnected", "wa_jid": "", "connector_type": "baileys"},
+    {"channel": ChannelType.divar,    "label": "دیوار — شعبه مرکزی",    "external_id": "divar-paramis", "status": "offline", "pairing_state": "disconnected", "wa_jid": "", "connector_type": "divar_api"},
+    {"channel": ChannelType.bale,     "label": "بله — پشتیبانی پارامیس", "external_id": "bale-paramis",  "status": "offline", "pairing_state": "disconnected", "wa_jid": "", "connector_type": "bale_api"},
 ]
 
 # 30 leads: spread across all 5 pipeline stages
@@ -405,21 +405,19 @@ def _ensure_channels(db, org):
                     )
                 )
 
-        if not db.query(ConnectorSession).filter(ConnectorSession.account_id == acc.id).first():
-            role = (
-                "baileys" if ch["channel"] == ChannelType.whatsapp
-                else "divar" if ch["channel"] == ChannelType.divar
-                else "bale"
-            )
-            db.add(
-                ConnectorSession(
-                    org_id=org.id,
-                    account_id=acc.id,
-                    device_id=f"demo-device-{acc.id[:6]}",
-                    role=role,
-                    status="online",
-                )
-            )
+        # In the demo all connectors are offline — wipe any stale auth state /
+        # cursor / session rows that an earlier "connected" seed may have left
+        # behind, and DON'T re-create a ConnectorSession (the channels page uses
+        # the presence of one to show the live "online" badge).
+        for Model, attr in (
+            (WaAuthState, "account_id"),
+            (DivarAuthState, "account_id"),
+            (BaleAuthState, "account_id"),
+            (ConnectorSession, "account_id"),
+        ):
+            stale = db.query(Model).filter(getattr(Model, attr) == acc.id).first()
+            if stale:
+                db.delete(stale)
         accounts.append(acc)
     return accounts
 
