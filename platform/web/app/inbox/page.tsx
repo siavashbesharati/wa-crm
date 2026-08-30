@@ -63,6 +63,7 @@ type Message = {
   body: string;
   direction: string;
   sender_type: string;
+  sender_name?: string;
   created_at: string;
   media_type?: string;
   delivery_status?: string;
@@ -135,13 +136,11 @@ function isPlaceholderBody(body: string) {
   return !raw || raw === "[]" || /^\[([^\]]+)\]$/.test(raw);
 }
 
-function senderLabel(type: string, outbound: boolean) {
-  if (outbound) {
-    if (type === "ai") return "هوش مصنوعی";
-    if (type === "agent") return "شما";
-    return "ارسال‌شده";
+function SenderBadge({ type, name }: { type: string; name?: string }) {
+  if (type === "ai") {
+    return <span className="msg-sender-badge ai">هوش مصنوعی</span>;
   }
-  return "مشتری";
+  return <span className="msg-sender-badge agent">{name || "شما"}</span>;
 }
 
 function DeliveryTicks({ status }: { status?: string }) {
@@ -649,12 +648,16 @@ export default function InboxPage() {
                                 {displayMessageBody(m.body, m.media_type)}
                               </p>
                               <span className="bubble-meta">
-                                {senderLabel(m.sender_type, outbound)}
-                                {" · "}
+                                {outbound ? (
+                                  <SenderBadge type={m.sender_type} name={m.sender_name} />
+                                ) : (
+                                  "مشتری"
+                                )}
+                                <span className="bubble-meta-sep">·</span>
                                 {formatTime(m.created_at)}
                                 {outbound ? (
                                   <>
-                                    {" · "}
+                                    <span className="bubble-meta-sep">·</span>
                                     <DeliveryTicks status={m.delivery_status} />
                                   </>
                                 ) : null}

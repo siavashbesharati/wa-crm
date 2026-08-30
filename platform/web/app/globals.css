@@ -2945,6 +2945,25 @@ a.btn.wizard-btn:hover {
   opacity: 0.55;
   text-align: start;
 }
+.bubble-meta-sep {
+  margin: 0 4px;
+}
+.msg-sender-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+  letter-spacing: 0.2px;
+  color: #fff;
+}
+.msg-sender-badge.ai {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
+.msg-sender-badge.agent {
+  background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+}
 @keyframes bubble-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
