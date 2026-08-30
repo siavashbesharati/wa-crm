@@ -75,9 +75,13 @@ def _load_or_create_wa_creds_key() -> str:
 
 
 class Settings(BaseSettings):
-    """App settings — values come only from this file (no .env / OS env override)."""
+    """Application settings, with local overrides loaded from platform/api/.env."""
 
-    model_config = SettingsConfigDict(extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_API_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_env: str = "development"
     database_url: str = _default_database_url()
@@ -140,8 +144,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Ignore OS env and .env — only class defaults / explicit init
-        return (init_settings,)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
     @field_validator("sms_ir_template_id", mode="before")
     @classmethod

@@ -4,7 +4,7 @@ Creates a fully-populated business org for product demos:
 - 4 connected channels (WhatsApp x2 + Divar + Bale)
 - Owner + 3 operators (team)
 - 30 realistic real-estate leads across every pipeline stage
-- 150+ realistic Persian conversations (inbound / outbound / AI replies)
+- Natural Persian WhatsApp-style conversations (خرید / اجاره / بازدید / معامله)
 - Tasks in every status (open / in_progress / done)
 - 4 knowledge-base documents (neighborhoods + pricing + rules)
 - 2 campaigns (1 completed, 1 running)
@@ -18,6 +18,7 @@ Idempotent: re-running only fills gaps (it never duplicates the org / user).
 Usage:
   cd platform/api
   python scripts/seed_demo_full.py
+  python scripts/seed_demo_full.py --conversations --replace
 """
 
 from __future__ import annotations
@@ -45,6 +46,15 @@ from app.models import (  # noqa: E402
     User, WaAuthState,
 )
 from app.services.embeddings import chunk_text, embed_text  # noqa: E402
+from app.services.phone import normalize_phone_for_storage  # noqa: E402
+
+# Local curated inbox scripts (natural Farsi real-estate flows)
+_SCRIPTS = Path(__file__).resolve().parent / "demo_conversations.py"
+_spec = importlib.util.spec_from_file_location("demo_conversations", _SCRIPTS)
+_demo_conv = importlib.util.module_from_spec(_spec)
+assert _spec and _spec.loader
+_spec.loader.exec_module(_demo_conv)
+build_conversation = _demo_conv.build_conversation
 
 settings = get_settings()
 DEMO_ORG_NAME = settings.demo_org_name
@@ -59,6 +69,7 @@ OPERATORS = [
     {"phone": "09121110001", "name": "علی محمدی", "role": MemberRole.admin},
     {"phone": "09121110002", "name": "مریم احمدی", "role": MemberRole.agent},
     {"phone": "09121110003", "name": "حسین رضایی", "role": MemberRole.agent},
+    {"phone": "09121110004", "name": "مهندس لطفی", "role": MemberRole.agent},
 ]
 
 CHANNELS = [
@@ -68,118 +79,71 @@ CHANNELS = [
     {"channel": ChannelType.bale,     "label": "بله — پشتیبانی پارامیس", "external_id": "bale-paramis",  "status": "offline", "pairing_state": "disconnected", "wa_jid": "", "connector_type": "bale_api"},
 ]
 
-# 30 leads: spread across all 5 pipeline stages
+# Stages match CRM board: جدید → پیگیری → پیشنهاد → خرید → بسته
 LEADS = [
-    {"name": "آقای کریمی", "phone": "989121111101", "stage": "جدید", "area": "نیاوران", "intent": "خرید", "type": "آپارتمان", "budget": "۲۵ میلیارد", "size": 180, "rooms": "۳ خواب", "floor": 4, "year": 1400, "source": "whatsapp", "tags": ["vip", "خریدار جدی"], "score": 82, "assignee": "علی محمدی"},
-    {"name": "خانم حسینی", "phone": "989121111102", "stage": "جدید", "area": "فرمانیه", "intent": "اجاره", "type": "آپارتمان", "budget": "۶۵ میلیون", "size": 120, "rooms": "۲ خواب", "floor": 2, "year": 1395, "source": "divar", "tags": ["پرچم‌دار"], "score": 64, "assignee": "مریم احمدی"},
-    {"name": "آقای نوری", "phone": "989121111103", "stage": "جدید", "area": "ولنجک", "intent": "خرید", "type": "ویلا", "budget": "۶۰ میلیارد", "size": 450, "rooms": "۵ خواب", "floor": 0, "year": 1402, "source": "whatsapp", "tags": ["سرمایه‌گذاری"], "score": 88, "assignee": "علی محمدی"},
-    {"name": "مهندس صادقی", "phone": "989121111104", "stage": "جدید", "area": "سعادت‌آباد", "intent": "خرید", "type": "آپارتمان", "budget": "۱۸ میلیارد", "size": 140, "rooms": "۳ خواب", "floor": 3, "year": 1398, "source": "bale", "tags": ["نقد"], "score": 71, "assignee": "حسین رضایی"},
-    {"name": "خانم مرادی", "phone": "989121111105", "stage": "جدید", "area": "شهرک غرب", "intent": "اجاره", "type": "آپارتمان", "budget": "۸۰ میلیون", "size": 160, "rooms": "۳ خواب", "floor": 5, "year": 1397, "source": "whatsapp", "tags": ["مبله"], "score": 59, "assignee": "مریم احمدی"},
-    {"name": "آقای زارع", "phone": "989121111106", "stage": "جدید", "area": "تجریش", "intent": "خرید", "type": "مغازه", "budget": "۱۲ میلیارد", "size": 80, "rooms": "—", "floor": 0, "year": 1385, "source": "divar", "tags": ["تجاری"], "score": 67, "assignee": "علی محمدی"},
-    {"name": "خانم فلاحی", "phone": "989121111107", "stage": "جدید", "area": "ونک", "intent": "خرید", "type": "آپارتمان", "budget": "۳۰ میلیارد", "size": 200, "rooms": "۳ خواب", "floor": 8, "year": 1399, "source": "whatsapp", "tags": ["ویو"], "score": 76, "assignee": "حسین رضایی"},
-    {"name": "آقای غلامی", "phone": "989121111108", "stage": "پیگیری", "area": "زعفرانیه", "intent": "خرید", "type": "آپارتمان", "budget": "۴۵ میلیارد", "size": 250, "rooms": "۴ خواب", "floor": 6, "year": 1401, "source": "whatsapp", "tags": ["ویو باز"], "score": 91, "assignee": "علی محمدی"},
-    {"name": "دکتر اکبری", "phone": "989121111109", "stage": "پیگیری", "area": "قیطریه", "intent": "خرید", "type": "آپارتمان", "budget": "۲۸ میلیارد", "size": 170, "rooms": "۳ خواب", "floor": 3, "year": 1396, "source": "whatsapp", "tags": ["وام‌دار"], "score": 78, "assignee": "مریم احمدی"},
-    {"name": "خانم رنجبر", "phone": "989121111110", "stage": "پیگیری", "area": "پاسداران", "intent": "اجاره", "type": "آپارتمان", "budget": "۴۵ میلیون", "size": 110, "rooms": "۲ خواب", "floor": 2, "year": 1390, "source": "divar", "tags": ["مستاجر"], "score": 55, "assignee": "حسین رضایی"},
-    {"name": "آقای توکلی", "phone": "989121111111", "stage": "پیگیری", "area": "جردن", "intent": "خرید", "type": "آپارتمان", "budget": "۳۵ میلیارد", "size": 190, "rooms": "۳ خواب", "floor": 7, "year": 1398, "source": "bale", "tags": ["پارکینگ"], "score": 83, "assignee": "علی محمدی"},
-    {"name": "خانم سلطانی", "phone": "989121111112", "stage": "پیگیری", "area": "کامرانیه", "intent": "خرید", "type": "ویلا", "budget": "۹۰ میلیارد", "size": 600, "rooms": "۶ خواب", "floor": 0, "year": 1395, "source": "whatsapp", "tags": ["استخر"], "score": 87, "assignee": "مریم احمدی"},
-    {"name": "آقای موسوی", "phone": "989121111113", "stage": "پیگیری", "area": "اقدسیه", "intent": "خرید", "type": "زمین", "budget": "۲۰ میلیارد", "size": 500, "rooms": "—", "floor": 0, "year": 0, "source": "divar", "tags": ["زمین"], "score": 70, "assignee": "حسین رضایی"},
-    {"name": "خانم نجفی", "phone": "989121111114", "stage": "پیگیری", "area": "یوسف‌آباد", "intent": "اجاره", "type": "آپارتمان", "budget": "۳۵ میلیون", "size": 95, "rooms": "۲ خواب", "floor": 1, "year": 1385, "source": "whatsapp", "tags": ["قدیمی"], "score": 48, "assignee": "علی محمدی"},
-    {"name": "آقای صالحی", "phone": "989121111115", "stage": "بازدید", "area": "فرشته", "intent": "خرید", "type": "آپارتمان", "budget": "۵۵ میلیارد", "size": 280, "rooms": "۴ خواب", "floor": 9, "year": 1402, "source": "whatsapp", "tags": ["برند"], "score": 94, "assignee": "علی محمدی"},
-    {"name": "خانم عابدی", "phone": "989121111116", "stage": "بازدید", "area": "الهیه", "intent": "خرید", "type": "پنت‌هاوس", "budget": "۸۰ میلیارد", "size": 350, "rooms": "۴ خواب", "floor": 15, "year": 1403, "source": "whatsapp", "tags": ["لوکس"], "score": 96, "assignee": "مریم احمدی"},
-    {"name": "آقای مومنی", "phone": "989121111117", "stage": "بازدید", "area": "دروس", "intent": "خرید", "type": "آپارتمان", "budget": "۳۸ میلیارد", "size": 210, "rooms": "۳ خواب", "floor": 4, "year": 1399, "source": "bale", "tags": ["نوساز"], "score": 89, "assignee": "حسین رضایی"},
-    {"name": "خانم آقاجانی", "phone": "989121111118", "stage": "بازدید", "area": "اختیاریه", "intent": "خرید", "type": "آپارتمان", "budget": "۲۲ میلیارد", "size": 130, "rooms": "۲ خواب", "floor": 3, "year": 1394, "source": "divar", "tags": ["بازسازی"], "score": 73, "assignee": "علی محمدی"},
-    {"name": "آقای حیدری", "phone": "989121111119", "stage": "بازدید", "area": "محمودیه", "intent": "اجاره", "type": "آپارتمان", "budget": "۵۰ میلیون", "size": 130, "rooms": "۲ خواب", "floor": 4, "year": 1393, "source": "whatsapp", "tags": ["بالکن"], "score": 62, "assignee": "مریم احمدی"},
-    {"name": "دکتر کاشانی", "phone": "989121111120", "stage": "بازدید", "area": "امام‌زاده قاسم", "intent": "خرید", "type": "باغ ویلا", "budget": "۳۵ میلیارد", "size": 800, "rooms": "۴ خواب", "floor": 0, "year": 1390, "source": "whatsapp", "tags": ["ویلای شمالی"], "score": 81, "assignee": "حسین رضایی"},
-    {"name": "آقای باقری", "phone": "989121111121", "stage": "مذاکره", "area": "شهرک قدس", "intent": "خرید", "type": "آپارتمان", "budget": "۲۶ میلیارد", "size": 155, "rooms": "۳ خواب", "floor": 5, "year": 1398, "source": "whatsapp", "tags": ["قیمت نهایی"], "score": 92, "assignee": "علی محمدی"},
-    {"name": "خانم شفیعی", "phone": "989121111122", "stage": "مذاکره", "area": "آریاشهر", "intent": "اجاره", "type": "آپارتمان", "budget": "۷۰ میلیون", "size": 145, "rooms": "۳ خواب", "floor": 3, "year": 1396, "source": "bale", "tags": ["رهن کامل"], "score": 79, "assignee": "مریم احمدی"},
-    {"name": "آقای ناصری", "phone": "989121111123", "stage": "مذاکره", "area": "صادقیه", "intent": "خرید", "type": "آپارتمان", "budget": "۱۵ میلیارد", "size": 105, "rooms": "۲ خواب", "floor": 2, "year": 1392, "source": "divar", "tags": ["پای معامله"], "score": 85, "assignee": "حسین رضایی"},
-    {"name": "خانم حسامی", "phone": "989121111124", "stage": "مذاکره", "area": "پونک", "intent": "خرید", "type": "آپارتمان", "budget": "۲۱ میلیارد", "size": 135, "rooms": "۲ خواب", "floor": 4, "year": 1397, "source": "whatsapp", "tags": ["نقلی"], "score": 88, "assignee": "علی محمدی"},
-    {"name": "آقای عبادی", "phone": "989121111125", "stage": "مذاکره", "area": "جردن", "intent": "خرید", "type": "دفتر کار", "budget": "۴۰ میلیارد", "size": 220, "rooms": "۵ اتاق", "floor": 6, "year": 1395, "source": "whatsapp", "tags": ["اداری"], "score": 84, "assignee": "مریم احمدی"},
-    {"name": "آقای رستمی", "phone": "989121111126", "stage": "بسته‌شده", "area": "نیاوران", "intent": "خرید", "type": "آپارتمان", "budget": "۳۲ میلیارد", "size": 175, "rooms": "۳ خواب", "floor": 3, "year": 1399, "source": "whatsapp", "tags": ["فروش"], "score": 100, "assignee": "علی محمدی"},
-    {"name": "خانم افضلی", "phone": "989121111127", "stage": "بسته‌شده", "area": "سعادت‌آباد", "intent": "خرید", "type": "آپارتمان", "budget": "۱۹ میلیارد", "size": 125, "rooms": "۲ خواب", "floor": 2, "year": 1396, "source": "divar", "tags": ["فروش"], "score": 100, "assignee": "مریم احمدی"},
-    {"name": "آقای کاظمی", "phone": "989121111128", "stage": "بسته‌شده", "area": "تجریش", "intent": "اجاره", "type": "آپارتمان", "budget": "۵۵ میلیون", "size": 140, "rooms": "۲ خواب", "floor": 4, "year": 1393, "source": "whatsapp", "tags": ["اجاره"], "score": 100, "assignee": "حسین رضایی"},
-    {"name": "دکتر شایان", "phone": "989121111129", "stage": "بسته‌شده", "area": "قیطریه", "intent": "خرید", "type": "ویلا", "budget": "۷۰ میلیارد", "size": 500, "rooms": "۵ خواب", "floor": 0, "year": 1398, "source": "bale", "tags": ["فروش"], "score": 100, "assignee": "علی محمدی"},
-    {"name": "آقای متین", "phone": "989121111130", "stage": "بسته‌شده", "area": "پاسداران", "intent": "اجاره", "type": "آپارتمان", "budget": "۴۰ میلیون", "size": 100, "rooms": "۲ خواب", "floor": 1, "year": 1385, "source": "whatsapp", "tags": ["اجاره"], "score": 100, "assignee": "مریم احمدی"},
+    {"name": "آقای کریمی", "phone": "09121111101", "stage": "جدید", "area": "نیاوران", "intent": "خرید", "type": "آپارتمان", "budget": "۲۵ میلیارد", "size": 180, "rooms": "۳ خواب", "floor": 4, "year": 1400, "source": "whatsapp", "tags": ["vip", "خریدار جدی"], "score": 82, "assignee": "علی محمدی"},
+    {"name": "خانم حسینی", "phone": "09121111102", "stage": "جدید", "area": "فرمانیه", "intent": "اجاره", "type": "آپارتمان", "budget": "۶۵ میلیون", "size": 120, "rooms": "۲ خواب", "floor": 2, "year": 1395, "source": "divar", "tags": ["پرچم‌دار"], "score": 64, "assignee": "مریم احمدی"},
+    {"name": "آقای نوری", "phone": "09121111103", "stage": "جدید", "area": "ولنجک", "intent": "خرید", "type": "ویلا", "budget": "۶۰ میلیارد", "size": 450, "rooms": "۵ خواب", "floor": 0, "year": 1402, "source": "whatsapp", "tags": ["سرمایه‌گذاری"], "score": 88, "assignee": "علی محمدی"},
+    {"name": "مهندس صادقی", "phone": "09121111104", "stage": "جدید", "area": "سعادت‌آباد", "intent": "خرید", "type": "آپارتمان", "budget": "۱۸ میلیارد", "size": 140, "rooms": "۳ خواب", "floor": 3, "year": 1398, "source": "bale", "tags": ["نقد"], "score": 71, "assignee": "حسین رضایی", "bale_uid": 381966101},
+    {"name": "خانم مرادی", "phone": "09121111105", "stage": "جدید", "area": "شهرک غرب", "intent": "اجاره", "type": "آپارتمان", "budget": "۸۰ میلیون", "size": 160, "rooms": "۳ خواب", "floor": 5, "year": 1397, "source": "whatsapp", "tags": ["مبله"], "score": 59, "assignee": "مریم احمدی"},
+    {"name": "آقای زارع", "phone": "09121111106", "stage": "جدید", "area": "تجریش", "intent": "خرید", "type": "مغازه", "budget": "۱۲ میلیارد", "size": 80, "rooms": "—", "floor": 0, "year": 1385, "source": "divar", "tags": ["تجاری"], "score": 67, "assignee": "علی محمدی"},
+    {"name": "خانم فلاحی", "phone": "09121111107", "stage": "جدید", "area": "ونک", "intent": "خرید", "type": "آپارتمان", "budget": "۳۰ میلیارد", "size": 200, "rooms": "۳ خواب", "floor": 8, "year": 1399, "source": "whatsapp", "tags": ["ویو"], "score": 76, "assignee": "حسین رضایی"},
+    {"name": "آقای غلامی", "phone": "09121111108", "stage": "پیگیری", "area": "زعفرانیه", "intent": "خرید", "type": "آپارتمان", "budget": "۴۵ میلیارد", "size": 250, "rooms": "۴ خواب", "floor": 6, "year": 1401, "source": "whatsapp", "tags": ["ویو باز"], "score": 91, "assignee": "علی محمدی"},
+    {"name": "دکتر اکبری", "phone": "09121111109", "stage": "پیگیری", "area": "قیطریه", "intent": "خرید", "type": "آپارتمان", "budget": "۲۸ میلیارد", "size": 170, "rooms": "۳ خواب", "floor": 3, "year": 1396, "source": "whatsapp", "tags": ["وام‌دار"], "score": 78, "assignee": "مریم احمدی"},
+    {"name": "خانم رنجبر", "phone": "09121111110", "stage": "پیگیری", "area": "پاسداران", "intent": "اجاره", "type": "آپارتمان", "budget": "۴۵ میلیون", "size": 110, "rooms": "۲ خواب", "floor": 2, "year": 1390, "source": "divar", "tags": ["مستاجر"], "score": 55, "assignee": "حسین رضایی"},
+    {"name": "آقای توکلی", "phone": "09121111111", "stage": "پیگیری", "area": "جردن", "intent": "خرید", "type": "آپارتمان", "budget": "۳۵ میلیارد", "size": 190, "rooms": "۳ خواب", "floor": 7, "year": 1398, "source": "bale", "tags": ["پارکینگ"], "score": 83, "assignee": "علی محمدی", "bale_uid": 381966111},
+    {"name": "خانم سلطانی", "phone": "09121111112", "stage": "پیگیری", "area": "کامرانیه", "intent": "خرید", "type": "ویلا", "budget": "۹۰ میلیارد", "size": 600, "rooms": "۶ خواب", "floor": 0, "year": 1395, "source": "whatsapp", "tags": ["استخر"], "score": 87, "assignee": "مریم احمدی"},
+    {"name": "آقای موسوی", "phone": "09121111113", "stage": "پیگیری", "area": "اقدسیه", "intent": "خرید", "type": "زمین", "budget": "۲۰ میلیارد", "size": 500, "rooms": "—", "floor": 0, "year": 0, "source": "divar", "tags": ["زمین"], "score": 70, "assignee": "حسین رضایی"},
+    {"name": "خانم نجفی", "phone": "09121111114", "stage": "پیگیری", "area": "یوسف‌آباد", "intent": "اجاره", "type": "آپارتمان", "budget": "۳۵ میلیون", "size": 95, "rooms": "۲ خواب", "floor": 1, "year": 1385, "source": "whatsapp", "tags": ["قدیمی"], "score": 48, "assignee": "علی محمدی"},
+    {"name": "آقای صالحی", "phone": "09121111115", "stage": "پیشنهاد", "area": "فرشته", "intent": "خرید", "type": "آپارتمان", "budget": "۵۵ میلیارد", "size": 280, "rooms": "۴ خواب", "floor": 9, "year": 1402, "source": "whatsapp", "tags": ["برند"], "score": 94, "assignee": "علی محمدی"},
+    {"name": "خانم عابدی", "phone": "09121111116", "stage": "پیشنهاد", "area": "الهیه", "intent": "خرید", "type": "پنت‌هاوس", "budget": "۸۰ میلیارد", "size": 350, "rooms": "۴ خواب", "floor": 15, "year": 1403, "source": "whatsapp", "tags": ["لوکس"], "score": 96, "assignee": "مریم احمدی"},
+    {"name": "آقای مومنی", "phone": "09121111117", "stage": "پیشنهاد", "area": "دروس", "intent": "خرید", "type": "آپارتمان", "budget": "۳۸ میلیارد", "size": 210, "rooms": "۳ خواب", "floor": 4, "year": 1399, "source": "bale", "tags": ["نوساز"], "score": 89, "assignee": "حسین رضایی", "bale_uid": 381966117},
+    {"name": "خانم آقاجانی", "phone": "09121111118", "stage": "پیشنهاد", "area": "اختیاریه", "intent": "خرید", "type": "آپارتمان", "budget": "۲۲ میلیارد", "size": 130, "rooms": "۲ خواب", "floor": 3, "year": 1394, "source": "divar", "tags": ["بازسازی"], "score": 73, "assignee": "علی محمدی"},
+    {"name": "آقای حیدری", "phone": "09121111119", "stage": "پیشنهاد", "area": "محمودیه", "intent": "اجاره", "type": "آپارتمان", "budget": "۵۰ میلیون", "size": 130, "rooms": "۲ خواب", "floor": 4, "year": 1393, "source": "whatsapp", "tags": ["بالکن"], "score": 62, "assignee": "مریم احمدی"},
+    {"name": "دکتر کاشانی", "phone": "09121111120", "stage": "پیشنهاد", "area": "امام‌زاده قاسم", "intent": "خرید", "type": "باغ ویلا", "budget": "۳۵ میلیارد", "size": 800, "rooms": "۴ خواب", "floor": 0, "year": 1390, "source": "whatsapp", "tags": ["ویلای شمالی"], "score": 81, "assignee": "حسین رضایی"},
+    {"name": "آقای باقری", "phone": "09121111121", "stage": "خرید", "area": "شهرک قدس", "intent": "خرید", "type": "آپارتمان", "budget": "۲۶ میلیارد", "size": 155, "rooms": "۳ خواب", "floor": 5, "year": 1398, "source": "whatsapp", "tags": ["قیمت نهایی"], "score": 92, "assignee": "علی محمدی"},
+    {"name": "خانم شفیعی", "phone": "09121111122", "stage": "خرید", "area": "آریاشهر", "intent": "اجاره", "type": "آپارتمان", "budget": "۷۰ میلیون", "size": 145, "rooms": "۳ خواب", "floor": 3, "year": 1396, "source": "bale", "tags": ["رهن کامل"], "score": 79, "assignee": "مریم احمدی", "bale_uid": 381966122},
+    {"name": "آقای ناصری", "phone": "09121111123", "stage": "خرید", "area": "صادقیه", "intent": "خرید", "type": "آپارتمان", "budget": "۱۵ میلیارد", "size": 105, "rooms": "۲ خواب", "floor": 2, "year": 1392, "source": "divar", "tags": ["پای معامله"], "score": 85, "assignee": "حسین رضایی"},
+    {"name": "خانم حسامی", "phone": "09121111124", "stage": "خرید", "area": "پونک", "intent": "خرید", "type": "آپارتمان", "budget": "۲۱ میلیارد", "size": 135, "rooms": "۲ خواب", "floor": 4, "year": 1397, "source": "whatsapp", "tags": ["نقلی"], "score": 88, "assignee": "علی محمدی"},
+    {"name": "آقای عبادی", "phone": "09121111125", "stage": "خرید", "area": "جردن", "intent": "خرید", "type": "دفتر کار", "budget": "۴۰ میلیارد", "size": 220, "rooms": "۵ اتاق", "floor": 6, "year": 1395, "source": "whatsapp", "tags": ["اداری"], "score": 84, "assignee": "مریم احمدی"},
+    {"name": "آقای رستمی", "phone": "09121111126", "stage": "بسته", "area": "نیاوران", "intent": "خرید", "type": "آپارتمان", "budget": "۳۲ میلیارد", "size": 175, "rooms": "۳ خواب", "floor": 3, "year": 1399, "source": "whatsapp", "tags": ["فروش"], "score": 100, "assignee": "علی محمدی"},
+    {"name": "خانم افضلی", "phone": "09121111127", "stage": "بسته", "area": "سعادت‌آباد", "intent": "خرید", "type": "آپارتمان", "budget": "۱۹ میلیارد", "size": 125, "rooms": "۲ خواب", "floor": 2, "year": 1396, "source": "divar", "tags": ["فروش"], "score": 100, "assignee": "مریم احمدی"},
+    {"name": "آقای کاظمی", "phone": "09121111128", "stage": "بسته", "area": "تجریش", "intent": "اجاره", "type": "آپارتمان", "budget": "۵۵ میلیون", "size": 140, "rooms": "۲ خواب", "floor": 4, "year": 1393, "source": "whatsapp", "tags": ["اجاره"], "score": 100, "assignee": "حسین رضایی"},
+    {"name": "دکتر شایان", "phone": "09121111129", "stage": "بسته", "area": "قیطریه", "intent": "خرید", "type": "ویلا", "budget": "۷۰ میلیارد", "size": 500, "rooms": "۵ خواب", "floor": 0, "year": 1398, "source": "bale", "tags": ["فروش"], "score": 100, "assignee": "علی محمدی", "bale_uid": 381966129},
+    {"name": "آقای متین", "phone": "09121111130", "stage": "بسته", "area": "پاسداران", "intent": "اجاره", "type": "آپارتمان", "budget": "۴۰ میلیون", "size": 100, "rooms": "۲ خواب", "floor": 1, "year": 1385, "source": "whatsapp", "tags": ["اجاره"], "score": 100, "assignee": "مریم احمدی"},
 ]
 
-# Realistic Persian conversation templates
-CONVERSATIONS = {
-    "جدید": [
-        ("سلام وقت بخیر. یک آپارتمان {size} متری در {area} می\u200cخواستم.", "customer"),
-        ("سلام، خوش اومدید. بله {area} موجود داریم. چند خواب؟ چه بودجه\u200cای مدنظرتون هست؟", "agent"),
-        ("{rooms}. بودجه\u200cم تا {budget} تومان هست. نوساز باشه ترجیح می\u200cدم.", "customer"),
-        ("عالیه. چند مورد عالی دارم براتون. فردا ساعت ۱۱ بازدید آپارتمان نیاوران رو داریم، می\u200cتونید بیاید؟", "agent"),
-        ("بله حتماً. آدرس رو بفرستید لطفاً.", "customer"),
-        ("\U0001F4CD نیاوران، خیابان یاسر، پلاک ۴۲. فردا ساعت ۱۱ جلوی ساختمان منتظرتون هستم.", "agent"),
-        ("ممنون. حتماً میام.", "customer"),
-    ],
-    "پیگیری": [
-        ("سلام. فایل {area} که گفتید هنوز آماده نیست؟", "customer"),
-        ("سلام، بله الان آماده\u200cست. {size} متر، {rooms}، طبقه {floor}، سال ساخت {year}. قیمت {budget}.", "agent"),
-        ("قیمتش یه کم بالاست. میشه چانه بزنیم؟", "customer"),
-        ("ببینید مالک تا یه حدی انعطاف داره ولی خیلی پایین نمیاد. نظرتون چنده؟", "agent"),
-        ("{budget} می\u200cتونم بدم. اگه موافق باشه پیش\u200cپرداخت هم نقد می\u200cدم.", "customer"),
-        ("اجازه بدید با مالک صحبت کنم، فردا جواب می\u200cدم.", "agent"),
-        ("ممنون. منتظر جوابتون هستم \U0001F64F", "customer"),
-    ],
-    "بازدید": [
-        ("سلام. برای بازدید امروز ساعت ۴ تأیید هست؟", "customer"),
-        ("بله حتماً. من و مالک ساعت ۴ دم در ساختمان هستیم.", "agent"),
-        ("دمتون گرم. یه سوال: آسانسور داره؟ پارکینگ چندتا؟", "customer"),
-        ("آسانسور برند Otis ۶ نفره. پارکینگ ۲ تا سند + ۱ مهمان. انباری هم داره.", "agent"),
-        ("عالی. حتماً میام. کد ورود چیه؟", "customer"),
-        ("کد ۲۳۴۵# — طبقه ۴ واحد ۸.", "agent"),
-        ("ممنون. در راه م.", "customer"),
-    ],
-    "مذاکره": [
-        ("سلام. فکر کردم دیدم. آپارتمان {area} رو پسندیدم ولی قیمت بالاست.", "customer"),
-        ("سلام، ممنون از بازدیدتون. قیمت {budget} قابل مذاکره\u200cست، مالک گفت تا {budget} می\u200cتونه بیاد پایین.", "agent"),
-        ("اگه {budget} باشه و یه\u200cماه اجاره رایگان بده، همین هفته قرارداد می\u200cبندیم.", "customer"),
-        ("اجاره رایگان سخته ولی یک ماه فرصت تخلیه می\u200cدم. نظرتون؟", "agent"),
-        ("قبول. فردا بیع\u200cنامه رو آماده کنید.", "customer"),
-        ("عالی. فردا ساعت ۱۰ دفتر منتظرتون هستم. مدارک شناسایی + چک ضمانت بیارید.", "agent"),
-        ("حتماً. ممنون \U0001F64F", "customer"),
-    ],
-    "بسته\u200cشده": [
-        ("سلام. فقط تشکر کنم بابت همکاری خوبتون. کلید رو تحویل گرفتم.", "customer"),
-        ("سلام، خواهش می\u200cکنم. مبارکتون باشه \U0001F337 اگه سوالی بود در خدمتم.", "agent"),
-        ("حتماً. اگه کسی دنبال ملک بود معرفی\u200cتون می\u200cکنم.", "customer"),
-        ("لطف می\u200cکنید. در خدمتتون هستم \U0001F64F", "agent"),
-    ],
-}
-
-# (title, lead_index, status, offset_days, source, assignee)
 TASKS = [
     ("تماس با مالک آپارتمان نیاوران", 0,  "in_progress", 0,  "manual", "علی محمدی"),
-    ("ارسال فایل پنت\u200cهاوس الهیه به خانم عابدی", 15, "open",        1,  "ai",     "مریم احمدی"),
+    ("ارسال فایل پنت‌هاوس الهیه به خانم عابدی", 15, "open",        1,  "ai",     "مریم احمدی"),
     ("هماهنگی بازدید ویلای کامرانیه",          11, "open",        2,  "manual", "مریم احمدی"),
     ("تنظیم قولنامه مغازه تجریش",              5,  "in_progress", 3,  "manual", "علی محمدی"),
     ("پیگیری بازپرداخت وام آقای اکبری",         8,  "open",        5,  "manual", "مریم احمدی"),
     ("ارسال قرارداد اجاره برای آقای کاظمی",     27, "done",       -2,  "manual", "حسین رضایی"),
     ("تشکر از مشتری پس از تحویل کلید",         25, "done",       -7,  "ai",     "علی محمدی"),
-    ("آپلود عکس\u200cهای جدید باغ ویلای امام\u200cزاده قاسم", 19, "open", 1, "manual", "حسین رضایی"),
+    ("آپلود عکس‌های جدید باغ ویلای امام‌زاده قاسم", 19, "open", 1, "manual", "حسین رضایی"),
     ("پیگیری نظرسنجی از خانم متین",             29, "done",       -1,  "ai",     "مریم احمدی"),
     ("بررسی مدارک شناسایی خانم عابدی",          15, "in_progress", 0,  "manual", "مریم احمدی"),
 ]
 
 KNOWLEDGE_DOCS = [
     {
-        "title": "راهنمای محله\u200cهای شمال تهران",
+        "title": "راهنمای محله‌های شمال تهران",
         "content": (
-            "نیاوران: یکی از گران\u200cترین محله\u200cهای شمال تهران. دسترسی عالی به مترو و بزرگراه صدر. "
+            "نیاوران: یکی از گران‌ترین محله‌های شمال تهران. دسترسی عالی به مترو و بزرگراه صدر. "
             "میانگین قیمت آپارتمان نوساز ۱۸۰ متری در نیاوران ۳۰ تا ۴۰ میلیارد تومان است.\n"
-            "فرمانیه: محله\u200cای خانوادگی با مدارس خوب و بازار مدرن. قیمت\u200cها ۲۰ تا ۳۰ درصد پایین\u200cتر از نیاوران است.\n"
-            "ولنجک: منطقه\u200cای لوکس با ویلاهای بزرگ. مناسب سرمایه\u200cگذاری بلندمدت. قیمت هر متر مربع بالای ۲۰۰ میلیون تومان.\n"
-            "زعفرانیه: ترکیب آپارتمان\u200cهای لوکس و ویلا. ویژه طبقه مرفه. دسترسی خوب به تجریش و شمال."
+            "فرمانیه: محله‌ای خانوادگی با مدارس خوب و بازار مدرن. قیمت‌ها ۲۰ تا ۳۰ درصد پایین‌تر از نیاوران است.\n"
+            "ولنجک: منطقه‌ای لوکس با ویلاهای بزرگ. مناسب سرمایه‌گذاری بلندمدت. قیمت هر متر مربع بالای ۲۰۰ میلیون تومان.\n"
+            "زعفرانیه: ترکیب آپارتمان‌های لوکس و ویلا. ویژه طبقه مرفه. دسترسی خوب به تجریش و شمال."
         ),
     },
     {
-        "title": "راهنمای قیمت ملک در سعادت\u200cآباد و شهرک غرب",
+        "title": "راهنمای قیمت ملک در سعادت‌آباد و شهرک غرب",
         "content": (
-            "سعادت\u200cآباد: از پرطرفدارترین مناطق غرب تهران. قیمت هر متر مربع آپارتمان نوساز ۱۲۰ تا ۱۸۰ میلیون تومان. "
-            "برج\u200cهای مدرن با امکانات ورزشی و امنیتی.\n"
-            "شهرک غرب: مدرن\u200cترین محله غرب تهران با معماری روز. مناسب خانواده\u200cهای جوان. "
-            "قیمت\u200cها بین ۱۰۰ تا ۱۵۰ میلیون تومان هر متر مربع."
+            "سعادت‌آباد: از پرطرفدارترین مناطق غرب تهران. قیمت هر متر مربع آپارتمان نوساز ۱۲۰ تا ۱۸۰ میلیون تومان. "
+            "برج‌های مدرن با امکانات ورزشی و امنیتی.\n"
+            "شهرک غرب: مدرن‌ترین محله غرب تهران با معماری روز. مناسب خانواده‌های جوان. "
+            "قیمت‌ها بین ۱۰۰ تا ۱۵۰ میلیون تومان هر متر مربع."
         ),
     },
     {
@@ -188,20 +152,20 @@ KNOWLEDGE_DOCS = [
             "۱. انتخاب ملک و بازدید حضوری\n"
             "۲. بررسی مدارک مالکیت و استعلام از شهرداری\n"
             "۳. مذاکره نهایی و توافق بر سر قیمت\n"
-            "۴. تنظیم بیع\u200cنامه در دفتر اسناد رسمی\n"
-            "۵. پرداخت پیش\u200cپرداخت و دریافت رسید\n"
+            "۴. تنظیم بیع‌نامه در دفتر اسناد رسمی\n"
+            "۵. پرداخت پیش‌پرداخت و دریافت رسید\n"
             "۶. تنظیم قرارداد در دفترخانه و انتقال سند\n"
-            "مدت زمان معمول از بیع\u200cنامه تا سند نهایی: ۲ تا ۴ هفته."
+            "مدت زمان معمول از بیع‌نامه تا سند نهایی: ۲ تا ۴ هفته."
         ),
     },
     {
         "title": "سوالات متداول مشتریان",
         "content": (
             "سوال: آیا امکان رهن کامل وجود دارد؟\n"
-            "پاسخ: بستگی به مالک دارد. معمولاً برای آپارتمان\u200cهای بالای ۲۰۰ متر، رهن کامل با ۵۰٪ تخفیف ممکن است.\n\n"
+            "پاسخ: بستگی به مالک دارد. معمولاً برای آپارتمان‌های بالای ۲۰۰ متر، رهن کامل با ۵۰٪ تخفیف ممکن است.\n\n"
             "سوال: کمیسیون دپارتمان پارامیس چقدر است؟\n"
             "پاسخ: برای خرید ۱٪ و برای اجاره یک ماه اجاره. در خریدهای بالای ۲۰ میلیارد، ۰.۵٪ تخفیف.\n\n"
-            "سوال: آیا وام بانکی برای خرید ملک پیشنهاد می\u200cکنید؟\n"
+            "سوال: آیا وام بانکی برای خرید ملک پیشنهاد می‌کنید؟\n"
             "پاسخ: بله، با همکاری ۳ بانک معتبر، وام با سود ۱۸٪ و بازپرداخت ۱۲ ساله."
         ),
     },
@@ -209,37 +173,34 @@ KNOWLEDGE_DOCS = [
 
 CAMPAIGNS = [
     {
-        "name": "کمپین نوروزی — آپارتمان\u200cهای نیاوران",
+        "name": "کمپین نوروزی — آپارتمان‌های نیاوران",
         "status": "completed",
         "template": (
             "سلام {name} عزیز،\n"
-            "دپارتمان ملک پارامیس پیشاپیش فرا رسیدن سال نو را تبریک می\u200cگوید. "
-            "پیشنهاد ویژه نوروزی: ۱۰٪ تخفیف کمیسیون برای معاملات تا پایان فروردین. \U0001F337"
+            "دپارتمان ملک پارامیس پیشاپیش فرا رسیدن سال نو را تبریک می‌گوید. "
+            "پیشنهاد ویژه نوروزی: ۱۰٪ تخفیف کمیسیون برای معاملات تا پایان فروردین. 🌷"
         ),
         "segment": {"tags": ["vip", "خریدار جدی"], "stages": ["جدید", "پیگیری"], "min_score": 60, "include_groups": False},
         "days_back": 30,
     },
     {
-        "name": "کمپین فعال — پنت\u200cهاوس و ویلاهای لوکس",
+        "name": "کمپین فعال — پنت‌هاوس و ویلاهای لوکس",
         "status": "running",
         "template": (
             "سلام {name} عزیز،\n"
-            "مجموعه\u200cای از ویلاهای لوکس شمال تهران وارد فایل ما شده. "
-            "در صورت تمایل برای بازدید رایگان هماهنگ می\u200cکنیم. \U0001F3E1"
+            "مجموعه‌ای از ویلاهای لوکس شمال تهران وارد فایل ما شده. "
+            "در صورت تمایل برای بازدید رایگان هماهنگ می‌کنیم. 🏡"
         ),
-        "segment": {"tags": ["vip"], "stages": ["بازدید", "مذاکره"], "min_score": 75, "include_groups": False},
+        "segment": {"tags": ["vip", "لوکس", "برند"], "stages": ["پیشنهاد", "خرید"], "min_score": 75, "include_groups": False},
         "days_back": 4,
     },
 ]
 
-# Showcase target audience/sends per campaign (matched lead count == send count,
-# so the campaign card and the report always show the same numbers).
 BULK_TARGETS = {
-    "کمپین نوروزی — آپارتمان\u200cهای نیاوران": 200,
-    "کمپین فعال — پنت\u200cهاوس و ویلاهای لوکس": 150,
+    "کمپین نوروزی — آپارتمان‌های نیاوران": 200,
+    "کمپین فعال — پنت‌هاوس و ویلاهای لوکس": 150,
 }
 
-# Name pools used to generate the extra showcase leads.
 BULK_FIRST = [
     "محمد", "علی", "حسین", "مهدی", "رضا", "امیر", "متین", "آرمان", "پویا", "سهیل",
     "سعید", "نیما", "امید", "بهرام", "فرهاد", "کاوه", "شایان", "آرش", "پارسا", "بابک",
@@ -255,7 +216,7 @@ BULK_LAST = [
 OKRS = [
     {"title": "بستن ۱۵ فروش در فصل بهار",        "target": 15,  "current": 8,  "period": "quarter", "assignee": "علی محمدی"},
     {"title": "رسیدن به ۹۰٪ رضایت مشتریان",      "target": 90,  "current": 87, "period": "quarter", "assignee": "مریم احمدی"},
-    {"title": "افزایش فایل\u200cهای فعال به ۱۲۰ ملک", "target": 120, "current": 96, "period": "month",  "assignee": "حسین رضایی"},
+    {"title": "افزایش فایل‌های فعال به ۱۲۰ ملک", "target": 120, "current": 96, "period": "month",  "assignee": "حسین رضایی"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -312,21 +273,21 @@ def _ensure_org(db, owner):
                 min_confidence=0.6,
                 group_reply_mode="keywords",
                 group_keywords=["قیمت", "بازدید", "خرید", "اجاره"],
-                allowed_stages=["جدید", "پیگیری", "بازدید", "مذاکره"],
+                allowed_stages=["جدید", "پیگیری", "پیشنهاد", "خرید"],
                 business_hours_only=False,
                 hours_start="09:00",
                 hours_end="21:00",
                 agent_role=(
-                    "یک مشاور املاک حرفه\u200cای در دپارتمان ملک پارامیس هستی. "
+                    "یک مشاور املاک حرفه‌ای در دپارتمان ملک پارامیس هستی. "
                     "لحن رسمی-دوستانه، کوتاه و مؤدبانه. به فارسی پاسخ بده. "
                     "اگر در مورد قیمت یا بازدید سؤال شد، زمان بازدید هماهنگ کن."
                 ),
                 system_prompt=(
                     "تو دستیار فروش دپارتمان ملک پارامیس هستی. "
-                    "اطلاعات تو دربارهٔ محله\u200cها، قیمت\u200cها و آماده\u200cسازی قرارداد کامل است."
+                    "اطلاعات تو دربارهٔ محله‌ها، قیمت‌ها و آماده‌سازی قرارداد کامل است."
                 ),
                 fallback_message=(
-                    "سلام، پیامتون رو دریافت کردم. یکی از همکارانم بزودی پاسخ می\u200cدن. \U0001F64F"
+                    "سلام، پیامتون رو دریافت کردم. یکی از همکارانم بزودی پاسخ می‌دن. 🙏"
                 ),
                 auto_apply_stage=False,
                 pause_bot_on_escalate=True,
@@ -338,11 +299,11 @@ def _ensure_org(db, owner):
             OrgCoachProfile(
                 org_id=org.id,
                 niche="املاک و مستغلات",
-                audience="خریداران و مستأجران نهایی در تهران، به\u200cویژه مناطق شمال و غرب",
+                audience="خریداران و مستأجران نهایی در تهران، به‌ویژه مناطق شمال و غرب",
                 tone="formal-friendly",
                 goals=["افزایش فروش فصلی", "رضایت مشتری", "برندینگ محلی"],
                 offers="تخفیف کمیسیون برای معاملات بالای ۲۰ میلیارد، بازدید رایگان، مشاوره حقوقی رایگان",
-                banned_phrases="ارزان، تضمین سود، بی\u200cواسطه، قولنامه دستی",
+                banned_phrases="ارزان، تضمین سود، بی‌واسطه، قولنامه دستی",
                 wizard_completed=True,
             )
         )
@@ -425,10 +386,6 @@ def _ensure_channels(db, org):
                     )
                 )
 
-        # In the demo all connectors are offline — wipe any stale auth state /
-        # cursor / session rows that an earlier "connected" seed may have left
-        # behind, and DON'T re-create a ConnectorSession (the channels page uses
-        # the presence of one to show the live "online" badge).
         for Model, attr in (
             (WaAuthState, "account_id"),
             (DivarAuthState, "account_id"),
@@ -441,6 +398,20 @@ def _ensure_channels(db, org):
         accounts.append(acc)
     return accounts
 
+def _lead_phone(row: dict) -> str:
+    return normalize_phone_for_storage(row["phone"]) or row["phone"]
+
+
+def _lead_external_id(row: dict) -> str | None:
+    source = row.get("source") or "whatsapp"
+    if source == "bale":
+        uid = row.get("bale_uid") or abs(hash(row["phone"])) % 900_000_000 + 100_000_000
+        return f"bale:user:{uid}"
+    if source == "divar":
+        return row.get("phone")
+    return None
+
+
 def _ensure_leads(db, org, accounts, users):
     existing_count = db.query(Lead).filter(Lead.org_id == org.id).count()
     if existing_count >= len(LEADS):
@@ -452,9 +423,10 @@ def _ensure_leads(db, org, accounts, users):
 
     leads = []
     for idx, row in enumerate(LEADS):
+        phone = _lead_phone(row)
         lead = (
             db.query(Lead)
-            .filter(Lead.org_id == org.id, Lead.phone == row["phone"])
+            .filter(Lead.org_id == org.id, Lead.phone == phone)
             .first()
         )
         if lead:
@@ -482,9 +454,10 @@ def _ensure_leads(db, org, accounts, users):
         last_msg_at = datetime.utcnow() - timedelta(days=random.randint(0, 30))
         created_at = last_msg_at - timedelta(days=random.randint(15, 90))
         assignee = users.get(row["assignee"])
+        ext = _lead_external_id(row)
         lead = Lead(
-            org_id=org.id, name=row["name"], phone=row["phone"],
-            external_chat_id=(row["phone"] if row["source"] != "whatsapp" else None),
+            org_id=org.id, name=row["name"], phone=phone,
+            external_chat_id=ext,
             post_token=(f"PARAMIS-{idx:04d}" if row["source"] == "divar" else ""),
             source_channel=row["source"], chat_type="pv", stage=stage,
             board_order=idx, tags=row["tags"],
@@ -500,7 +473,6 @@ def _ensure_leads(db, org, accounts, users):
             last_message_at=last_msg_at, created_at=created_at, updated_at=last_msg_at,
         )
         db.add(lead); db.flush()
-        ext = row["phone"] if row["source"] != "whatsapp" else None
         if account:
             db.add(LeadAccountLink(
                 org_id=org.id, lead_id=lead.id, account_id=account.id,
@@ -509,82 +481,185 @@ def _ensure_leads(db, org, accounts, users):
         leads.append(lead)
     return leads
 
+_FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+
+
+def _fa2en(s: str) -> str:
+    return (s or "").translate(_FA_DIGITS)
+
+
+def _budget_billions(budget: str) -> float:
+    t = _fa2en(budget).replace(",", "").replace("٬", "")
+    num = "".join(ch for ch in t if ch.isdigit())
+    if not num:
+        return 0.0
+    billions = float(num)
+    if "میلیارد" in t:
+        return billions
+    return billions / 1000.0
+
+# ---------------------------------------------------------------------------
+# Natural Persian inbox conversations (curated showcase scripts)
+# ---------------------------------------------------------------------------
+
+def _row_for_lead(lead: Lead, idx: int) -> dict:
+    if idx < len(LEADS) and _lead_phone(LEADS[idx]) == (lead.phone or ""):
+        return dict(LEADS[idx])
+    # Match by phone across all showcase rows (order can drift after reseed)
+    for row in LEADS:
+        if _lead_phone(row) == (lead.phone or ""):
+            return dict(row)
+    notes = lead.notes or ""
+    row = {
+        "name": lead.name or "مشتری",
+        "phone": lead.phone or "",
+        "stage": lead.stage or "جدید",
+        "area": "نیاوران",
+        "intent": "اجاره" if "اجاره" in notes else "خرید",
+        "type": "آپارتمان",
+        "budget": "۳۰ میلیارد",
+        "size": 180,
+        "rooms": "۳ خواب",
+        "floor": 4,
+        "year": 1400,
+        "source": lead.source_channel or "whatsapp",
+        "tags": list(lead.tags or []),
+        "score": int(lead.lead_score or 70),
+        "assignee": None,
+    }
+    for area in [
+        "نیاوران", "فرمانیه", "ولنجک", "سعادت‌آباد", "شهرک غرب", "تجریش",
+        "زعفرانیه", "قیطریه", "پاسداران", "جردن", "کامرانیه", "اقدسیه",
+        "یوسف‌آباد", "فرشته", "الهیه", "دروس", "اختیاریه", "محمودیه",
+        "پونک", "صادقیه", "ونک", "آریاشهر", "امام‌زاده قاسم", "شهرک قدس",
+    ]:
+        if area in notes:
+            row["area"] = area
+            break
+    return row
+
+
 def _ensure_conversations(db, org, accounts, users, leads):
-    """Insert realistic Persian conversations for each lead that has none."""
+    """Seed natural Farsi real-estate threads for the showcase inbox."""
     wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
     divar_accounts = [a for a in accounts if a.channel == ChannelType.divar]
     bale_accounts = [a for a in accounts if a.channel == ChannelType.bale]
 
-    for idx, row in enumerate(LEADS):
-        if idx >= len(leads):
-            break
-        lead = leads[idx]
-        # Skip if lead already has messages
+    operator_names = ["علی محمدی", "مریم احمدی", "حسین رضایی", "مهندس لطفی"]
+    operator_users = [users.get(name) for name in operator_names if users.get(name)]
+
+    if not leads:
+        return
+
+    for idx, lead in enumerate(leads):
         if db.query(Message).filter(Message.lead_id == lead.id).count() > 0:
             continue
 
-        if row["source"] == "whatsapp" and wa_accounts:
-            account = wa_accounts[0]
-        elif row["source"] == "divar" and divar_accounts:
+        row = _row_for_lead(lead, idx)
+        source = row.get("source") or lead.source_channel or "whatsapp"
+
+        if source == "whatsapp" and wa_accounts:
+            account = wa_accounts[idx % len(wa_accounts)]
+        elif source == "divar" and divar_accounts:
             account = divar_accounts[0]
-        elif row["source"] == "bale" and bale_accounts:
+        elif source == "bale" and bale_accounts:
             account = bale_accounts[0]
         else:
-            account = wa_accounts[0] if wa_accounts else accounts[0]
+            account = wa_accounts[0] if wa_accounts else (accounts[0] if accounts else None)
+        if account is None:
+            continue
 
-        stage = row["stage"]
-        score = row["score"]
-        is_closed = stage == "بسته\u200cشده"
-        ai_meta = {
-            "sentiment": "positive" if score >= 80 else ("neutral" if score >= 55 else "cautious"),
-            "confidence": round(0.6 + (score / 100) * 0.4, 2),
-        }
-        last_msg_at = lead.last_message_at or datetime.utcnow()
-        assignee = users.get(row["assignee"])
-        template = CONVERSATIONS.get(stage, CONVERSATIONS["جدید"])
-        for j, (txt, sender) in enumerate(template):
-            offset = len(template) - j
-            ts = last_msg_at - timedelta(hours=offset * 6 + random.randint(0, 4))
-            direction = MessageDirection.inbound if sender == "customer" else MessageDirection.outbound
-            sender_type = (
-                SenderType.customer if sender == "customer"
-                else (SenderType.ai if (j % 4 == 1 and score >= 60) else SenderType.agent)
-            )
-            try:
-                body = txt.format(
-                    area=row["area"], size=row["size"], rooms=row["rooms"],
-                    floor=row["floor"], year=row["year"], budget=row["budget"],
-                    type=row["type"], intent=row["intent"], name=row["name"],
-                )
-            except KeyError:
-                body = txt
+        script = build_conversation(row)
+        rng = random.Random(f"paramis-chat-{lead.phone}-{idx}")
+        days_ago = rng.randint(0, 12)
+        last_message_at = lead.last_message_at or (datetime.utcnow() - timedelta(days=days_ago))
+        base_time = last_message_at - timedelta(hours=max(3, len(script) * 4))
+        operator = operator_users[idx % len(operator_users)] if operator_users else None
+        previous_ts = base_time
+
+        for j, (kind, body) in enumerate(script):
+            if j == 0:
+                ts = base_time
+            else:
+                gap = rng.choice([2, 4, 7, 11, 18, 25, 40, 55, 90, 140])
+                ts = previous_ts + timedelta(minutes=gap)
+            previous_ts = ts
+
+            if kind == "customer":
+                direction = MessageDirection.inbound
+                sender_type = SenderType.customer
+                agent_id = None
+            elif kind == "ai":
+                direction = MessageDirection.outbound
+                sender_type = SenderType.ai
+                agent_id = None
+            else:
+                direction = MessageDirection.outbound
+                sender_type = SenderType.agent
+                agent_id = operator.id if operator else None
+
+            message_id = f"demo-chat-{lead.id[:8]}-{j:03d}"
+            if db.query(Message).filter(Message.wa_message_id == message_id).first():
+                continue
             db.add(Message(
                 org_id=org.id, account_id=account.id, lead_id=lead.id,
                 direction=direction, sender_type=sender_type, body=body,
-                agent_id=(assignee.id if sender_type == SenderType.agent and assignee else None),
-                wa_message_id=f"demo-msg-{lead.id[:6]}-{j:03d}",
+                agent_id=agent_id, wa_message_id=message_id,
                 media_type="text",
                 delivery_status=("read" if direction == MessageDirection.outbound else ""),
                 created_at=ts,
             ))
+
             if sender_type == SenderType.ai:
+                intent = "info"
+                if any(w in body for w in ("منتقل", "وصل", "همکار", "فروش")):
+                    intent = "handoff"
+                elif any(w in body for w in ("بازدید", "لوکیشن")):
+                    intent = "viewing"
+                elif any(w in body for w in ("قیمت", "میلیارد", "رهن")):
+                    intent = "pricing"
                 db.add(AiEvent(
                     org_id=org.id, lead_id=lead.id, event_type="auto_reply",
-                    payload={"body_preview": body[:80], "confidence": ai_meta["confidence"]},
+                    payload={
+                        "body_preview": body[:120],
+                        "confidence": round(0.78 + (lead.lead_score or 70) / 1000, 2),
+                        "intent": intent,
+                        "source": "seed-demo-natural",
+                    },
                     created_at=ts,
                 ))
 
-        if is_closed and account:
-            db.add(OutboundJob(
-                org_id=org.id, account_id=account.id, lead_id=lead.id,
-                target_name=row["name"],
-                target_jid=f"{row['phone']}@s.whatsapp.net",
-                body=f"سلام {row['name']} عزیز، از خرید شما در {row['area']} سپاسگزاریم. \U0001F337",
-                sender_type=SenderType.agent,
-                created_by_id=assignee.id if assignee else None,
-                status=OutboundStatus.sent,
-                created_at=last_msg_at, updated_at=last_msg_at,
-            ))
+        if row["stage"] == "بسته":
+            if not db.query(OutboundJob).filter(
+                OutboundJob.org_id == org.id, OutboundJob.lead_id == lead.id
+            ).first():
+                assignee = users.get(row["assignee"]) if row.get("assignee") else None
+                target = (lead.external_chat_id or "").strip()
+                if not target and source == "whatsapp":
+                    digits = normalize_phone_for_storage(row["phone"]) or row["phone"]
+                    # Baileys edge still uses country-code digits
+                    from app.services.phone import to_cc_digits
+                    target = f"{to_cc_digits(digits)}@s.whatsapp.net"
+                db.add(OutboundJob(
+                    org_id=org.id, account_id=account.id, lead_id=lead.id,
+                    target_name=row["name"],
+                    target_jid=target,
+                    body=f"سلام {row['name']} عزیز، مبارکتون باشه 🌷 ممنون که پارامیس رو انتخاب کردید.",
+                    sender_type=SenderType.agent,
+                    created_by_id=assignee.id if assignee else (operator.id if operator else None),
+                    status=OutboundStatus.sent,
+                    created_at=last_message_at, updated_at=last_message_at,
+                ))
+
+    for lead in leads:
+        latest = db.query(Message).filter(Message.lead_id == lead.id).order_by(
+            Message.created_at.desc()
+        ).first()
+        if latest:
+            lead.last_message_at = latest.created_at
+            lead.updated_at = latest.created_at
+            db.add(lead)
+
 
 def _ensure_tasks(db, org, leads, users):
     if db.query(Task).filter(Task.org_id == org.id).count() >= len(TASKS):
@@ -643,7 +718,6 @@ def _ensure_campaigns(db, org, accounts, owner):
         )
         db.add(camp); db.flush()
 
-        # Pick leads matching the segment
         matched = []
         for lead in leads:
             tags = list(lead.tags or [])
@@ -655,11 +729,6 @@ def _ensure_campaigns(db, org, accounts, owner):
         if not matched:
             continue
 
-        # Per-campaign reply / conversion simulation profile.
-        # - 85% of matched leads receive the send
-        # - Of those, ~65% reply (inbound)
-        # - Of those replies, ~40% are auto-handled by AI
-        # - Of sent leads, ~12% convert to "بسته‌شده"
         for lead in matched:
             if db.query(CampaignSend).filter(
                 CampaignSend.campaign_id == camp.id, CampaignSend.lead_id == lead.id
@@ -677,18 +746,14 @@ def _ensure_campaigns(db, org, accounts, owner):
                 updated_at=send_ts,
             ))
 
-        # Simulate the "completed" campaign: 1–2 leads convert to terminal stage,
-        # several leads reply (with a mix of customer + AI auto-replies).
         if c["status"] == "completed":
-            # Conversions
-            convert_pool = [l for l in matched if l.stage not in ("بسته‌شده",)]
+            convert_pool = [l for l in matched if l.stage not in ("بسته",)]
             random.shuffle(convert_pool)
             for cl in convert_pool[:2]:
-                cl.stage = "بسته‌شده"
+                cl.stage = "بسته"
                 cl.updated_at = started_at + timedelta(days=random.randint(2, 5))
                 db.add(cl)
 
-        # Inbound + AI replies: walk through sent leads and synthesize activity
         sent_leads = [
             l for l in matched
             if not db.query(CampaignSend).filter(
@@ -703,30 +768,28 @@ def _ensure_campaigns(db, org, accounts, owner):
         for lead in sent_leads:
             r = random.random()
             if r > 0.65:
-                continue  # 35% of sent leads do not reply
-            # Customer reply
+                continue
             reply_ts = started_at + timedelta(minutes=random.randint(15, 120 * 24))
             db.add(Message(
                 org_id=org.id, account_id=channel.id, lead_id=lead.id,
                 direction=MessageDirection.inbound, sender_type=SenderType.customer,
                 body=random.choice([
-                    "سلام، پیامتون رو دیدم. لطفاً بیشتر توضیح بدید.",
-                    "ممنون. قیمت نهایی چقدر میشه؟",
-                    "بازدید هماهنگ کنید لطفاً.",
-                    "بله هنوز دنبال ملک هستم. چه زمانی می‌تونم ببینم؟",
-                    "عالی. لطفاً فایل کامل رو بفرستید.",
+                    "سلام، پیامتون رو دیدم. جزئیات بیشتری دارید؟",
+                    "ممنون. قیمت نهایی چقدره؟",
+                    "بازدید میشه هماهنگ کرد؟",
+                    "بله هنوز دنبال ملک هستم. کی میتونم ببینم؟",
+                    "خوبه، فایل کامل رو لطفا بفرستید.",
                 ]),
                 wa_message_id=f"demo-camp-reply-{lead.id[:6]}",
                 media_type="text",
                 created_at=reply_ts,
             ))
-            # ~40% of replies get an AI auto-response
             if random.random() < 0.4:
                 ai_ts = reply_ts + timedelta(minutes=random.randint(1, 30))
                 db.add(Message(
                     org_id=org.id, account_id=channel.id, lead_id=lead.id,
                     direction=MessageDirection.outbound, sender_type=SenderType.ai,
-                    body="سلام، ممنون از پیامتون. یکی از همکارانم بزودی فایل کامل رو ارسال می‌کنن. 🙏",
+                    body="سلام، ممنون از پیامتون. یکی از همکارانم تا دقیقه دیگه فایل رو براتون می‌فرسته 🙏",
                     wa_message_id=f"demo-camp-ai-{lead.id[:6]}",
                     media_type="text",
                     delivery_status="read",
@@ -752,17 +815,13 @@ def _match_campaign_segment(lead: Lead, seg: dict) -> bool:
 
 
 def _ensure_bulk_campaign_leads(db, org, accounts):
-    """Grow the demo lead pool so each showcase campaign reaches its exact
-    audience/sends target (camp 1 = 200, camp 2 = 150). Idempotent: only adds
-    the shortfall up to the target, so re-seeding converges back to the same
-    numbers and the campaign card + report always agree."""
     wa = [a for a in accounts if a.channel == ChannelType.whatsapp]
     account = wa[0] if wa else (accounts[0] if accounts else None)
     existing = db.query(Lead).filter(Lead.org_id == org.id).all()
     phones = {l.phone for l in existing}
-    # lead_account_links has a UNIQUE(org, account, chat_name) constraint
     used_names = {l.name for l in existing if l.name}
     board = (max((l.board_order or 0) for l in existing) + 1) if existing else 0
+    claimed: set[str] = set()
 
     def _next_phone():
         nonlocal board
@@ -782,7 +841,10 @@ def _ensure_bulk_campaign_leads(db, org, accounts):
         stages = [s for s in (seg.get("stages") or []) if str(s).strip()]
         seg_tags = list(seg.get("tags") or [])
         min_score = int(float(seg.get("min_score") or 0))
-        current = sum(1 for l in existing if _match_campaign_segment(l, seg))
+        current = sum(
+            1 for l in existing
+            if _match_campaign_segment(l, seg) and l.id not in claimed
+        )
         need = target - current
         for _ in range(max(0, need)):
             phone = _next_phone()
@@ -820,6 +882,9 @@ def _ensure_bulk_campaign_leads(db, org, accounts):
                     chat_name=name, external_chat_id=None,
                 ))
             existing.append(lead)
+        claimed.update(
+            l.id for l in existing if _match_campaign_segment(l, seg)
+        )
 
 
 def _ensure_okrs(db, org, users):
@@ -831,7 +896,7 @@ def _ensure_okrs(db, org, users):
         u = users.get(o["assignee"])
         db.add(OkrObjective(
             org_id=org.id, title=o["title"],
-            description=f"هدف تعیین\u200cشده توسط {o['assignee']} — دوره {o['period']}",
+            description=f"هدف تعیین‌شده توسط {o['assignee']} — دوره {o['period']}",
             target_value=o["target"], current_value=o["current"],
             period=o["period"], owner_id=u.id if u else None,
         ))
@@ -840,12 +905,12 @@ def _ensure_kpis(db, org):
     if db.query(KpiSnapshot).filter(KpiSnapshot.org_id == org.id).count() > 0:
         return
     kpi_defs = [
-        {"key": "leads_total",        "label": "سرنخ\u200cهای جدید",     "target": 25,  "unit": "count"},
+        {"key": "leads_total",        "label": "سرنخ‌های جدید",     "target": 25,  "unit": "count"},
         {"key": "leads_converted",    "label": "تبدیل به مشتری",       "target": 5,   "unit": "count"},
-        {"key": "messages_inbound",   "label": "پیام\u200cهای ورودی",  "target": 200, "unit": "count"},
-        {"key": "messages_outbound",  "label": "پیام\u200cهای خروجی",  "target": 250, "unit": "count"},
+        {"key": "messages_inbound",   "label": "پیام‌های ورودی",  "target": 200, "unit": "count"},
+        {"key": "messages_outbound",  "label": "پیام‌های خروجی",  "target": 250, "unit": "count"},
         {"key": "ai_suggestions",     "label": "پیشنهاد AI",          "target": 100, "unit": "count"},
-        {"key": "viewings_scheduled", "label": "بازدیدهای هماهنگ\u200cشده", "target": 15, "unit": "count"},
+        {"key": "viewings_scheduled", "label": "بازدیدهای هماهنگ‌شده", "target": 15, "unit": "count"},
         {"key": "response_time_min",  "label": "زمان پاسخ (دقیقه)",   "target": 5,   "unit": "minutes"},
     ]
     for k in kpi_defs:
@@ -870,7 +935,7 @@ def _ensure_support(db, org, owner):
         return
     t = SupportTicket(
         org_id=org.id, user_id=owner.id,
-        subject="درخواست فعال\u200cسازی اتصال Bale برای شعبه شمال",
+        subject="درخواست فعال‌سازی اتصال Bale برای شعبه شمال",
         category="technical", status="in_progress", priority="normal",
     )
     db.add(t); db.flush()
@@ -881,7 +946,7 @@ def _ensure_support(db, org, owner):
     ))
     db.add(SupportMessage(
         ticket_id=t.id, user_id=None, sender_side="platform",
-        body="سلام، درخواست شما دریافت شد. تیم فنی تا فردا اتصال را بررسی می\u200cکند.",
+        body="سلام، درخواست شما دریافت شد. تیم فنی تا فردا اتصال را بررسی می‌کند.",
         created_at=datetime.utcnow() - timedelta(days=1, hours=12),
     ))
 
@@ -894,9 +959,9 @@ def _ensure_audit(db, org, owner):
         ("channel.connect",  "اتصال کانال WhatsApp شعبه مرکزی"),
         ("channel.connect",  "اتصال کانال Divar شعبه مرکزی"),
         ("channel.connect",  "اتصال کانال Bale پشتیبانی"),
-        ("member.invite",    "دعوت از مریم احمدی به\u200cعنوان agent"),
-        ("member.invite",    "دعوت از حسین رضایی به\u200cعنوان agent"),
-        ("ai.policy.update", "تغییر سیاست AI — فعال\u200cسازی auto-send"),
+        ("member.invite",    "دعوت از مریم احمدی به‌عنوان agent"),
+        ("member.invite",    "دعوت از حسین رضایی به‌عنوان agent"),
+        ("ai.policy.update", "تغییر سیاست AI — فعال‌سازی auto-send"),
         ("campaign.send",    "ارسال کمپین نوروزی به ۱۲ سرنخ VIP"),
         ("payment.charge",   "پرداخت ماهانه — پلن growth (۴٬۹۰۰٬۰۰۰ تومان)"),
     ]
@@ -943,10 +1008,19 @@ def seed():
         users = _ensure_operators(db, org)
         accounts = _ensure_channels(db, org)
         leads = _ensure_leads(db, org, accounts, users)
-        _ensure_conversations(db, org, accounts, users, leads)
+        _ensure_bulk_campaign_leads(db, org, accounts)
+        from app.services.phone import phone_aliases
+
+        showcase_phones: set[str] = set()
+        for row in LEADS:
+            showcase_phones.update(phone_aliases(row["phone"]))
+        all_leads = db.query(Lead).filter(
+            Lead.org_id == org.id,
+            Lead.phone.in_(list(showcase_phones)),
+        ).all()
+        _ensure_conversations(db, org, accounts, users, all_leads)
         _ensure_tasks(db, org, leads, users)
         _ensure_knowledge(db, org)
-        _ensure_bulk_campaign_leads(db, org, accounts)
         _ensure_campaigns(db, org, accounts, owner)
         _ensure_okrs(db, org, users)
         _ensure_kpis(db, org)
@@ -966,8 +1040,78 @@ def seed():
         db.close()
 
 
+def gen_conversations_cli(*, replace: bool = False):
+    """Regenerate showcase inbox threads from curated natural Farsi scripts."""
+    from app.services.phone import phone_aliases
+
+    _migrate_then_create_all()
+    db = SessionLocal()
+    try:
+        owner = _ensure_owner(db)
+        org = _ensure_org(db, owner)
+        users = _ensure_operators(db, org)
+        accounts = _ensure_channels(db, org)
+        # Prefer new 09… phones; also match legacy 98… rows
+        alias_to_row: dict[str, dict] = {}
+        for row in LEADS:
+            for alias in phone_aliases(row["phone"]):
+                alias_to_row[alias] = row
+        all_leads = (
+            db.query(Lead)
+            .filter(Lead.org_id == org.id, Lead.phone.in_(list(alias_to_row.keys())))
+            .all()
+        )
+        if not all_leads:
+            # Create missing showcase leads then reload
+            _ensure_leads(db, org, accounts, users)
+            all_leads = (
+                db.query(Lead)
+                .filter(Lead.org_id == org.id, Lead.phone.in_(list(alias_to_row.keys())))
+                .all()
+            )
+        if replace:
+            for lead in all_leads:
+                row = alias_to_row.get(lead.phone or "")
+                if not row:
+                    continue
+                lead.phone = _lead_phone(row)
+                lead.stage = row["stage"]
+                lead.name = row["name"]
+                lead.source_channel = row["source"]
+                lead.external_chat_id = _lead_external_id(row)
+                lead.tags = row["tags"]
+                db.add(lead)
+            lead_ids = [lead.id for lead in all_leads]
+            demo_messages = db.query(Message).filter(
+                Message.org_id == org.id,
+                Message.lead_id.in_(lead_ids),
+                Message.wa_message_id.like("demo-%"),
+            ).all()
+            for message in demo_messages:
+                db.delete(message)
+            demo_events = db.query(AiEvent).filter(AiEvent.org_id == org.id).all()
+            for event in demo_events:
+                if isinstance(event.payload, dict) and str(event.payload.get("source", "")).startswith("seed-demo-"):
+                    db.delete(event)
+            db.flush()
+            print(f"Removed {len(demo_messages)} demo messages before generation.")
+        _ensure_conversations(db, org, accounts, users, all_leads)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    print("=" * 60)
+    print("✅ مکالمات طبیعی فارسی در صندوق پیام ذخیره شد")
+    print("  (سناریوهای خرید/اجاره بر اساس مرحله CRM)")
+    print("=" * 60)
+
+
 def main():
-    # We need name/id before the session closes, so do a quick print inside seed.
+    if "--conversations" in sys.argv:
+        gen_conversations_cli(replace="--replace" in sys.argv)
+        return
     _migrate_then_create_all()
     db = SessionLocal()
     try:
@@ -978,12 +1122,11 @@ def main():
         org_id = org.id
     finally:
         db.close()
-    # Now actually do the heavy seeding (idempotent — already-created entities are skipped)
     _ = seed()
     print("=" * 60)
     print("✅ دمو فروش آماده شد")
     print("=" * 60)
-    print(f"  کسب\u200cوکار:   {name}")
+    print(f"  کسب‌وکار:   {name}")
     print(f"  پلن:        {plan}")
     print(f"  org_id:     {org_id}")
     print(f"  owner:      {DEMO_OWNER_NAME} ({DEMO_OWNER_PHONE})")
