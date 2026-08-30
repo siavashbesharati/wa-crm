@@ -4,20 +4,24 @@ Rules for a realistic agency demo:
 - AI handles ~99% of the chat (info, pricing, files, docs, reassurance).
 - A human agent appears only to lock an appointment / visit time.
 - AI always addresses the lead politely: «سلام خانم حسینی» / «سلام آقای کریمی».
+- When files are promised, follow with media log turns (image/document) — no real files,
+  just chat markers that files were sent.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# role: customer | ai | agent
-Script = list[tuple[str, str]]
+# Turn: (role, body) or (role, body, media_type)
+# media_type: text | image | document | video | audio
+ScriptTurn = tuple[str, str] | tuple[str, str, str]
+Script = list[ScriptTurn]
 
 _FEMALE_FIRST = {
     "لیلا", "مریم", "فاطمه", "زهرا", "نرگس", "سارا", "الناز", "شیوا", "پریسا",
     "رویا", "ندا", "مونا", "ترانه", "سپیده", "یاسمین", "الهام", "نگار", "شیدا",
     "گلنار", "آیدا", "مهسا", "نسترن", "حدیث", "سمیرا", "فریبا", "ناهید",
-    "بهاره", "مینا", "کیمیا", "نیلوفر", "هانیه", "مینا", "سپیده", "سحر",
+    "بهاره", "مینا", "کیمیا", "نیلوفر", "هانیه", "سحر",
 }
 
 
@@ -30,7 +34,6 @@ def polite_address(name: str | None) -> str:
     low = raw
 
     if low.startswith("خانم"):
-        # «خانم حسینی» or «خانم لیلا حسینی»
         if len(parts) >= 2:
             return f"خانم {parts[-1]}"
         return raw
@@ -41,7 +44,6 @@ def polite_address(name: str | None) -> str:
     if low.startswith("مهندس"):
         return f"مهندس {parts[-1]}" if len(parts) >= 2 else raw
     if low.startswith("دکتر"):
-        # Keep professional title; gender unknown → دکتر + family
         return f"دکتر {parts[-1]}" if len(parts) >= 2 else raw
 
     if len(parts) >= 2:
@@ -50,7 +52,6 @@ def polite_address(name: str | None) -> str:
             return f"خانم {last}"
         return f"آقای {last}"
 
-    # Single token — soft fallback
     if raw in _FEMALE_FIRST:
         return f"خانم {raw}"
     return f"آقای {raw}"
@@ -73,6 +74,20 @@ def _fmt(text: str, row: dict[str, Any]) -> str:
     )
 
 
+def _files_photos(label: str = "عکس‌های ملک") -> list[ScriptTurn]:
+    return [
+        ("ai", label, "image"),
+        ("ai", "پلان واحد", "image"),
+    ]
+
+
+def _files_pack() -> list[ScriptTurn]:
+    return [
+        ("ai", "عکس‌های ملک", "image"),
+        ("ai", "فایل مشخصات PDF", "document"),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Scripts — AI-heavy; agent only for appointment lock
 # ---------------------------------------------------------------------------
@@ -90,12 +105,13 @@ def script_new_buy(row: dict[str, Any]) -> Script:
         (
             "ai",
             "{address} عزیز، با این بودجه ۲-۳ مورد خوب تو {area} داریم. "
-            "عکس و مشخصات رو براتون می‌فرستم.",
+            "الان عکس و مشخصات رو براتون می‌فرستم.",
         ),
+        *_files_pack(),
         ("customer", "پارکینگ و انباری داره؟"),
         ("ai", "بله، پارکینگ و انباری داره. آسانسور هم هست."),
-        ("customer", "خوبه لطفا فایل رو بفرستید"),
-        ("ai", "فرستادم ✅ اگه پسندید بگید تا برای بازدید حضوری هماهنگ کنیم."),
+        ("customer", "خوبه ممنون"),
+        ("ai", "خواهش می‌کنم {address} ✅ اگه پسندید بگید تا برای بازدید حضوری هماهنگ کنیم."),
         ("customer", "امشب چک می‌کنم ممنون"),
         ("ai", "چشم {address}، هر سوالی بود همین‌جا بپرسید 🌿"),
     ]
@@ -112,16 +128,17 @@ def script_new_rent(row: dict[str, Any]) -> Script:
         ("customer", "اجاره حدود {budget}، رهن هم قابل مذاکره"),
         (
             "ai",
-            "اوکی {address}. {rooms} حدود {size} متری تو {area} داریم، "
-            "بعضی‌ها مبله هم هست. عکس‌ها رو براتون می‌فرستم.",
+            "اوکی {address}. {rooms} حدود {size} متری تو {area} داریم. "
+            "الان عکس‌ها رو براتون می‌فرستم.",
         ),
+        *_files_photos("عکس‌های واحد اجاره‌ای"),
         ("customer", "ضامن لازم داره؟"),
         (
             "ai",
             "معمولاً بله، یک ضامن یا چک معتبر. جزئیات دقیق رو موقع بازدید می‌گیم.",
         ),
-        ("customer", "اوکی فایل رو بفرستید"),
-        ("ai", "فرستادم. اگه خواستید بازدید بذارید بگید تا همکارم زمان قطعی رو هماهنگ کنه."),
+        ("customer", "اوکی ممنون"),
+        ("ai", "چشم {address}. اگه خواستید بازدید بذارید بگید تا همکارم زمان قطعی رو هماهنگ کنه."),
     ]
 
 
@@ -137,8 +154,9 @@ def script_followup_buy(row: dict[str, Any]) -> Script:
         (
             "ai",
             "با توجه به موقعیت و امکانات، حدوداً با بودجه {budget} جور درمیاد. "
-            "مالک کمی هم جای چانه داره.",
+            "مالک کمی هم جای چانه داره. یه فایل خلاصه مشخصات هم می‌فرستم.",
         ),
+        ("ai", "خلاصه مشخصات و قیمت", "document"),
         ("customer", "وام هم میشه روش گذاشت؟"),
         (
             "ai",
@@ -167,8 +185,10 @@ def script_followup_rent(row: dict[str, Any]) -> Script:
         ("customer", "تا آخر ماه"),
         (
             "ai",
-            "مالک تا پایان ماه آزاد می‌کنه. رهن و اجاره حدود {budget} هست، کمی هم قابل مذاکره.",
+            "مالک تا پایان ماه آزاد می‌کنه. رهن و اجاره حدود {budget} هست، کمی هم قابل مذاکره. "
+            "عکس‌های به‌روز رو هم می‌فرستم.",
         ),
+        *_files_photos("عکس‌های به‌روز واحد"),
         ("customer", "مبله هست یا خالی؟"),
         ("ai", "خالی تحویل می‌دن؛ اگه مبله بخواید چند مورد دیگه هم داریم بفرستم."),
         ("customer", "همین خوبه. فردا میتونم بیام ببینم؟"),
@@ -188,8 +208,10 @@ def script_proposal_viewing(row: dict[str, Any]) -> Script:
         (
             "ai",
             "عالیه {address} 👍 مشخصاتش: حدود {size} متر، {rooms}. "
-            "برای بازدید حضوری کی براتون راحت‌تره؟ صبح یا عصر؟",
+            "چند عکس نزدیک‌تر هم براتون می‌فرستم.",
         ),
+        *_files_photos("عکس‌های نزدیک‌تر"),
+        ("ai", "برای بازدید حضوری کی براتون راحت‌تره؟ صبح یا عصر؟"),
         ("customer", "عصرها بهتره، بعد از ساعت ۴"),
         (
             "ai",
@@ -210,8 +232,12 @@ def script_proposal_luxury(row: dict[str, Any]) -> Script:
         ("customer", "واحد لوکس {area} رو میشه ببینم؟"),
         (
             "ai",
-            "سلام {address}، بله. این مورد امکانات کامل داره؛ بازدیدش با هماهنگی قبلیه.",
+            "سلام {address}، بله. این مورد امکانات کامل داره؛ بازدیدش با هماهنگی قبلیه. "
+            "آلبوم عکس و کاتالوگ رو براتون می‌فرستم.",
         ),
+        ("ai", "آلبوم عکس واحد", "image"),
+        ("ai", "عکس ویو و مشاعات", "image"),
+        ("ai", "کاتالوگ امکانات PDF", "document"),
         ("customer", "قیمتش در حد {budget} هست دیگه؟"),
         (
             "ai",
@@ -243,9 +269,10 @@ def script_buy_negotiation(row: dict[str, Any]) -> Script:
         (
             "ai",
             "اوکی {address}، این عدد رو بهشون منتقل کردم. "
-            "احتمال توافق هست. کمیسیون هم طبق عرف ۱٪ از طرف خریداره؛ "
-            "برای مبالغ بالاتر کمی تخفیف داریم.",
+            "احتمال توافق هست. کمیسیون هم طبق عرف ۱٪ از طرف خریداره. "
+            "پیش‌نویس شرایط رو هم براتون می‌فرستم.",
         ),
+        ("ai", "پیش‌نویس شرایط معامله", "document"),
         ("customer", "مدارک چی لازم دارم؟"),
         (
             "ai",
@@ -275,8 +302,10 @@ def script_rent_negotiation(row: dict[str, Any]) -> Script:
         ("customer", "ترجیح می‌دم رهن بیشتر باشه اجاره کمتر"),
         (
             "ai",
-            "اوکی {address}، پیشنهادمون رو نوشتم و تا امشب جواب قطعی می‌دم.",
+            "اوکی {address}، پیشنهادمون رو نوشتم و تا امشب جواب قطعی می‌دم. "
+            "یه نمونه قرارداد هم براتون می‌فرستم تا ببینید.",
         ),
+        ("ai", "نمونه قرارداد اجاره", "document"),
         ("customer", "مدارک چی لازم دارم؟"),
         (
             "ai",
@@ -299,8 +328,9 @@ def script_closed_buy(row: dict[str, Any]) -> Script:
         (
             "ai",
             "سلام {address} 🌷 بله، همه چیز اوکیه. "
-            "تبریک می‌گم، {type} {area} به نام شما تموم شد.",
+            "تبریک می‌گم، {type} {area} به نام شما تموم شد. رسید و خلاصه پرونده رو هم می‌فرستم.",
         ),
+        ("ai", "رسید معامله", "document"),
         ("customer", "خیلی ممنون از پیگیریتون"),
         (
             "ai",
@@ -318,8 +348,9 @@ def script_closed_rent(row: dict[str, Any]) -> Script:
         (
             "ai",
             "سلام {address}، بله قرارداد ثبت شد و کلید آماده‌ست. "
-            "تحویل فردا صبح تو {area}.",
+            "تحویل فردا صبح تو {area}. نسخه قرارداد رو هم براتون می‌فرستم.",
         ),
+        ("ai", "نسخه قرارداد اجاره", "document"),
         ("customer", "عالیه، کنتورها رو هم چک کردید؟"),
         ("ai", "بله، قرائت کنتور ثبت شده و تو صورت‌جلسه اومده."),
         ("customer", "مرسی واقعا پیگیر بودید"),
@@ -339,9 +370,9 @@ def script_divar_inquiry(row: dict[str, Any]) -> Script:
         ("customer", "تقریباً بله"),
         (
             "ai",
-            "عالی {address}. فایل کامل و عکس‌های بیشتر رو براتون می‌فرستم. "
-            "اگه خواستید بازدید بذارید بگید.",
+            "عالی {address}. الان فایل کامل و عکس‌های بیشتر رو براتون می‌فرستم.",
         ),
+        *_files_pack(),
         ("customer", "پارکینگ داره؟"),
         ("ai", "بله، پارکینگ و انباری داره."),
         ("customer", "باشه امشب می‌بینم، اگه اوکی بود برای بازدید پیام می‌دم"),
@@ -361,14 +392,15 @@ def script_bale_inquiry(row: dict[str, Any]) -> Script:
         ("customer", "{rooms} حدود {size} متر، بودجه {budget}"),
         (
             "ai",
-            "چند مورد مناسب داریم {address}. مشخصات رو براتون می‌فرستم.",
+            "چند مورد مناسب داریم {address}. مشخصات رو الان براتون می‌فرستم.",
         ),
+        *_files_pack(),
         ("customer", "اوکی ممنون"),
-        ("ai", "فرستادم ✅ کدوم بیشتر به کارتون میاد؟"),
+        ("ai", "خواهش می‌کنم ✅ کدوم بیشتر به کارتون میاد؟"),
         ("customer", "اولی بهتره، میشه بازدید بذاریم؟"),
         ("ai", "حتماً. فردا یا پس‌فردا کدوم براتون راحت‌تره؟"),
         ("customer", "فردا عصر"),
-        ("ai", "عالی. همکارم زمان قطعی رو با مالک قفل می‌کنه."),
+        ("ai", "عالی. همکارم زمان قطعی رو با مالک فیکس می‌کنه."),
         (
             "agent",
             "سلام {address}، حسین از پارامیس. فردا ساعت ۱۸ بازدید {area} قطعی شد.",
@@ -405,4 +437,10 @@ def build_conversation(row: dict[str, Any]) -> Script:
     else:
         raw = script_new_buy(row)
 
-    return [(role, _fmt(body, row)) for role, body in raw]
+    out: Script = []
+    for turn in raw:
+        role = turn[0]
+        body = _fmt(turn[1], row)
+        media = turn[2] if len(turn) > 2 else "text"
+        out.append((role, body, media))
+    return out

@@ -577,11 +577,18 @@ def _ensure_conversations(db, org, accounts, users, leads):
         operator = operator_users[idx % len(operator_users)] if operator_users else None
         previous_ts = base_time
 
-        for j, (kind, body) in enumerate(script):
+        for j, turn in enumerate(script):
+            kind = turn[0]
+            body = turn[1]
+            media_type = (turn[2] if len(turn) > 2 else "text") or "text"
             if j == 0:
                 ts = base_time
             else:
-                gap = rng.choice([2, 4, 7, 11, 18, 25, 40, 55, 90, 140])
+                # File logs arrive seconds after the “می‌فرستم” text
+                if media_type in ("image", "document", "video", "audio"):
+                    gap = rng.choice([1, 1, 2, 3])
+                else:
+                    gap = rng.choice([2, 4, 7, 11, 18, 25, 40, 55, 90, 140])
                 ts = previous_ts + timedelta(minutes=gap)
             previous_ts = ts
 
@@ -605,12 +612,12 @@ def _ensure_conversations(db, org, accounts, users, leads):
                 org_id=org.id, account_id=account.id, lead_id=lead.id,
                 direction=direction, sender_type=sender_type, body=body,
                 agent_id=agent_id, wa_message_id=message_id,
-                media_type="text",
+                media_type=media_type,
                 delivery_status=("read" if direction == MessageDirection.outbound else ""),
                 created_at=ts,
             ))
 
-            if sender_type == SenderType.ai:
+            if sender_type == SenderType.ai and media_type in ("", "text"):
                 intent = "info"
                 if any(w in body for w in ("منتقل", "وصل", "همکار", "فروش")):
                     intent = "handoff"

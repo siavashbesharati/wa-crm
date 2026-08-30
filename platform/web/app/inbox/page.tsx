@@ -117,12 +117,20 @@ function dayLabel(iso: string) {
 
 function displayMessageBody(body: string, mediaType?: string) {
   const raw = (body || "").trim();
+  const mt = (mediaType || "").toLowerCase();
+  const isMedia = mt && mt !== "text";
+
+  if (isMedia) {
+    const label = raw.replace(/^\[|\]$/g, "").trim();
+    if (mt === "image") return label ? `تصویر ارسال شد — ${label}` : "تصویر ارسال شد";
+    if (mt === "document") return label ? `فایل ارسال شد — ${label}` : "فایل ارسال شد";
+    if (mt === "video") return label ? `ویدیو ارسال شد — ${label}` : "ویدیو ارسال شد";
+    if (mt === "audio") return label ? `پیام صوتی ارسال شد — ${label}` : "پیام صوتی ارسال شد";
+    if (mt === "sticker") return "استیکر ارسال شد";
+    return label || "پیوست ارسال شد";
+  }
+
   if (!raw || raw === "[]") {
-    if (mediaType === "sticker") return "استیکر";
-    if (mediaType === "image") return "تصویر";
-    if (mediaType === "audio") return "پیام صوتی";
-    if (mediaType === "video") return "ویدیو";
-    if (mediaType === "document") return "سند";
     return "پیام بدون متن";
   }
   // Connector placeholders like [sticker] / [تصویر]
@@ -131,9 +139,35 @@ function displayMessageBody(body: string, mediaType?: string) {
   return raw;
 }
 
-function isPlaceholderBody(body: string) {
+function isMediaLog(mediaType?: string) {
+  const mt = (mediaType || "").toLowerCase();
+  return !!mt && mt !== "text";
+}
+
+function isPlaceholderBody(body: string, mediaType?: string) {
+  if (isMediaLog(mediaType)) return true;
   const raw = (body || "").trim();
   return !raw || raw === "[]" || /^\[([^\]]+)\]$/.test(raw);
+}
+
+function MediaLogIcon({ type }: { type?: string }) {
+  const mt = (type || "").toLowerCase();
+  const label =
+    mt === "image"
+      ? "تصویر"
+      : mt === "document"
+        ? "فایل"
+        : mt === "video"
+          ? "ویدیو"
+          : mt === "audio"
+            ? "صوت"
+            : "پیوست";
+  return (
+    <span className="bubble-media-chip" aria-hidden>
+      {mt === "image" ? "🖼" : mt === "document" ? "📄" : mt === "video" ? "🎬" : "📎"}
+      <span>{label}</span>
+    </span>
+  );
 }
 
 function SenderBadge({ type, name }: { type: string; name?: string }) {
@@ -640,13 +674,20 @@ export default function InboxPage() {
                         <div key={m.id} className="chat-block">
                           {showDay ? <div className="chat-day">{dayLabel(m.created_at)}</div> : null}
                           <div className={`bubble-row ${outbound ? "out" : "in"}`}>
-                            <div className={`bubble ${outbound ? "out" : "in"}`}>
-                              <p
-                                dir="auto"
-                                className={isPlaceholderBody(m.body) ? "bubble-placeholder" : undefined}
-                              >
-                                {displayMessageBody(m.body, m.media_type)}
-                              </p>
+                            <div className={`bubble ${outbound ? "out" : "in"}${isMediaLog(m.media_type) ? " media-log" : ""}`}>
+                              {isMediaLog(m.media_type) ? (
+                                <div className="bubble-media-log" dir="auto">
+                                  <MediaLogIcon type={m.media_type} />
+                                  <p className="bubble-placeholder">{displayMessageBody(m.body, m.media_type)}</p>
+                                </div>
+                              ) : (
+                                <p
+                                  dir="auto"
+                                  className={isPlaceholderBody(m.body, m.media_type) ? "bubble-placeholder" : undefined}
+                                >
+                                  {displayMessageBody(m.body, m.media_type)}
+                                </p>
+                              )}
                               <span className="bubble-meta">
                                 {outbound ? (
                                   <SenderBadge type={m.sender_type} name={m.sender_name} />
