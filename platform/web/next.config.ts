@@ -5,6 +5,14 @@ const appRoot = path.join(__dirname);
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Local dev: browser uses /api (see lib/api.ts); Next proxies to the API container.
+  async rewrites() {
+    const apiOrigin = (process.env.INTERNAL_API_URL || "http://127.0.0.1:8000").replace(
+      /\/api\/?$/,
+      ""
+    );
+    return [{ source: "/api/:path*", destination: `${apiOrigin}/api/:path*` }];
+  },
   // A stray lockfile in C:\Users\siavash made Next treat the home folder as
   // the workspace root, so /_next/static chunks 404'd in the browser.
   outputFileTracingRoot: appRoot,

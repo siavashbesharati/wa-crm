@@ -1,6 +1,14 @@
 import { clearOrgMeCache, clearPlatformMeCache } from "./me-cache";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+/** Resolve API base URL at call time (not module load) for correct browser origin. */
+export function resolveApiBaseUrl(): string {
+  const fromEnv = (process.env.NEXT_PUBLIC_API_URL || "").trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/api`;
+  }
+  return (process.env.INTERNAL_API_URL || "http://api:8000/api").replace(/\/$/, "");
+}
 
 export type Session = {
   access_token: string;
@@ -186,7 +194,7 @@ async function refreshOrgSession(): Promise<boolean> {
   if (orgRefreshInFlight) return orgRefreshInFlight;
   orgRefreshInFlight = (async () => {
     try {
-      const res = await fetch(`${API_URL}/auth/refresh`, {
+      const res = await fetch(`${resolveApiBaseUrl()}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -220,7 +228,7 @@ async function refreshPlatformSession(): Promise<boolean> {
   if (platformRefreshInFlight) return platformRefreshInFlight;
   platformRefreshInFlight = (async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/refresh`, {
+      const res = await fetch(`${resolveApiBaseUrl()}/admin/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: session.refresh_token })
@@ -250,7 +258,7 @@ export async function logoutOrg() {
   clearSession();
   if (session?.refresh_token) {
     try {
-      await fetch(`${API_URL}/auth/logout`, {
+      await fetch(`${resolveApiBaseUrl()}/auth/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: session.refresh_token })
@@ -266,7 +274,7 @@ export async function logoutPlatform() {
   clearPlatformSession();
   if (session?.refresh_token) {
     try {
-      await fetch(`${API_URL}/admin/logout`, {
+      await fetch(`${resolveApiBaseUrl()}/admin/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: session.refresh_token })
@@ -306,7 +314,7 @@ export async function api<T = unknown>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    res = await fetch(`${resolveApiBaseUrl()}${path}`, { ...options, headers });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "ارتباط با سرور برقرار نشد";
     throw new Error(isNetworkErrorMessage(msg) ? "ارتباط با سرور برقرار نشد — بعداً دوباره تلاش کنید" : msg);

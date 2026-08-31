@@ -1,43 +1,42 @@
-# Miogen / Iranexpedia — full stack (single compose file)
+# Miogen / Iranexpedia — production-ready single compose file
 #
-# Production / VPS:
-#   cp .env.example .env   # edit URLs + secrets
+# VPS (first time, once):
+#   sudo cp deploy/nginx-miogen.example.conf /etc/nginx/sites-available/miogen
+#   sudo ln -sf /etc/nginx/sites-available/miogen /etc/nginx/sites-enabled/miogen
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Then every deploy:
 #   docker compose up -d --build
 #
-# Local dev (optional — publish on all interfaces, same as old dev override):
-#   HOST_BIND=0.0.0.0 docker compose up --build
-#
-# Host ports bind to 127.0.0.1 by default so Nginx on the VPS can reach
-# web/api without exposing them on the public Internet. Container-to-container
-# traffic uses service names (api, db, redis, …) and does NOT use these ports.
+# No .env required — defaults target https://miogen.iranexpedia.ir
+# Optional: copy .env.example → .env only to override secrets (SMS key, DB password).
 
 name: iranexpedia
 
 x-app-env: &app_env
-  APP_ENV: ${APP_ENV:-production}
-  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
-  WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:3000}
-  SUPER_ADMIN_PHONE: ${SUPER_ADMIN_PHONE:-09120674032}
-  SMS_IR_DEV_FALLBACK: ${SMS_IR_DEV_FALLBACK:-false}
-  TZ: ${TZ:-Asia/Tehran}
+  APP_ENV: production
+  CORS_ORIGINS: https://miogen.iranexpedia.ir,http://localhost:3000,http://127.0.0.1:3000
+  PUBLIC_BASE_URL: https://miogen.iranexpedia.ir
+  WEB_BASE_URL: https://miogen.iranexpedia.ir
+  SUPER_ADMIN_PHONE: "09120674032"
+  SMS_IR_DEV_FALLBACK: "false"
+  DEMO_ENABLED: "true"
+  TZ: Asia/Tehran
 
 services:
-
-  # --- data plane ----------------------------------------------------
 
   db:
     image: postgres:16-alpine
     container_name: iranexpedia-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-crm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}
-      POSTGRES_DB: ${POSTGRES_DB:-crm}
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: crm
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm} -d ${POSTGRES_DB:-crm}"]
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,8 +54,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- API + worker --------------------------------------------------
-
   api:
     build:
       context: ./platform/api
@@ -64,9 +61,6 @@ services:
     image: iranexpedia-api:latest
     container_name: iranexpedia-api
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
     depends_on:
       db:
         condition: service_healthy
@@ -74,12 +68,12 @@ services:
         condition: service_healthy
     environment:
       <<: *app_env
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@db:5432/${POSTGRES_DB:-crm}
+      DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/crm
       REDIS_URL: redis://redis:6379/0
     volumes:
       - api_secrets:/app/.local
     ports:
-      - "${HOST_BIND:-127.0.0.1}:8000:8000"
+      - "127.0.0.1:8000:8000"
 
   worker:
     build:
@@ -88,23 +82,18 @@ services:
     image: iranexpedia-api:latest
     container_name: iranexpedia-worker
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
     depends_on:
       api:
         condition: service_started
     environment:
       <<: *app_env
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@db:5432/${POSTGRES_DB:-crm}
+      DATABASE_URL: postgresql+psycopg://crm:crm@db:5432/crm
       REDIS_URL: redis://redis:6379/0
     volumes:
       - api_secrets:/app/.local
     command: ["python", "-m", "app.workers.runner"]
     healthcheck:
       disable: true
-
-  # --- Connector sidecars (Docker network only — no host ports) ----
 
   wa-connector:
     build:
@@ -163,21 +152,17 @@ services:
     expose:
       - "8092"
 
-  # --- Web (Next.js) ------------------------------------------------
-
   web:
     build:
       context: ./platform/web
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
     image: iranexpedia-web:latest
     container_name: iranexpedia-web
     restart: unless-stopped
     depends_on:
       - api
     ports:
-      - "${HOST_BIND:-127.0.0.1}:3000:3000"
+      - "127.0.0.1:3000:3000"
 
 volumes:
   pgdata:
