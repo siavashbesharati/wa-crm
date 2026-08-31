@@ -5,7 +5,7 @@ Creates a fully-populated business org for product demos:
 - Owner + 3 operators (team)
 - 30 realistic real-estate leads across every pipeline stage
 - Natural Persian WhatsApp-style conversations (خرید / اجاره / بازدید / معامله)
-- Tasks in every status (open / in_progress / done)
+- Tasks in every status (open / in_progress / done / cancelled), derived from inbox threads
 - 4 knowledge-base documents (neighborhoods + pricing + rules)
 - 2 campaigns (1 completed, 1 running)
 - 3 OKR objectives with progress
@@ -26,13 +26,13 @@ from __future__ import annotations
 import importlib.util
 import random
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import func, text  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
@@ -113,18 +113,28 @@ LEADS = [
     {"name": "هانیه متین", "phone": "09121111130", "stage": "بسته", "area": "پاسداران", "intent": "اجاره", "type": "آپارتمان", "budget": "۴۰ میلیون", "size": 100, "rooms": "۲ خواب", "floor": 1, "year": 1385, "source": "whatsapp", "tags": ["اجاره"], "score": 100, "assignee": "مریم احمدی"},
 ]
 
-TASKS = [
-    ("تماس با مالک آپارتمان نیاوران", 0,  "in_progress", 0,  "manual", "علی محمدی"),
-    ("ارسال فایل پنت‌هاوس الهیه به خانم عابدی", 15, "open",        1,  "ai",     "مریم احمدی"),
-    ("هماهنگی بازدید ویلای کامرانیه",          11, "open",        2,  "manual", "مریم احمدی"),
-    ("تنظیم قولنامه مغازه تجریش",              5,  "in_progress", 3,  "manual", "علی محمدی"),
-    ("پیگیری بازپرداخت وام آقای اکبری",         8,  "open",        5,  "manual", "مریم احمدی"),
-    ("ارسال قرارداد اجاره برای آقای کاظمی",     27, "done",       -2,  "manual", "حسین رضایی"),
-    ("تشکر از مشتری پس از تحویل کلید",         25, "done",       -7,  "ai",     "علی محمدی"),
-    ("آپلود عکس‌های جدید باغ ویلای امام‌زاده قاسم", 19, "open", 1, "manual", "حسین رضایی"),
-    ("پیگیری نظرسنجی از خانم متین",             29, "done",       -1,  "ai",     "مریم احمدی"),
-    ("بررسی مدارک شناسایی خانم عابدی",          15, "in_progress", 0,  "manual", "مریم احمدی"),
+# Conversation-derived demo tasks: (keywords, title template, source)
+_CONV_TASK_TRIGGERS: list[tuple[tuple[str, ...], str, str]] = [
+    (("بازدید", "میام", "ببینم", "هماهنگ"), "هماهنگی بازدید حضوری — {area}", "manual"),
+    (("وام",), "پیگیری مدارک وام بانکی — {name}", "manual"),
+    (("قولنامه", "قرارداد"), "تنظیم قرارداد و قولنامه — {name}", "manual"),
+    (("عکس", "فایل", "پلان", "می‌فرستم"), "ارسال فایل و عکس ملک — {area}", "ai"),
+    (("قیمت", "تخفیف", "نهایی", "میلیارد"), "ارسال پیشنهاد قیمت — {name}", "ai"),
+    (("پارکینگ", "انباری", "آسانسور"), "پاسخ به سوالات فنی ملک — {name}", "ai"),
+    (("چک می‌کنم", "بررسی", "فکر"), "پیگیری پس از ارسال فایل — {name}", "manual"),
+    (("ممنون", "متشکر"), "پیگیری رضایت مشتری — {name}", "ai"),
 ]
+
+_STAGE_FALLBACK_TASKS: dict[str, tuple[str, str, TaskStatus]] = {
+    "جدید": ("تماس اولیه و معرفی فایل — {name}", "manual", TaskStatus.open),
+    "پیگیری": ("پیگیری نوبت بعدی — {name}", "manual", TaskStatus.in_progress),
+    "پیشنهاد": ("ارسال پیشنهاد نهایی — {name}", "manual", TaskStatus.open),
+    "خرید": ("هماهنگی تحویل مدارک — {name}", "manual", TaskStatus.in_progress),
+    "بسته": ("نظرسنجی پس از معامله — {name}", "ai", TaskStatus.done),
+}
+
+_DEMO_TASK_MARKER = "demo-task-"
+_MIN_CONV_TASKS = 24
 
 KNOWLEDGE_DOCS = [
     {
@@ -258,7 +268,7 @@ def _ensure_org(db, owner):
                 onboarding_step="done",
                 industry="املاک و مستغلات",
                 city="تهران",
-                plan_expires_at=datetime.utcnow() + timedelta(days=365),
+                plan_expires_at=datetime.now(timezone.utc) + timedelta(days=365),
             )
             db.add(org)
             db.flush()
@@ -447,11 +457,11 @@ def _ensure_leads(db, org, accounts, users):
         ai_meta = {
             "sentiment": "positive" if score >= 80 else ("neutral" if score >= 55 else "cautious"),
             "suggested_stage": stage,
-            "last_enriched_at": (datetime.utcnow() - timedelta(days=random.randint(0, 14))).isoformat(),
+            "last_enriched_at": (datetime.now(timezone.utc) - timedelta(days=random.randint(0, 14))).isoformat(),
             "confidence": round(0.6 + (score / 100) * 0.4, 2),
             "escalation": False,
         }
-        last_msg_at = datetime.utcnow() - timedelta(days=random.randint(0, 30))
+        last_msg_at = datetime.now(timezone.utc) - timedelta(days=random.randint(0, 30))
         created_at = last_msg_at - timedelta(days=random.randint(15, 90))
         assignee = users.get(row["assignee"])
         ext = _lead_external_id(row)
@@ -572,7 +582,7 @@ def _ensure_conversations(db, org, accounts, users, leads):
         script = build_conversation(row)
         rng = random.Random(f"paramis-chat-{lead.phone}-{idx}")
         days_ago = rng.randint(0, 12)
-        last_message_at = lead.last_message_at or (datetime.utcnow() - timedelta(days=days_ago))
+        last_message_at = lead.last_message_at or (datetime.now(timezone.utc) - timedelta(days=days_ago))
         base_time = last_message_at - timedelta(hours=max(3, len(script) * 4))
         operator = operator_users[idx % len(operator_users)] if operator_users else None
         previous_ts = base_time
@@ -668,23 +678,179 @@ def _ensure_conversations(db, org, accounts, users, leads):
             db.add(lead)
 
 
-def _ensure_tasks(db, org, leads, users):
-    if db.query(Task).filter(Task.org_id == org.id).count() >= len(TASKS):
+def _demo_conv_task_count(db, org) -> int:
+    return (
+        db.query(Task)
+        .filter(Task.org_id == org.id, Task.source_message_id.like(f"{_DEMO_TASK_MARKER}%"))
+        .count()
+    )
+
+
+def _demo_tasks_cover_all_statuses(db, org) -> bool:
+    for status in TaskStatus:
+        if not (
+            db.query(Task)
+            .filter(
+                Task.org_id == org.id,
+                Task.status == status,
+                Task.source_message_id.like(f"{_DEMO_TASK_MARKER}%"),
+            )
+            .first()
+        ):
+            return False
+    return True
+
+
+def _task_title_from_message(row: dict, body: str) -> tuple[str, str] | None:
+    """Return (title, source) from a customer message, or None if no match."""
+    text_body = (body or "").strip()
+    if not text_body:
+        return None
+    for keywords, template, source in _CONV_TASK_TRIGGERS:
+        if any(kw in text_body for kw in keywords):
+            title = template.format(
+                name=row.get("name") or "مشتری",
+                area=row.get("area") or "تهران",
+            )
+            return title, source
+    return None
+
+
+def _due_at_for_status(status: TaskStatus, rng: random.Random, slot: int) -> datetime:
+    now = datetime.now(timezone.utc)
+    if status == TaskStatus.done:
+        return now - timedelta(days=rng.randint(1, 12))
+    if status == TaskStatus.cancelled:
+        return now - timedelta(days=rng.randint(2, 18))
+    if status == TaskStatus.in_progress:
+        return now + timedelta(days=0 if slot % 2 == 0 else rng.randint(0, 2))
+    # open — mix today, overdue, and near future for home board visibility
+    offsets = (0, -1, 1, 2, -2, 3)
+    return now + timedelta(days=offsets[slot % len(offsets)])
+
+
+def _next_demo_board_order(db, org_id: str, status: TaskStatus, counters: dict[TaskStatus, int]) -> int:
+    if status not in counters:
+        current = (
+            db.query(func.max(Task.board_order))
+            .filter(Task.org_id == org_id, Task.status == status)
+            .scalar()
+        )
+        counters[status] = int(current or -1)
+    counters[status] += 1
+    return counters[status]
+
+
+def _ensure_tasks(db, org, showcase_leads, users):
+    """Create follow-up tasks from inbox threads — one or two per showcase contact."""
+    if _demo_conv_task_count(db, org) >= _MIN_CONV_TASKS and _demo_tasks_cover_all_statuses(db, org):
         return
-    for t in TASKS:
-        if t[1] >= len(leads):
+
+    status_cycle = [
+        TaskStatus.open,
+        TaskStatus.in_progress,
+        TaskStatus.done,
+        TaskStatus.cancelled,
+    ]
+    board_counters: dict[TaskStatus, int] = {}
+    task_slot = 0
+
+    for idx, lead in enumerate(showcase_leads):
+        row = _row_for_lead(lead, idx)
+        assignee_name = row.get("assignee")
+        assignee = users.get(assignee_name) if assignee_name else None
+        if not assignee and lead.assignee_id:
+            assignee = db.get(User, lead.assignee_id)
+
+        messages = (
+            db.query(Message)
+            .filter(Message.org_id == org.id, Message.lead_id == lead.id)
+            .order_by(Message.created_at.asc())
+            .all()
+        )
+        if not messages:
             continue
-        lead = leads[t[1]]
-        assignee = users.get(t[5])
-        due = datetime.utcnow() + timedelta(days=t[3])
+
+        created_for_lead = 0
+        rng = random.Random(f"paramis-task-{lead.phone}-{idx}")
+
+        for msg in messages:
+            if msg.direction != MessageDirection.inbound or msg.sender_type != SenderType.customer:
+                continue
+            if created_for_lead >= 2:
+                break
+
+            parsed = _task_title_from_message(row, msg.body or "")
+            if not parsed:
+                continue
+
+            title, source = parsed
+            marker = f"{_DEMO_TASK_MARKER}{msg.wa_message_id or msg.id}"
+            if db.query(Task).filter(Task.org_id == org.id, Task.source_message_id == marker).first():
+                continue
+
+            status = status_cycle[task_slot % len(status_cycle)]
+            task_slot += 1
+            due = _due_at_for_status(status, rng, task_slot)
+            excerpt = (msg.body or "").strip()[:220]
+            body = f"{title}\n\n--- گفتگو ---\n«{excerpt}»" if excerpt else title
+
+            db.add(Task(
+                org_id=org.id,
+                lead_id=lead.id,
+                title=title,
+                message=body,
+                assignee_id=assignee.id if assignee else None,
+                created_by_id=assignee.id if assignee else None,
+                due_at=due,
+                status=status,
+                board_order=_next_demo_board_order(db, org.id, status, board_counters),
+                source=source,
+                source_message_id=marker,
+                created_at=(msg.created_at or datetime.now(timezone.utc)) + timedelta(minutes=5),
+                updated_at=due,
+            ))
+            created_for_lead += 1
+
+        if created_for_lead:
+            continue
+
+        # Fallback when no keyword matched — still tie task to last customer turn
+        last_customer = None
+        for msg in reversed(messages):
+            if msg.direction == MessageDirection.inbound and msg.sender_type == SenderType.customer:
+                last_customer = msg
+                break
+        if not last_customer:
+            continue
+
+        stage = row.get("stage") or lead.stage or "جدید"
+        fb = _STAGE_FALLBACK_TASKS.get(stage, _STAGE_FALLBACK_TASKS["جدید"])
+        title = fb[0].format(name=row.get("name") or lead.name or "مشتری")
+        source = fb[1]
+        status = fb[2] if created_for_lead == 0 else status_cycle[task_slot % len(status_cycle)]
+        marker = f"{_DEMO_TASK_MARKER}{last_customer.wa_message_id or last_customer.id}-fb"
+        if db.query(Task).filter(Task.org_id == org.id, Task.source_message_id == marker).first():
+            continue
+
+        task_slot += 1
+        due = _due_at_for_status(status, rng, task_slot)
+        excerpt = (last_customer.body or "").strip()[:220]
+        body = f"{title}\n\n--- گفتگو ---\n«{excerpt}»" if excerpt else title
         db.add(Task(
-            org_id=org.id, lead_id=lead.id, title=t[0], message=t[0],
+            org_id=org.id,
+            lead_id=lead.id,
+            title=title,
+            message=body,
             assignee_id=assignee.id if assignee else None,
             created_by_id=assignee.id if assignee else None,
-            due_at=due, status=t[2], board_order=random.randint(0, 100),
-            source=t[4], source_message_id="",
-            created_at=datetime.utcnow() - timedelta(days=abs(t[3]) + 1),
-            updated_at=datetime.utcnow() - timedelta(days=max(0, t[3])),
+            due_at=due,
+            status=status,
+            board_order=_next_demo_board_order(db, org.id, status, board_counters),
+            source=source,
+            source_message_id=marker,
+            created_at=(last_customer.created_at or datetime.now(timezone.utc)) + timedelta(minutes=8),
+            updated_at=due,
         ))
 
 
@@ -714,7 +880,7 @@ def _ensure_campaigns(db, org, accounts, owner):
     for c in CAMPAIGNS:
         if db.query(Campaign).filter(Campaign.org_id == org.id, Campaign.name == c["name"]).first():
             continue
-        started_at = datetime.utcnow() - timedelta(days=c["days_back"])
+        started_at = datetime.now(timezone.utc) - timedelta(days=c["days_back"])
         camp = Campaign(
             org_id=org.id, name=c["name"], status=c["status"],
             segment_json=c["segment"], message_template=c["template"],
@@ -868,7 +1034,7 @@ def _ensure_bulk_campaign_leads(db, org, accounts):
                 "confidence": round(0.6 + (score / 100) * 0.4, 2),
                 "escalation": False,
             }
-            last_msg_at = datetime.utcnow() - timedelta(days=random.randint(0, 20))
+            last_msg_at = datetime.now(timezone.utc) - timedelta(days=random.randint(0, 20))
             lead = Lead(
                 org_id=org.id, name=name, phone=phone,
                 external_chat_id=None, post_token="",
@@ -926,7 +1092,7 @@ def _ensure_kpis(db, org):
                                  target_value=k["target"], unit=k["unit"]))
     rng = random.Random(42)
     for w in range(12, 0, -1):
-        ts = datetime.utcnow() - timedelta(weeks=w)
+        ts = datetime.now(timezone.utc) - timedelta(weeks=w)
         for k in kpi_defs:
             base = k["target"]; trend = (12 - w) / 12.0
             noise = rng.uniform(0.7, 1.3)
@@ -949,12 +1115,12 @@ def _ensure_support(db, org, owner):
     db.add(SupportMessage(
         ticket_id=t.id, user_id=owner.id, sender_side="business",
         body="سلام، لطفاً کانکتور بله را برای شعبه شمال فعال کنید. تیم پشتیبانی فروش نیاز دارد.",
-        created_at=datetime.utcnow() - timedelta(days=2),
+        created_at=datetime.now(timezone.utc) - timedelta(days=2),
     ))
     db.add(SupportMessage(
         ticket_id=t.id, user_id=None, sender_side="platform",
         body="سلام، درخواست شما دریافت شد. تیم فنی تا فردا اتصال را بررسی می‌کند.",
-        created_at=datetime.utcnow() - timedelta(days=1, hours=12),
+        created_at=datetime.now(timezone.utc) - timedelta(days=1, hours=12),
     ))
 
 
@@ -976,7 +1142,7 @@ def _ensure_audit(db, org, owner):
         db.add(AuditEvent(
             org_id=org.id, user_id=owner.id, event_type=etype, message=msg,
             meta={"source": "seed-demo"},
-            created_at=datetime.utcnow() - timedelta(days=len(events) - i),
+            created_at=datetime.now(timezone.utc) - timedelta(days=len(events) - i),
         ))
 
 
@@ -988,7 +1154,7 @@ def _ensure_payments(db, org, owner):
             org_id=org.id, user_id=owner.id, purpose="renew", plan="growth",
             amount_irr=4_900_000, provider="zibal",
             track_id=f"TRK-DEMO-{i:04d}", ref_number=f"REF-DEMO-{i:08d}",
-            status="paid", paid_at=datetime.utcnow() - timedelta(days=30 * i + 5),
+            status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=30 * i + 5),
         ))
 
 def _migrate_then_create_all():
@@ -1026,7 +1192,7 @@ def seed():
             Lead.phone.in_(list(showcase_phones)),
         ).all()
         _ensure_conversations(db, org, accounts, users, all_leads)
-        _ensure_tasks(db, org, leads, users)
+        _ensure_tasks(db, org, all_leads, users)
         _ensure_knowledge(db, org)
         _ensure_campaigns(db, org, accounts, owner)
         _ensure_okrs(db, org, users)
@@ -1103,6 +1269,7 @@ def gen_conversations_cli(*, replace: bool = False):
             db.flush()
             print(f"Removed {len(demo_messages)} demo messages before generation.")
         _ensure_conversations(db, org, accounts, users, all_leads)
+        _ensure_tasks(db, org, all_leads, users)
         db.commit()
     except Exception:
         db.rollback()
