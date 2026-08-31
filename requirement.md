@@ -76,7 +76,7 @@ Use this profile for **a single business, one operator, demo / development**:
 | **Swap** | **4 GB** (recommended) | Buffer for Baileys RAM spikes when sockets reconnect |
 | **Network** | **100 Mbps** symmetric, **unmetered or ≥3 TB/mo** | WA / Bale / Divar / OpenAI / sms.ir all need steady outbound |
 | **OS** | Ubuntu 22.04/24.04 LTS, Debian 12, or Rocky 9 | Docker Engine 24+ supported |
-| **Docker** | Engine **24.0+** + Compose v2 | Bundled `docker-compose.yml` and `docker-compose.dev.yml` |
+| **Docker** | Engine **24.0+** + Compose v2 | `docker-compose.yml` + `.env` |
 
 ### 2.2 Per-container footprint (minimum profile)
 
@@ -261,7 +261,7 @@ Each replica competes on the Redis queue — no leader election required.
 
 Apply **explicit memory + CPU limits** so a single container cannot OOM-kill
 the host. The repo's current `docker-compose.yml` does not set these — add
-them in `docker-compose.dev.yml` or as a `deploy.resources` block per
+them in `.env` or as a `deploy.resources` block per
 service.
 
 Example pattern:
@@ -528,7 +528,7 @@ rebuilding the stack:
    them forces every customer to re-pair.
 5. ✅ **Add backups.** `pg_dump` nightly + a daily tarball of `wa_auth`
    and `api_secrets` to S3 (or Backblaze B2). Test restore quarterly.
-6. ✅ **Set resource limits** in `docker-compose.dev.yml` so a single
+6. ✅ **Set resource limits** in `docker-compose.yml` so a single
    runaway container cannot OOM-kill the host.
 7. ✅ **Front with a reverse proxy** (Caddy or Nginx) and put the panel
    behind Cloudflare for free TLS + WAF.
@@ -599,7 +599,7 @@ How many active WhatsApp numbers will you pair?
 ## Appendix B — Files in this repo relevant to sizing
 
 - `docker-compose.yml` — service topology and named volumes
-- `docker-compose.dev.yml` — dev override (live-reload)
+- `.env.example` — production URLs and secrets template
 - `platform/api/Dockerfile` — multi-stage Python build, `uvicorn --workers 2` default
 - `platform/api/requirements.txt` — Python deps (FastAPI, SQLAlchemy, psycopg, redis, pinecone, bale-sdk)
 - `platform/wa-connector/Dockerfile` + `package.json` — Baileys (Node 20)

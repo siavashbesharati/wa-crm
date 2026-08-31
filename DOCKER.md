@@ -45,8 +45,8 @@ All services share a dedicated bridge network `iranexpedia-net` so the connector
 
 ```
 repo root
-├── docker-compose.yml              # the production-like stack
-├── docker-compose.dev.yml          # dev-only overrides (hot reload, debug ports)
+├── docker-compose.yml              # production stack (single file)
+├── deploy/nginx-miogen.example.conf  # Nginx reverse proxy template
 ├── .env.example                    # documented env vars
 └── DOCKER.md                       # this file
 
@@ -106,24 +106,9 @@ docker compose ps
 
 ## Dev mode (hot reload, debug ports)
 
-By default `docker compose up` runs the **production-like** images. To switch to dev mode (source mounted, reload on save, connector health ports exposed to localhost), pass both compose files explicitly:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-```
-
-Or set `COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml` in your shell and just run `docker compose up`.
-
-Dev differences:
-
-| | prod (default) | dev (override) |
-|---|---|---|
-| API command | `uvicorn ... --workers 2` | `uvicorn ... --reload` |
-| API source | baked into image | mounted from `./platform/api` |
-| WA connector | `tsx src/index.ts` (production stage) | `tsx watch src/index.ts` (dev stage) |
-| Divar / Bale | python main.py | python main.py + source mounted |
-| Web | `node server.js` (standalone) | `npx next dev` (HMR) |
-| Connector health ports | exposed on docker network only | also mapped to `localhost:8090/8091/8092` |
+By default `docker compose up` binds **web** and **api** to `127.0.0.1` only
+(`HOST_BIND` in `.env`). For local dev on your laptop you can set
+`HOST_BIND=0.0.0.0` in `.env` if you need direct access without Nginx.
 
 ---
 
