@@ -25,13 +25,22 @@ type SmsTemplate = {
   is_default: boolean;
 };
 
-const emptyForm = () => ({
+type SmsTemplateForm = {
+  name: string;
+  template_id: string | number;
+  purpose: string;
+  is_active: boolean;
+  is_default: boolean;
+  parameters: SmsParam[];
+};
+
+const emptyForm = (): SmsTemplateForm => ({
   name: "",
-  template_id: "" as string | number,
+  template_id: "",
   purpose: "otp",
   is_active: true,
   is_default: true,
-  parameters: [{ name: "Code", source: "otp" as const, value: "" }]
+  parameters: [{ name: "Code", source: "otp", value: "" }]
 });
 
 export default function SuperSmsTemplatesPage() {
