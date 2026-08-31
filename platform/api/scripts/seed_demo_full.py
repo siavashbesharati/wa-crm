@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import random
 import sys
@@ -678,6 +679,23 @@ def _ensure_conversations(db, org, accounts, users, leads):
             db.add(lead)
 
 
+def _utc_naive(dt: datetime | None = None) -> datetime:
+    """PostgreSQL TIMESTAMP WITHOUT TIME ZONE expects naive UTC values."""
+    value = dt or datetime.now(timezone.utc)
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _demo_task_marker(message_key: str, *, fallback: bool = False) -> str:
+    suffix = "-fb" if fallback else ""
+    raw = f"{_DEMO_TASK_MARKER}{message_key}{suffix}"
+    if len(raw) <= 120:
+        return raw
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    return f"{_DEMO_TASK_MARKER}{digest}"
+
+
 def _demo_conv_task_count(db, org) -> int:
     return (
         db.query(Task)
@@ -717,7 +735,7 @@ def _task_title_from_message(row: dict, body: str) -> tuple[str, str] | None:
 
 
 def _due_at_for_status(status: TaskStatus, rng: random.Random, slot: int) -> datetime:
-    now = datetime.now(timezone.utc)
+    now = _utc_naive()
     if status == TaskStatus.done:
         return now - timedelta(days=rng.randint(1, 12))
     if status == TaskStatus.cancelled:
@@ -785,7 +803,8 @@ def _ensure_tasks(db, org, showcase_leads, users):
                 continue
 
             title, source = parsed
-            marker = f"{_DEMO_TASK_MARKER}{msg.wa_message_id or msg.id}"
+            title = title[:200]
+            marker = _demo_task_marker(msg.wa_message_id or msg.id)
             if db.query(Task).filter(Task.org_id == org.id, Task.source_message_id == marker).first():
                 continue
 
@@ -794,6 +813,7 @@ def _ensure_tasks(db, org, showcase_leads, users):
             due = _due_at_for_status(status, rng, task_slot)
             excerpt = (msg.body or "").strip()[:220]
             body = f"{title}\n\n--- گفتگو ---\n«{excerpt}»" if excerpt else title
+            msg_created = _utc_naive(msg.created_at)
 
             db.add(Task(
                 org_id=org.id,
@@ -807,7 +827,7 @@ def _ensure_tasks(db, org, showcase_leads, users):
                 board_order=_next_demo_board_order(db, org.id, status, board_counters),
                 source=source,
                 source_message_id=marker,
-                created_at=(msg.created_at or datetime.now(timezone.utc)) + timedelta(minutes=5),
+                created_at=msg_created + timedelta(minutes=5),
                 updated_at=due,
             ))
             created_for_lead += 1
@@ -826,10 +846,10 @@ def _ensure_tasks(db, org, showcase_leads, users):
 
         stage = row.get("stage") or lead.stage or "جدید"
         fb = _STAGE_FALLBACK_TASKS.get(stage, _STAGE_FALLBACK_TASKS["جدید"])
-        title = fb[0].format(name=row.get("name") or lead.name or "مشتری")
+        title = fb[0].format(name=row.get("name") or lead.name or "مشتری")[:200]
         source = fb[1]
         status = fb[2] if created_for_lead == 0 else status_cycle[task_slot % len(status_cycle)]
-        marker = f"{_DEMO_TASK_MARKER}{last_customer.wa_message_id or last_customer.id}-fb"
+        marker = _demo_task_marker(last_customer.wa_message_id or last_customer.id, fallback=True)
         if db.query(Task).filter(Task.org_id == org.id, Task.source_message_id == marker).first():
             continue
 
@@ -837,6 +857,7 @@ def _ensure_tasks(db, org, showcase_leads, users):
         due = _due_at_for_status(status, rng, task_slot)
         excerpt = (last_customer.body or "").strip()[:220]
         body = f"{title}\n\n--- گفتگو ---\n«{excerpt}»" if excerpt else title
+        msg_created = _utc_naive(last_customer.created_at)
         db.add(Task(
             org_id=org.id,
             lead_id=lead.id,
@@ -849,7 +870,7 @@ def _ensure_tasks(db, org, showcase_leads, users):
             board_order=_next_demo_board_order(db, org.id, status, board_counters),
             source=source,
             source_message_id=marker,
-            created_at=(last_customer.created_at or datetime.now(timezone.utc)) + timedelta(minutes=8),
+            created_at=msg_created + timedelta(minutes=8),
             updated_at=due,
         ))
 
@@ -1170,6 +1191,12 @@ def _migrate_then_create_all():
     except Exception as exc:  # noqa: BLE001
         print("migrate skipped:", exc)
         Base.metadata.create_all(bind=engine)
+    try:
+        from app.main import _ensure_db_columns
+
+        _ensure_db_columns()
+    except Exception as exc:  # noqa: BLE001
+        print("column migrate skipped:", exc)
 
 
 def seed():
@@ -1193,6 +1220,12 @@ def seed():
         ).all()
         _ensure_conversations(db, org, accounts, users, all_leads)
         _ensure_tasks(db, org, all_leads, users)
+        try:
+            db.flush()
+        except Exception as exc:
+            raise RuntimeError(f"demo task seed failed: {exc}") from exc
+        db.commit()
+
         _ensure_knowledge(db, org)
         _ensure_campaigns(db, org, accounts, owner)
         _ensure_okrs(db, org, users)

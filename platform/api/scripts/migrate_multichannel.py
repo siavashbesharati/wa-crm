@@ -123,6 +123,20 @@ def main() -> None:
             )
             print("ALTER TABLE extension_seats ADD COLUMN token_plain")
 
+        task_cols = _cols("tasks")
+        if task_cols:
+            if "board_order" not in task_cols:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN board_order INTEGER DEFAULT 0"))
+                print("ALTER TABLE tasks ADD COLUMN board_order")
+            if "source" not in task_cols:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN source VARCHAR(20) DEFAULT 'manual'"))
+                print("ALTER TABLE tasks ADD COLUMN source")
+            if "source_message_id" not in task_cols:
+                conn.execute(
+                    text("ALTER TABLE tasks ADD COLUMN source_message_id VARCHAR(120) DEFAULT ''")
+                )
+                print("ALTER TABLE tasks ADD COLUMN source_message_id")
+
     print("Migration done.")
 
 

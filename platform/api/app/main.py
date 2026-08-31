@@ -93,10 +93,8 @@ def _mount_routers() -> None:
         app.include_router(router, prefix=prefix)
 
 
-def _ensure_sqlite_columns() -> None:
-    """Add new columns to existing SQLite DBs (create_all won't alter)."""
-    if not settings.is_sqlite:
-        return
+def _ensure_db_columns() -> None:
+    """Add new columns when create_all did not alter an existing schema."""
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
@@ -207,7 +205,7 @@ _mount_routers()
 
 # Ensure tables exist for local/sqlite and TestClient (no lifespan)
 Base.metadata.create_all(bind=engine)
-_ensure_sqlite_columns()
+_ensure_db_columns()
 
 try:
     from app.plans import ensure_default_plans
