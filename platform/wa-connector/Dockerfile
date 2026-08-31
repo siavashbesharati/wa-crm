@@ -10,7 +10,7 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # ---- dev stage: includes tsx for hot reload ----
 FROM deps AS dev
-CMD ["./node_modules/.bin/tsx", "watch", "src/index.ts"]
+CMD ["node", "node_modules/tsx/dist/cli.mjs", "watch", "src/index.ts"]
 
 
 # ---- runtime stage: install only prod deps, run as non-root ----
@@ -26,15 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends tini \
 ENV NODE_ENV=production \
     NPM_CONFIG_LOGLEVEL=warn
 
-# Install only production dependencies
 COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
-
-# Copy the source. tsx is needed at runtime because the project ships
-# .ts files directly (no build step), so we re-install tsx for runtime
-# and pin it to the same version declared in devDependencies.
-COPY package.json ./
-RUN npm install --no-save tsx@^4.19.3
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi \
+    && test -f node_modules/tsx/dist/cli.mjs
 
 COPY --chown=app:app src ./src
 COPY --chown=app:app tsconfig.json ./tsconfig.json
@@ -47,10 +41,9 @@ USER app
 
 EXPOSE 8090
 
-# Healthcheck hits the local health endpoint
 HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=5 \
     CMD node -e "require('http').get('http://127.0.0.1:8090/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-# Run tsx directly — npx needs a writable npm cache under /app/.npm
-CMD ["./node_modules/.bin/tsx", "src/index.ts"]
+# Use node + tsx cli.mjs — npx needs a writable npm cache; .bin/tsx is a shell script tini cannot exec reliably
+CMD ["node", "node_modules/tsx/dist/cli.mjs", "src/index.ts"]
