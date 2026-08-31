@@ -95,6 +95,8 @@ services:
     volumes:
       - api_secrets:/app/.local
     command: ["python", "-m", "app.workers.runner"]
+    healthcheck:
+      disable: true
     # No exposed port
 
   # --- Connector sidecars -------------------------------------------

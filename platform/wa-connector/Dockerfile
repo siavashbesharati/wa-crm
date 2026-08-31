@@ -10,7 +10,7 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # ---- dev stage: includes tsx for hot reload ----
 FROM deps AS dev
-CMD ["npx", "tsx", "watch", "src/index.ts"]
+CMD ["./node_modules/.bin/tsx", "watch", "src/index.ts"]
 
 
 # ---- runtime stage: install only prod deps, run as non-root ----
@@ -41,7 +41,7 @@ COPY --chown=app:app tsconfig.json ./tsconfig.json
 
 # Persistent state: Baileys auth directory
 RUN mkdir -p /app/baileys_auth \
-    && chown -R app:app /app/baileys_auth
+    && chown -R app:app /app
 
 USER app
 
@@ -52,4 +52,5 @@ HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=5 \
     CMD node -e "require('http').get('http://127.0.0.1:8090/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["npx", "tsx", "src/index.ts"]
+# Run tsx directly — npx needs a writable npm cache under /app/.npm
+CMD ["./node_modules/.bin/tsx", "src/index.ts"]
