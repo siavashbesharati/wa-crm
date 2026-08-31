@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
-from app.deps import AuthContext, get_auth, require_roles
+from app.deps import AuthContext, get_auth, is_demo_org, require_roles
 from app.models import (
     BaleAuthState,
     ChannelAccount,
@@ -32,11 +32,20 @@ from app.services.sse_hub import format_sse, sse_hub
 router = APIRouter(prefix="/channels", tags=["channels"])
 
 
-def _account_out(r: ChannelAccount, *, live_online: bool | None = None) -> ChannelAccountOut:
-    if live_online is None:
+def _account_out(
+    r: ChannelAccount, *, live_online: bool | None = None, demo: bool = False
+) -> ChannelAccountOut:
+    if demo:
+        # Sales demo: simulate every channel as connected regardless of the
+        # (offline) connectors on the box.
+        status = "online"
+        pairing_state = "connected"
+    elif live_online is None:
         status = r.status or "disconnected"
+        pairing_state = getattr(r, "pairing_state", None) or "disconnected"
     else:
         status = "online" if live_online else "offline"
+        pairing_state = getattr(r, "pairing_state", None) or "disconnected"
     return ChannelAccountOut(
         id=r.id,
         channel=r.channel.value if isinstance(r.channel, ChannelType) else str(r.channel),
@@ -45,7 +54,7 @@ def _account_out(r: ChannelAccount, *, live_online: bool | None = None) -> Chann
         phone=r.external_id or "",
         status=status,
         connector_type=getattr(r, "connector_type", None) or "extension",
-        pairing_state=getattr(r, "pairing_state", None) or "disconnected",
+        pairing_state=pairing_state,
         wa_jid=getattr(r, "wa_jid", None) or "",
     )
 
@@ -96,7 +105,8 @@ def list_accounts(
             dirty = True
     if dirty:
         db.commit()
-    return [_account_out(r, live_online=(r.id in online_ids)) for r in rows]
+    demo = is_demo_org(auth.org)
+    return [_account_out(r, live_online=(r.id in online_ids), demo=demo) for r in rows]
 
 
 def _purge_account_auth_and_row(db: Session, acc: ChannelAccount) -> None:

@@ -263,6 +263,17 @@ export default function ShellChrome({
       </aside>
 
       <div className="main-wrap">
+        {getSession()?.is_demo && (
+          <div className="demo-banner" role="status">
+            <span className="demo-banner-dot" aria-hidden />
+            <span className="demo-banner-label">حساب دمو</span>
+            <span className="demo-banner-text">
+              شما در حال مشاهدهٔ نمونهٔ کامل «دپارتمان ملک پارامیس» هستید — همهٔ
+              داده‌ها از پیش بارگذاری شده‌اند. برای استفادهٔ واقعی، از دکمهٔ خروج
+              استفاده کنید.
+            </span>
+          </div>
+        )}
         <header className="topbar">
           <button
             type="button"

@@ -92,6 +92,7 @@ def _token_out(
     membership: Membership,
     *,
     is_new: bool = False,
+    is_demo: bool = False,
 ) -> TokenOut:
     access = create_access_token(user.id, org.id, membership.role.value, scope="org")
     refresh = create_refresh_token(db, user.id)
@@ -103,6 +104,7 @@ def _token_out(
         role=membership.role.value,
         is_new=is_new,
         onboarding_step=_org_step(org),
+        is_demo=is_demo,
     )
 
 
@@ -166,6 +168,73 @@ def verify_otp(body: OtpVerifyIn, db: Session = Depends(get_db)):
     return _token_out(db, user, org, membership, is_new=is_new)
 
 
+@router.post("/demo/login", response_model=TokenOut)
+def demo_login(db: Session = Depends(get_db)):
+    """Sales / showcase login — bypasses OTP and seeds a fully-populated demo
+    business on first call. Disabled in production unless DEMO_ENABLED=True.
+    """
+    if not settings.demo_enabled:
+        raise HTTPException(status_code=404, detail="دمو در دسترس نیست")
+
+    # Idempotently seed the demo org on first call (seed() uses its own session)
+    try:
+        from scripts.seed_demo_full import seed as _seed_demo  # type: ignore
+
+        _seed_demo()
+    except Exception as exc:  # noqa: BLE001
+        # If the seed script can't run (e.g. packaged build), we fall through
+        # and expect the org to already exist in the database.
+        import logging
+        logging.getLogger("auth").warning("seed_demo_full failed: %s", exc)
+
+    # Always re-load everything in THIS session (the seed() closes its own).
+    org = (
+        db.query(Organization)
+        .filter(Organization.name == settings.demo_org_name)
+        .first()
+    )
+    if not org:
+        raise HTTPException(
+            status_code=503,
+            detail="سرویس دمو آماده نیست — لطفاً seed_demo_full.py را اجرا کنید",
+        )
+
+    owner = db.query(User).filter(User.phone == settings.demo_owner_phone).first()
+    if not owner:
+        owner = User(phone=settings.demo_owner_phone, display_name=settings.demo_owner_name)
+        db.add(owner)
+        db.flush()
+        mship = Membership(org_id=org.id, user_id=owner.id, role=MemberRole.owner)
+        db.add(mship)
+        db.commit()
+        db.refresh(mship)
+    else:
+        mship = (
+            db.query(Membership)
+            .filter(Membership.user_id == owner.id, Membership.org_id == org.id)
+            .first()
+        )
+        if not mship:
+            mship = Membership(org_id=org.id, user_id=owner.id, role=MemberRole.owner)
+            db.add(mship)
+            db.commit()
+            db.refresh(mship)
+
+    if getattr(org, "status", "active") == "suspended":
+        raise HTTPException(status_code=403, detail="این کسب‌وکار موقتاً غیرفعال است")
+
+    return _token_out(db, owner, org, mship, is_new=False, is_demo=True)
+
+
+@router.get("/demo/status")
+def demo_status():
+    """Public probe used by the login page to know whether to show the demo button."""
+    return {
+        "enabled": bool(settings.demo_enabled),
+        "org_name": settings.demo_org_name,
+    }
+
+
 @router.post("/refresh", response_model=TokenOut)
 def refresh_session(body: TokenRefreshIn, db: Session = Depends(get_db)):
     """Issue a new access token from a valid refresh token."""
@@ -211,6 +280,7 @@ def refresh_session(body: TokenRefreshIn, db: Session = Depends(get_db)):
         role=role,
         is_new=False,
         onboarding_step=_org_step(org),
+        is_demo=False,
     )
 
 

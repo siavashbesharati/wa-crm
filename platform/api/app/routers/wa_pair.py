@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from datetime import datetime
 
@@ -9,13 +10,82 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import AuthContext, get_auth, require_roles
+from app.deps import AuthContext, get_auth, is_demo_org, require_roles
 from app.models import ChannelAccount, ChannelType, MemberRole, WaAuthState
 from app.schemas import ChannelAccountOut, WaPairCodeStartIn, WaPairStatusOut
 from app.services.pair_rate_limit import check_and_record, raise_too_soon
 from app.services.phone import ascii_digits, normalize_phone_for_storage, to_cc_digits
 
 router = APIRouter(prefix="/channels", tags=["wa-pair"])
+
+
+# ---------------------------------------------------------------------------
+# Demo mock data — when a demo org asks for groups / participants we return a
+# random but realistic list instead of proxying to the (offline) connector.
+# ---------------------------------------------------------------------------
+_DEMO_GROUP_SUBJECTS = [
+    "خریداران آپارتمان نیاوران",
+    "گروه اجاره فرمانیه",
+    "مشاورین املاک پارامیس",
+    "گروه سرمایه‌گذاری غرب تهران",
+    "ویلاهای لوکس شمال",
+    "مشتریان وفادار پارامیس",
+    "گروه بازاریابی منطقه ۱",
+    "پشتیبانی فروش آنلاین",
+    "گروه معرفی همکاران",
+    "رهن کامل — تهران",
+]
+
+_DEMO_FIRST = [
+    "علی", "محمد", "حسین", "مریم", "زهرا", "سارا", "رضا", "امیر", "نگار", "مهدی",
+    "الهه", "پارسا", "شیوا", "آرش", "فرناز", "سامان", "لیلا", "بهنام", "ترانه", "کاوه",
+    "نرگس", "کیان", "دنیا", "سهراب", "الهام",
+]
+_DEMO_LAST = [
+    "رضایی", "احمدی", "محمدی", "کریمی", "حسینی", "نوری", "قاسمی", "تقوی", "موسوی",
+    "صادقی", "کاظمی", "عباسی", "همتی", "صبوری", "باقری", "نجفی", "توکلی", "مرادی",
+]
+
+
+def _demo_groups() -> list[dict]:
+    groups = []
+    n = random.randint(3, 6)
+    for subject in random.sample(_DEMO_GROUP_SUBJECTS, n):
+        groups.append(
+            {
+                "jid": f"{random.randint(1200000000, 1299999999)}-{random.randint(1000, 9999)}@g.us",
+                "subject": subject,
+                "size": random.randint(5, 180),
+                "owner": "989120000000@c.us" if random.random() < 0.6 else None,
+            }
+        )
+    return groups
+
+
+def _demo_participants(group_jid: str) -> dict:
+    parts = []
+    used: set[str] = set()
+    for _ in range(random.randint(8, 40)):
+        phone = f"9891{random.randint(20000000, 99999999)}"
+        while phone in used:
+            phone = f"9891{random.randint(20000000, 99999999)}"
+        used.add(phone)
+        admin = random.choice([None, None, None, "admin", "superadmin"])
+        parts.append(
+            {
+                "id": f"{phone}@s.whatsapp.net",
+                "phone": phone,
+                "name": f"{random.choice(_DEMO_FIRST)} {random.choice(_DEMO_LAST)}",
+                "lid": f"{random.randint(10, 99)}:{random.randint(10, 99)}",
+                "admin": admin,
+                "is_admin": admin is not None,
+            }
+        )
+    return {
+        "subject": "گروه دمو",
+        "group_jid": group_jid,
+        "participants": parts,
+    }
 
 
 def _digits_phone(raw: str) -> str:
@@ -205,6 +275,8 @@ def list_groups(
     acc = _get_org_account(db, auth.org.id, account_id)
     if (acc.connector_type or "") != "baileys":
         raise HTTPException(status_code=400, detail="فقط اکانت Baileys")
+    if is_demo_org(auth.org):
+        return {"groups": _demo_groups()}
     if (acc.pairing_state or "") != "connected" and (acc.status or "") != "online":
         raise HTTPException(status_code=409, detail="واتساپ متصل نیست")
     import httpx
@@ -234,6 +306,8 @@ def group_participants(
     group_jid = (jid or "").strip()
     if "@g.us" not in group_jid:
         raise HTTPException(status_code=400, detail="jid گروه نامعتبر است")
+    if is_demo_org(auth.org):
+        return _demo_participants(group_jid)
     import httpx
     from urllib.parse import quote
 

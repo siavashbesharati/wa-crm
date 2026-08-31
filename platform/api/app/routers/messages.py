@@ -18,6 +18,7 @@ from app.models import (
     OutboundJob,
     OutboundStatus,
     SenderType,
+    User,
 )
 from app.plans import plan_limits
 from app.schemas import MessageIngestIn, MessageIngestOut, MessageOut, OutboundJobOut, SendMessageIn
@@ -431,7 +432,17 @@ def ingest(
     )
 
 
-def _to_out(m: Message) -> MessageOut:
+def _sender_name_for(m: Message, user_names: dict[str, str] | None = None) -> str:
+    if m.sender_type == SenderType.agent and m.agent_id and user_names:
+        return user_names.get(m.agent_id, "")
+    if m.sender_type == SenderType.ai:
+        return "هوش مصنوعی"
+    return ""
+
+
+def _to_out(m: Message, sender_name: str | None = None) -> MessageOut:
+    if sender_name is None:
+        sender_name = _sender_name_for(m)
     return MessageOut(
         id=m.id,
         account_id=m.account_id,
@@ -440,6 +451,7 @@ def _to_out(m: Message) -> MessageOut:
         sender_type=m.sender_type.value,
         body=m.body,
         agent_id=m.agent_id,
+        sender_name=sender_name,
         created_at=m.created_at,
         media_type=getattr(m, "media_type", "") or "",
         media_url=getattr(m, "media_url", "") or "",
@@ -1268,7 +1280,13 @@ def inbox(
     if account_id:
         q = q.filter(Message.account_id == account_id)
     rows = q.order_by(Message.created_at.desc()).limit(limit).all()
-    return [_to_out(r) for r in rows]
+
+    agent_ids = {r.agent_id for r in rows if r.agent_id}
+    user_names: dict[str, str] = {}
+    if agent_ids:
+        for u in db.query(User).filter(User.id.in_(agent_ids)).all():
+            user_names[u.id] = (u.display_name or "").strip() or (u.phone or "")
+    return [_to_out(r, sender_name=_sender_name_for(r, user_names)) for r in rows]
 
 
 @router.get("/threads")

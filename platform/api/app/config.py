@@ -75,9 +75,13 @@ def _load_or_create_wa_creds_key() -> str:
 
 
 class Settings(BaseSettings):
-    """App settings — values come only from this file (no .env / OS env override)."""
+    """Application settings, with local overrides loaded from platform/api/.env."""
 
-    model_config = SettingsConfigDict(extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_API_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_env: str = "development"
     database_url: str = _default_database_url()
@@ -121,6 +125,15 @@ class Settings(BaseSettings):
     sms_ir_https_proxy: str = ""
     # If True and sms.ir is unreachable, log OTP to API console (local only)
     sms_ir_dev_fallback: bool = True
+    # Demo / sales-showcase account
+    # When enabled, /api/auth/demo/login returns a real session for the seeded
+    # "دپارتمان ملک پارامیس" business. Auto-on in development; off in prod
+    # unless explicitly turned on.
+    demo_enabled: bool = True
+    # Locked business name for the demo org (used by the seed + login endpoint)
+    demo_org_name: str = "دپارتمان ملک پارامیس"
+    demo_owner_phone: str = "09120000000"
+    demo_owner_name: str = "مدیر دمو"
 
     @classmethod
     def settings_customise_sources(
@@ -131,8 +144,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Ignore OS env and .env — only class defaults / explicit init
-        return (init_settings,)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
     @field_validator("sms_ir_template_id", mode="before")
     @classmethod

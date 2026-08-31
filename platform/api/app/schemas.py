@@ -26,6 +26,7 @@ class TokenOut(BaseModel):
     role: str
     is_new: bool = False
     onboarding_step: str = "done"
+    is_demo: bool = False  # True when issued via /auth/demo/login (sales demo)
 
 
 class TokenRefreshIn(BaseModel):
@@ -375,6 +376,7 @@ class MessageOut(BaseModel):
     sender_type: str
     body: str
     agent_id: str | None
+    sender_name: str = ""  # operator name for agent msgs, "هوش مصنوعی" for AI
     created_at: datetime
     media_type: str = ""
     media_url: str = ""

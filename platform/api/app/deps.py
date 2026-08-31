@@ -11,6 +11,14 @@ from app.plans import plan_limits
 from app.services.security import decode_access_token, get_membership, get_user
 
 
+def is_demo_org(org: Organization) -> bool:
+    """True when the org is the seeded sales-demo business, enabling simulated
+    connector behaviour (connected channels, mock groups/contacts, …)."""
+    from app.config import get_settings
+
+    return org.name == get_settings().demo_org_name
+
+
 @dataclass
 class AuthContext:
     user: User

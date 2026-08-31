@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Card, HelpTip } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { PageLoading, Spinner } from "@/components/ui/Spinner";
-import { api } from "@/lib/api";
+import { api, getSession, logoutOrg } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import {
   accountIdentity,
@@ -63,6 +63,9 @@ export default function ChannelsPage() {
   const [baleProfile, setBaleProfile] = useState<{ name: string; userId: string; phone: string } | null>(null);
   const [waPhone, setWaPhone] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ChannelAccount | null>(null);
+  const [demoNotice, setDemoNotice] = useState(false);
+  const router = useRouter();
+  const isDemo = !!getSession()?.is_demo;
   const toast = useToast();
 
   const waAccounts = useMemo(
@@ -157,6 +160,10 @@ export default function ChannelsPage() {
   }
 
   async function addWhatsApp() {
+    if (isDemo) {
+      setDemoNotice(true);
+      return;
+    }
     setBusy(true);
     try {
       const acc = await api<ChannelAccount>("/channels/accounts/baileys", { method: "POST" });
@@ -191,6 +198,10 @@ export default function ChannelsPage() {
   }
 
   async function addDivar() {
+    if (isDemo) {
+      setDemoNotice(true);
+      return;
+    }
     setBusy(true);
     try {
       const acc = await api<ChannelAccount>("/channels/accounts/divar-api", { method: "POST" });
@@ -296,6 +307,10 @@ export default function ChannelsPage() {
   }
 
   async function addBale() {
+    if (isDemo) {
+      setDemoNotice(true);
+      return;
+    }
     setBusy(true);
     try {
       const acc = await api<ChannelAccount>("/channels/accounts/bale-api", { method: "POST" });
@@ -407,6 +422,16 @@ export default function ChannelsPage() {
     setModal(null);
     setPair(null);
     setBaleProfile(null);
+  }
+
+  async function goToLogin() {
+    setDemoNotice(false);
+    try {
+      await logoutOrg();
+    } catch {
+      /* ignore */
+    }
+    router.push("/login");
   }
 
   const connectedCount = accounts.filter((a) => isAccountOn(a.status, a.pairing_state)).length;
@@ -739,6 +764,30 @@ export default function ChannelsPage() {
             برای وصل دوباره باید دوباره QR یا کد تأیید بزنید.
           </p>
         ) : null}
+      </Modal>
+      <Modal
+        open={demoNotice}
+        title="حالت دمو"
+        onClose={() => setDemoNotice(false)}
+        panelClassName="pair-modal"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDemoNotice(false)}>
+              بستن
+            </Button>
+            <Button loading={busy} onClick={() => void goToLogin()}>
+              ورود به حساب
+            </Button>
+          </>
+        }
+      >
+        <div className="pair-form">
+          <p className="pair-lead">شما در حالت دمو هستید.</p>
+          <p className="hint">
+            در حساب دمو امکان افزودن کانال وجود ندارد. برای اتصال کانال واقعی ابتدا وارد حساب
+            خود شوید.
+          </p>
+        </div>
       </Modal>
     </Shell>
   );
