@@ -7,7 +7,7 @@ export type TaskBoardOrderUpdate = {
 };
 
 export function sortTasksForBoard(tasks: CrmTask[]): CrmTask[] {
-  const rank = new Map(TASK_STATUSES.map((s, i) => [s, i]));
+  const rank = new Map<string, number>(TASK_STATUSES.map((s, i) => [s, i]));
   return [...tasks].sort((a, b) => {
     const sa = rank.get(a.status) ?? TASK_STATUSES.length;
     const sb = rank.get(b.status) ?? TASK_STATUSES.length;

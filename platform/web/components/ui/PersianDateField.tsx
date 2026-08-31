@@ -38,7 +38,9 @@ export function PersianDateField({ value, onChange, label = "سررسید" }: Pr
     if (!el) return;
 
     function emit() {
-      const raw = el.value.trim();
+      const input = inputRef.current;
+      if (!input) return;
+      const raw = input.value.trim();
       onChangeRef.current(raw ? jalaliSlashToIso(raw) : "");
     }
 
