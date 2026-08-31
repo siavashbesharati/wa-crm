@@ -1,9 +1,10 @@
 # Iranexpedia platform — full local stack
 #
-# Usage:
+# Usage (production / VPS):
 #   docker compose up -d --build
-#   docker compose logs -f api web
-#   docker compose down
+#
+# Local development (hot reload) — opt in to docker-compose.dev.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # All long-lived state (Postgres data, Redis data, Baileys auth, .local
 # secrets) lives in named volumes so `docker compose down` does not

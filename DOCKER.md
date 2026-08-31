@@ -46,7 +46,7 @@ All services share a dedicated bridge network `iranexpedia-net` so the connector
 ```
 repo root
 ├── docker-compose.yml              # the production-like stack
-├── docker-compose.override.yml     # dev-only overrides (hot reload, debug ports)
+├── docker-compose.dev.yml          # dev-only overrides (hot reload, debug ports)
 ├── .env.example                    # documented env vars
 └── DOCKER.md                       # this file
 
@@ -109,10 +109,10 @@ docker compose ps
 By default `docker compose up` runs the **production-like** images. To switch to dev mode (source mounted, reload on save, connector health ports exposed to localhost), pass both compose files explicitly:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.override.yml up
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-Or set `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml` in your shell and just run `docker compose up`.
+Or set `COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml` in your shell and just run `docker compose up`.
 
 Dev differences:
 

@@ -1,5 +1,7 @@
-# Development override — opt in with:
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml up
+# Local development overrides — NOT used in production.
+#
+# Opt in explicitly:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # This file:
 #   - Mounts source code so edits are picked up without rebuilding
@@ -8,8 +10,7 @@
 #   - Exposes the connector health ports to your host (so you can curl
 #     http://localhost:8090/health from your browser)
 #
-# Production users should ignore this file — it is auto-merged by
-# `docker compose up` only if you do NOT pass -f explicitly.
+# Production / VPS: use only docker-compose.yml (do not pass this file).
 
 name: iranexpedia
 
@@ -63,7 +64,7 @@ services:
       - "8092:8092"
 
   web:
-    # `next dev` instead of `next start`
+    # Dev image has full node_modules; production image runs `node server.js` only.
     command: ["npx", "next", "dev", "-p", "3000"]
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000/api
