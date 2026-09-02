@@ -56,6 +56,7 @@ _demo_conv = importlib.util.module_from_spec(_spec)
 assert _spec and _spec.loader
 _spec.loader.exec_module(_demo_conv)
 build_conversation = _demo_conv.build_conversation
+polite_address = _demo_conv.polite_address
 
 settings = get_settings()
 DEMO_ORG_NAME = settings.demo_org_name
@@ -569,6 +570,168 @@ def _demo_chat_count(db, lead_id: str) -> int:
     )
 
 
+def _showcase_phone_set() -> set[str]:
+    from app.services.phone import phone_aliases
+
+    phones: set[str] = set()
+    for row in LEADS:
+        phones.update(phone_aliases(row["phone"]))
+    return phones
+
+
+def _is_showcase_lead(lead: Lead) -> bool:
+    return (lead.phone or "") in _showcase_phone_set()
+
+
+_CAMPAIGN_REPLY_OPENERS = [
+    "سلام، پیامتون رو دیدم. جزئیات بیشتری دارید؟",
+    "ممنون. قیمت نهایی چقدره؟",
+    "بازدید میشه هماهنگ کرد؟",
+    "بله هنوز دنبال ملک هستم. کی میتونم ببینم؟",
+    "خوبه، فایل کامل رو لطفا بفرستید.",
+]
+
+
+def _seed_campaign_mini_thread(
+    db,
+    org,
+    channel,
+    lead: Lead,
+    *,
+    base_ts: datetime,
+    opener: str,
+) -> int:
+    """Idempotent ~5-message thread for bulk campaign leads (not full showcase scripts)."""
+    prefix = f"demo-camp-thread-{lead.id[:8]}"
+    if (
+        db.query(Message)
+        .filter(Message.lead_id == lead.id, Message.wa_message_id.like(f"{prefix}%"))
+        .count()
+        >= 4
+    ):
+        return 0
+
+    # Upgrade legacy single-reply seeds
+    db.query(Message).filter(
+        Message.org_id == org.id,
+        Message.lead_id == lead.id,
+        Message.wa_message_id.in_(
+            [f"demo-camp-reply-{lead.id[:6]}", f"demo-camp-ai-{lead.id[:6]}"]
+        ),
+    ).delete(synchronize_session=False)
+
+    name = (lead.name or "مشتری").strip()
+    who = polite_address(name)
+    rng = random.Random(f"camp-thread-{lead.id}")
+    turns: list[tuple[str, SenderType, str, int]] = [
+        (
+            MessageDirection.outbound,
+            SenderType.ai,
+            f"سلام {name} عزیز،\n"
+            "دپارتمان ملک پارامیس پیشنهاد ویژه‌ای برای شما دارد. "
+            "در صورت تمایل جزئیات را ارسال می‌کنیم.",
+            0,
+        ),
+        (MessageDirection.inbound, SenderType.customer, opener, rng.randint(10, 45)),
+        (
+            MessageDirection.outbound,
+            SenderType.ai,
+            f"سلام {who}، ممنون از پیامتون. "
+            "همین الان فایل و عکس‌های ملک را برایتان می‌فرستم.",
+            rng.randint(2, 8),
+        ),
+        (
+            MessageDirection.inbound,
+            SenderType.customer,
+            rng.choice(
+                [
+                    "ممنون، قیمت نهایی چقدره؟",
+                    "عالیه، بازدید هم میشه هماهنگ کرد؟",
+                    "فایل رو دیدم، شرایط پرداخت چطوره؟",
+                ]
+            ),
+            rng.randint(15, 90),
+        ),
+        (
+            MessageDirection.outbound,
+            SenderType.ai,
+            "حتماً. همکار فروش تا چند دقیقه دیگر با شما هماهنگ می‌کند.",
+            rng.randint(3, 12),
+        ),
+    ]
+    ts = _utc_naive(base_ts)
+    added = 0
+    for i, (direction, sender_type, body, gap_min) in enumerate(turns):
+        if i > 0:
+            ts = ts + timedelta(minutes=gap_min)
+        wa_id = f"{prefix}-{i:02d}"
+        if db.query(Message).filter(Message.wa_message_id == wa_id).first():
+            continue
+        db.add(
+            Message(
+                org_id=org.id,
+                account_id=channel.id,
+                lead_id=lead.id,
+                direction=direction,
+                sender_type=sender_type,
+                body=body,
+                wa_message_id=wa_id,
+                media_type="text",
+                delivery_status="read" if direction == MessageDirection.outbound else "",
+                created_at=_utc_naive(ts),
+            )
+        )
+        added += 1
+    if added:
+        lead.last_message_at = _utc_naive(ts)
+        lead.updated_at = _utc_naive(ts)
+        db.add(lead)
+    return added
+
+
+def _backfill_campaign_inbox_threads(db, org, accounts, *, force: bool = False) -> int:
+    """Give bulk campaign leads multi-message threads (inbox preview ≠ single line)."""
+    wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
+    channel = wa_accounts[0] if wa_accounts else (accounts[0] if accounts else None)
+    if channel is None:
+        return 0
+
+    showcase = _showcase_phone_set()
+    bulk_leads = (
+        db.query(Lead)
+        .filter(Lead.org_id == org.id, ~Lead.phone.in_(list(showcase)))
+        .all()
+    )
+    seeded = 0
+    for lead in bulk_leads:
+        if _demo_chat_count(db, lead.id) >= _MIN_DEMO_CHAT_MESSAGES:
+            continue
+        prefix = f"demo-camp-thread-{lead.id[:8]}"
+        existing_thread = (
+            db.query(Message)
+            .filter(Message.lead_id == lead.id, Message.wa_message_id.like(f"{prefix}%"))
+            .count()
+        )
+        if not force and existing_thread >= 4:
+            continue
+        if force and existing_thread:
+            db.query(Message).filter(
+                Message.lead_id == lead.id, Message.wa_message_id.like(f"{prefix}%")
+            ).delete(synchronize_session=False)
+
+        rng = random.Random(f"camp-opener-{lead.id}")
+        opener = rng.choice(_CAMPAIGN_REPLY_OPENERS)
+        base = _utc_naive(lead.last_message_at) or (
+            _utc_naive() - timedelta(days=rng.randint(1, 14))
+        )
+        n = _seed_campaign_mini_thread(
+            db, org, channel, lead, base_ts=base - timedelta(hours=2), opener=opener
+        )
+        if n:
+            seeded += 1
+    return seeded
+
+
 def _clear_demo_thread(db, org, lead_id: str) -> None:
     db.query(Message).filter(
         Message.org_id == org.id,
@@ -1019,36 +1182,15 @@ def _ensure_campaigns(db, org, accounts, owner):
             if r > 0.65:
                 continue
             reply_ts = started_at + timedelta(minutes=random.randint(15, 120 * 24))
-            db.add(Message(
-                org_id=org.id, account_id=channel.id, lead_id=lead.id,
-                direction=MessageDirection.inbound, sender_type=SenderType.customer,
-                body=random.choice([
-                    "سلام، پیامتون رو دیدم. جزئیات بیشتری دارید؟",
-                    "ممنون. قیمت نهایی چقدره؟",
-                    "بازدید میشه هماهنگ کرد؟",
-                    "بله هنوز دنبال ملک هستم. کی میتونم ببینم؟",
-                    "خوبه، فایل کامل رو لطفا بفرستید.",
-                ]),
-                wa_message_id=f"demo-camp-reply-{lead.id[:6]}",
-                media_type="text",
-                created_at=reply_ts,
-            ))
-            if random.random() < 0.4:
-                ai_ts = reply_ts + timedelta(minutes=random.randint(1, 30))
-                db.add(Message(
-                    org_id=org.id, account_id=channel.id, lead_id=lead.id,
-                    direction=MessageDirection.outbound, sender_type=SenderType.ai,
-                    body="سلام، ممنون از پیامتون. یکی از همکارانم تا دقیقه دیگه فایل رو براتون می‌فرسته 🙏",
-                    wa_message_id=f"demo-camp-ai-{lead.id[:6]}",
-                    media_type="text",
-                    delivery_status="read",
-                    created_at=ai_ts,
-                ))
-                db.add(AiEvent(
-                    org_id=org.id, lead_id=lead.id, event_type="auto_reply",
-                    payload={"body_preview": "AI auto reply", "source": "seed-demo-campaign"},
-                    created_at=ai_ts,
-                ))
+            opener = random.choice(_CAMPAIGN_REPLY_OPENERS)
+            _seed_campaign_mini_thread(
+                db,
+                org,
+                channel,
+                lead,
+                base_ts=reply_ts - timedelta(minutes=30),
+                opener=opener,
+            )
 
 
 def _match_campaign_segment(lead: Lead, seg: dict) -> bool:
@@ -1312,6 +1454,9 @@ def seed():
         inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads)
         if inbox_seeded:
             print(f"inbox: seeded {inbox_seeded} showcase conversation(s)")
+        camp_threads = _backfill_campaign_inbox_threads(db, org, accounts)
+        if camp_threads:
+            print(f"inbox: upgraded {camp_threads} campaign thread(s)")
         _ensure_tasks(db, org, all_leads, users)
         try:
             db.flush()
@@ -1372,8 +1517,9 @@ def gen_conversations_cli(*, replace: bool = False):
             db.flush()
         inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads, force=replace)
         _ensure_tasks(db, org, all_leads, users)
+        camp_threads = _backfill_campaign_inbox_threads(db, org, accounts, force=replace)
         db.commit()
-        print(f"inbox: {inbox_seeded} conversation thread(s) ready")
+        print(f"inbox: {inbox_seeded} showcase + {camp_threads} campaign thread(s) ready")
     except Exception:
         db.rollback()
         raise

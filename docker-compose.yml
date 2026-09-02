@@ -8,6 +8,11 @@
 # Then every deploy:
 #   docker compose up -d --build
 #
+# Demo inbox (run from THIS directory — not platform/api):
+#   docker compose exec api python scripts/seed_demo_full.py
+#   docker compose exec api python scripts/seed_demo_full.py --conversations --replace
+#   docker compose ps api   # if exec fails, check api is running
+#
 # No .env required — defaults target https://miogen.iranexpedia.ir
 # Optional: copy .env.example → .env only to override secrets (SMS key, DB password).
 
