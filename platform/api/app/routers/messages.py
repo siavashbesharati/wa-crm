@@ -1376,10 +1376,11 @@ def threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)
     def _thread_rank(item: dict) -> tuple:
         lead_id = item["lead"]["id"]
         has_showcase = lead_id in showcase_ids
-        has_last = item["last_message"] is not None
+        last = item["last_message"]
+        has_last = last is not None
         last_at = ""
-        if item["last_message"] and item["last_message"].get("created_at"):
-            last_at = str(item["last_message"]["created_at"])
+        if last is not None and getattr(last, "created_at", None):
+            last_at = str(last.created_at)
         # Lower rank tuple sorts first; reverse=True → showcase on top, then newest
         return (0 if has_showcase else (1 if has_last else 2), last_at)
 
