@@ -552,6 +552,31 @@ def reindex_knowledge(
     return {"ok": True, **result}
 
 
+@router.post("/ai/reindex-crm")
+def reindex_crm(
+    org_id: str = "",
+    db: Session = Depends(get_db),
+    _auth: SuperAuthContext = Depends(get_super_auth),
+):
+    """Backfill CRM semantic index (leads/conversations/tasks) for آقای میوژن."""
+    from app.models import Organization
+    from app.services.crm_index import reindex_org
+
+    if org_id.strip():
+        org = db.get(Organization, org_id.strip())
+        if not org:
+            raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+        stats = reindex_org(db, org.id)
+        return {"ok": True, "org_id": org.id, **stats}
+
+    orgs = db.query(Organization).limit(50).all()
+    out = []
+    for org in orgs:
+        stats = reindex_org(db, org.id)
+        out.append({"org_id": org.id, "name": org.name, **stats})
+    return {"ok": True, "orgs": out}
+
+
 class AiPlaygroundIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     org_id: str = ""

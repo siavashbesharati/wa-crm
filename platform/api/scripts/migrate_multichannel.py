@@ -114,6 +114,13 @@ def main() -> None:
                 text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME")
             )
             print("ALTER TABLE organizations ADD COLUMN plan_expires_at")
+        if org_cols and "crm_index_enabled" not in org_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE organizations ADD COLUMN crm_index_enabled BOOLEAN DEFAULT TRUE"
+                )
+            )
+            print("ALTER TABLE organizations ADD COLUMN crm_index_enabled")
 
         # extension_seats created via Base.metadata.create_all
         seat_cols = _cols("extension_seats")
@@ -136,6 +143,15 @@ def main() -> None:
                     text("ALTER TABLE tasks ADD COLUMN source_message_id VARCHAR(120) DEFAULT ''")
                 )
                 print("ALTER TABLE tasks ADD COLUMN source_message_id")
+
+    # pgvector when available (Postgres image pgvector/pgvector)
+    try:
+        with engine.begin() as conn:
+            if engine.dialect.name == "postgresql":
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                print("CREATE EXTENSION vector (ok or already exists)")
+    except Exception as exc:  # noqa: BLE001
+        print("pgvector skipped:", exc)
 
     print("Migration done.")
 

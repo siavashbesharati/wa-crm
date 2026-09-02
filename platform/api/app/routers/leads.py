@@ -397,6 +397,12 @@ def create_lead(body: LeadIn, auth: AuthContext = Depends(get_auth), db: Session
                     )
     db.commit()
     db.refresh(lead)
+    try:
+        from app.services.crm_index import enqueue_lead_refresh
+
+        enqueue_lead_refresh(auth.org.id, lead.id)
+    except Exception:  # noqa: BLE001
+        pass
     return _to_out(lead)
 
 
@@ -437,6 +443,12 @@ def patch_lead(
     db.add(lead)
     db.commit()
     db.refresh(lead)
+    try:
+        from app.services.crm_index import enqueue_lead_refresh
+
+        enqueue_lead_refresh(auth.org.id, lead.id)
+    except Exception:  # noqa: BLE001
+        pass
     return _to_out(lead)
 
 

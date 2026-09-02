@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     # Platform owner phone (must match OTP login for /super)
     super_admin_phone: str = "09120674032"
     embedding_dim: int = 384
+    # CRM RAG embeddings (prefer OpenAI text-embedding-3-small when key set)
+    crm_embedding_model: str = "text-embedding-3-small"
+    crm_embedding_dim: int = 1536
     # Pinecone serverless + hosted multilingual-e5 (RAG knowledge base)
     pinecone_api_key: str = ""
     pinecone_index: str = "iranexpedia-kb"

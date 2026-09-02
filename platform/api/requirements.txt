@@ -13,4 +13,5 @@ requests>=2.32.0
 python-multipart>=0.0.20
 zibal>=1.0.0
 pinecone>=5.0.0
+pgvector>=0.3.0
 bale-sdk>=0.1.0

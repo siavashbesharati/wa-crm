@@ -534,6 +534,7 @@ def get_pir_mood(auth: AuthContext = Depends(get_auth), db: Session = Depends(ge
 @router.get("/pir/analytics/{kind}")
 def get_pir_analytics(
     kind: str,
+    limit: int = 10,
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
@@ -546,10 +547,12 @@ def get_pir_analytics(
             status_code=400,
             detail=f"kind باید یکی از این‌ها باشد: {', '.join(sorted(oa.ANALYTICS_KINDS))}",
         )
-    results = oa.run_analytics(db, auth.org.id, [key])
+    lim = max(1, min(int(limit or 10), 20))
+    results = oa.run_analytics(db, auth.org.id, [key], limit=lim)
     return {
         "kind": key,
         "org_id": auth.org.id,
+        "limit": lim,
         "rows": results.get(key) or [],
         "report": oa.format_analytics_report(results),
     }

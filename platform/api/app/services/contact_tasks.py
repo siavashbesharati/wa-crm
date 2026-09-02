@@ -97,6 +97,16 @@ def create_task_for_contact(
     if commit:
         db.commit()
         db.refresh(task)
+        try:
+            from app.services.crm_index import enqueue_crm_index, ENTITY_TASK
+
+            enqueue_crm_index(org_id=org_id, entity_type=ENTITY_TASK, entity_id=task.id)
+            if task.lead_id:
+                from app.services.crm_index import enqueue_lead_refresh
+
+                enqueue_lead_refresh(org_id, task.lead_id)
+        except Exception:  # noqa: BLE001
+            pass
     else:
         db.flush()
     return task

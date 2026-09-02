@@ -384,6 +384,12 @@ def process_message_ingest(
     db.commit()
     db.refresh(msg)
     trace_event(trace_id, "message_saved", message_id=msg.id, lead_id=lead.id)
+    try:
+        from app.services.crm_index import enqueue_lead_refresh
+
+        enqueue_lead_refresh(org_id, lead.id)
+    except Exception:  # noqa: BLE001
+        pass
     if bot_cmd:
         trace_event(
             trace_id,

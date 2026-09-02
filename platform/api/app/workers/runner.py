@@ -790,6 +790,42 @@ def main() -> None:
             finally:
                 db.close()
             continue
+
+        crm_job = dequeue("crm_index")
+        if crm_job:
+            db = SessionLocal()
+            try:
+                from app.services.crm_index import handle_crm_index_job
+
+                result = handle_crm_index_job(db, crm_job)
+                safe_print(
+                    f"[worker] crm_index "
+                    f"org={crm_job.get('org_id')} type={crm_job.get('entity_type')} "
+                    f"id={crm_job.get('entity_id')} result={result}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                safe_print(f"[worker] crm_index failed: {exc}")
+            finally:
+                db.close()
+            continue
+
+        # Nightly-ish team snapshot reconcile (cheap poll via Redis queue)
+        reconcile = dequeue_due("crm_reconcile")
+        if reconcile:
+            org_id = str(reconcile.get("org_id") or "").strip()
+            if org_id:
+                db = SessionLocal()
+                try:
+                    from app.services.crm_index import upsert_team_snapshot
+
+                    n = upsert_team_snapshot(db, org_id)
+                    safe_print(f"[worker] crm_reconcile org={org_id} team={n}")
+                except Exception as exc:  # noqa: BLE001
+                    safe_print(f"[worker] crm_reconcile failed: {exc}")
+                finally:
+                    db.close()
+            continue
+
         time.sleep(1)
 
 

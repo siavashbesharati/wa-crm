@@ -26,7 +26,8 @@ x-app-env: &app_env
 services:
 
   db:
-    image: postgres:16-alpine
+    # pgvector-enabled image for CRM semantic index (آقای میوژن RAG)
+    image: pgvector/pgvector:pg16
     container_name: iranexpedia-db
     # Service name is "db" (not postgres). Shell: docker compose exec db psql -U crm -d crm
     restart: unless-stopped

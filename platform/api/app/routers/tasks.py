@@ -105,6 +105,13 @@ def update_board_order(
         task.updated_at = now
         db.add(task)
     db.commit()
+    try:
+        from app.services.crm_index import ENTITY_TASK, enqueue_crm_index
+
+        for item in body.updates:
+            enqueue_crm_index(org_id=auth.org.id, entity_type=ENTITY_TASK, entity_id=item.id)
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": True, "updated": len(body.updates)}
 
 
@@ -119,6 +126,14 @@ def _set_status(db: Session, auth: AuthContext, task_id: str, status: TaskStatus
     db.add(task)
     db.commit()
     db.refresh(task)
+    try:
+        from app.services.crm_index import ENTITY_TASK, enqueue_crm_index, enqueue_lead_refresh
+
+        enqueue_crm_index(org_id=auth.org.id, entity_type=ENTITY_TASK, entity_id=task.id)
+        if task.lead_id:
+            enqueue_lead_refresh(auth.org.id, task.lead_id)
+    except Exception:  # noqa: BLE001
+        pass
     return task
 
 

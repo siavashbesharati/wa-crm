@@ -302,19 +302,40 @@ def run_coach_turn(
                 if content:
                     lines.append(f"- ({score:.2f}) {content}")
             if lines:
-                kb_bits = "\n\n### دانش مرتبط\n" + "\n".join(lines)
+                kb_bits = "\n\n### دانش سازمانی\n" + "\n".join(lines)
     except Exception:  # noqa: BLE001
         kb_bits = ""
+
+    crm_bits = ""
+    try:
+        from app.services.crm_index import format_crm_hits, retrieve_crm_context
+
+        crm_hits = retrieve_crm_context(db, org.id, text, k=6)
+        formatted = format_crm_hits(crm_hits)
+        if formatted:
+            crm_bits = "\n\n" + formatted
+    except Exception:  # noqa: BLE001
+        crm_bits = ""
 
     analytics_bits = ""
     try:
         from app.services.org_analytics import analytics_for_message
 
-        report = analytics_for_message(db, org.id, text)
+        report = analytics_for_message(db, org.id, text, use_llm_fallback=True)
         if report:
             analytics_bits = "\n\n" + report
     except Exception:  # noqa: BLE001
         analytics_bits = ""
+
+    # Structured tool router (phase 4) — supplements phrase/LLM analytics when needed
+    try:
+        from app.services.coach_tools import maybe_run_coach_tools
+
+        tool_report = maybe_run_coach_tools(db, org.id, text, already_has_analytics=bool(analytics_bits))
+        if tool_report:
+            analytics_bits = (analytics_bits or "") + "\n\n" + tool_report
+    except Exception:  # noqa: BLE001
+        pass
 
     agent_bits = ""
     try:
@@ -331,7 +352,7 @@ def run_coach_turn(
 
     system = coach_system_prompt()
     user_prompt = (
-        f"{ctx}{kb_bits}{analytics_bits}{agent_bits}\n\n"
+        f"{ctx}{analytics_bits}{crm_bits}{kb_bits}{agent_bits}\n\n"
         f"### تاریخچه گفتگوی مربی\n"
         f"{chr(10).join(hist_lines) if hist_lines else '(خالی)'}\n\n"
         f"### سوال کاربر تیم\n{text}\n\n"

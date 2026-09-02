@@ -88,6 +88,8 @@ class Organization(Base):
     industry: Mapped[str] = mapped_column(String(120), default="")
     city: Mapped[str] = mapped_column(String(120), default="")
     plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When True, worker keeps CRM vector index fresh for آقای میوژن RAG
+    crm_index_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     memberships = relationship("Membership", back_populates="organization")
@@ -426,6 +428,33 @@ class KnowledgeChunk(Base):
     doc_id: Mapped[str] = mapped_column(ForeignKey("knowledge_docs.id"), index=True)
     content: Mapped[str] = mapped_column(Text, default="")
     embedding: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class CrmIndexChunk(Base):
+    """Derived CRM text chunks for semantic search (leads / conversations / tasks).
+
+    Embeddings stored as JSON for SQLite+Postgres portability. On Postgres with
+    pgvector enabled, an optional HNSW index may be built on a casted vector.
+    Unique per (org_id, entity_type, entity_id) for upsert freshness.
+    """
+
+    __tablename__ = "crm_index_chunks"
+    __table_args__ = (
+        UniqueConstraint("org_id", "entity_type", "entity_id", name="uq_crm_index_entity"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    # lead | conversation | task | team_snapshot
+    entity_type: Mapped[str] = mapped_column(String(40), index=True)
+    entity_id: Mapped[str] = mapped_column(String(80), index=True)
+    lead_id: Mapped[str | None] = mapped_column(ForeignKey("leads.id"), nullable=True, index=True)
+    content: Mapped[str] = mapped_column(Text, default="")
+    content_hash: Mapped[str] = mapped_column(String(64), default="")
+    embedding: Mapped[list] = mapped_column(JSON, default=list)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 

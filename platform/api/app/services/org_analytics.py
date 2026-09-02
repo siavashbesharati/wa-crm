@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -10,10 +12,11 @@ from sqlalchemy.orm import Session
 
 from app.models import Lead, Message, MessageDirection, SenderType, Task, TaskStatus, User
 
-TOP_N = 5
+TOP_N = 10
 SALES_DAYS = 30
 ACTIVITY_DAYS = 7
 HOT_HOURS = 24
+PLAYBOOK_MSG_LIMIT = 10
 
 OPEN_FUNNEL_STAGES = ("جدید", "پیگیری", "پیشنهاد")
 CLOSED_STAGE = "خرید"
@@ -25,6 +28,8 @@ INTENT_TOP_BUYER = "top_buyer"
 INTENT_HOT_TODAY = "hot_today"
 INTENT_RISK = "risk_leads"
 INTENT_OPEN_LEADS = "open_leads"
+INTENT_TASKS_COMPLETED = "tasks_completed"
+INTENT_LEAD_PLAYBOOK = "lead_playbook"
 
 ANALYTICS_KINDS = frozenset(
     {
@@ -34,11 +39,56 @@ ANALYTICS_KINDS = frozenset(
         INTENT_HOT_TODAY,
         INTENT_RISK,
         INTENT_OPEN_LEADS,
+        INTENT_TASKS_COMPLETED,
+        INTENT_LEAD_PLAYBOOK,
     }
 )
 
 # (intent, phrases) — first match wins per intent; max 2 intents returned
 _INTENT_PHRASES: list[tuple[str, tuple[str, ...]]] = [
+    (
+        INTENT_TASKS_COMPLETED,
+        (
+            "تسک های بیشتری",
+            "تسک‌های بیشتری",
+            "وظایف بیشتری",
+            "بیشترین تسک",
+            "بیشترین وظیفه",
+            "تسک انجام داده",
+            "وظیفه انجام داده",
+            "کدوم کارمند تسک",
+            "کدام کارمند تسک",
+            "tasks completed",
+            "most tasks",
+            "رتبه وظایف",
+            "کارمند پرتسک",
+            "بیشترین کار انجام",
+        ),
+    ),
+    (
+        INTENT_LEAD_PLAYBOOK,
+        (
+            "پیشنهاداتون",
+            "پیشنهادات شما",
+            "پیشنهاد چیه",
+            "پیشنهادات چیه",
+            "بر اساس گفتگو",
+            "بر اساس گفت و گو",
+            "بر اساس آنالیز",
+            "بر اساس انالیز",
+            "تحلیل گفتگو",
+            "آنالیز گفتگو",
+            "انالیز گفتگو",
+            "انالیز گفت و گو",
+            "گفت و گو ها",
+            "گفتگوها",
+            "playbook",
+            "چه کار کنیم",
+            "چی پیشنهاد",
+            "اقدام بعدی",
+            "قدم بعدی",
+        ),
+    ),
     (
         INTENT_TOP_SELLER,
         (
@@ -92,13 +142,20 @@ _INTENT_PHRASES: list[tuple[str, tuple[str, ...]]] = [
             "احتمال خرید",
             "امکان خرید",
             "لیدهای داغ",
+            "داغ ترین",
+            "داغ‌ترین",
+            "داغترین",
             "داغ امروز",
+            "ده تا از داغ",
+            "۱۰ تا از داغ",
+            "10 تا از داغ",
             "امروز چه لید",
             "همین امروز",
             "امروز داره",
             "امروز دارد",
             "کی امروز",
             "hot today",
+            "hot leads",
             "buy today",
             "کی امروز می‌خرد",
             "کی امروز میخرد",
@@ -157,13 +214,37 @@ _INTENT_PHRASES: list[tuple[str, tuple[str, ...]]] = [
     ),
 ]
 
+_FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+
+
+def parse_requested_limit(message: str, default: int = TOP_N) -> int:
+    """Extract N from phrases like «ده تا»، «۱۰ لید»، «top 10»."""
+    text = (message or "").strip().lower().translate(_FA_DIGITS)
+    text = text.replace("ي", "ی").replace("ك", "ک")
+    word_map = {
+        "ده": 10,
+        "ده تا": 10,
+        "دهتا": 10,
+        "پنج": 5,
+        "پنج تا": 5,
+        "بیست": 20,
+        "پانزده": 15,
+        "سه": 3,
+    }
+    for word, n in word_map.items():
+        if word in text:
+            return max(1, min(n, 20))
+    m = re.search(r"(?:top\s*)?(\d{1,2})\s*(?:تا|لید|نفر|مورد|تا از)?", text)
+    if m:
+        return max(1, min(int(m.group(1)), 20))
+    return max(1, min(int(default or TOP_N), 20))
+
 
 def detect_analytics_intents(message: str) -> list[str]:
     """Return up to 2 analytics intent keys from Persian/English phrases."""
     text = (message or "").strip().lower()
     if not text:
         return []
-    # Normalize common Arabic Yeh/Kaf variants lightly
     text = text.replace("ي", "ی").replace("ك", "ک")
     found: list[str] = []
     for intent, phrases in _INTENT_PHRASES:
@@ -192,7 +273,99 @@ def detect_analytics_intents(message: str) -> list[str]:
         if any(w in text for w in ("ریسک", "مداخله", "شکایت", "از دست")):
             found.append(INTENT_RISK)
 
+    # Tasks heuristic
+    if INTENT_TASKS_COMPLETED not in found and len(found) < 2:
+        if any(w in text for w in ("تسک", "وظیفه", "وظایف")) and any(
+            w in text for w in ("کارمند", "اپراتور", "بیشتر", "رتبه", "کی")
+        ):
+            found.append(INTENT_TASKS_COMPLETED)
+
+    # Playbook heuristic — suggestions + conversation analysis
+    if INTENT_LEAD_PLAYBOOK not in found and len(found) < 2:
+        has_suggest = any(w in text for w in ("پیشنهاد", "اقدام", "چیکار", "چه کار"))
+        has_chat = any(w in text for w in ("گفتگو", "مکالمه", "آنالیز", "انالیز", "تحلیل"))
+        if has_suggest and has_chat:
+            found.append(INTENT_LEAD_PLAYBOOK)
+
     return found[:2]
+
+
+def looks_analytical(message: str) -> bool:
+    """True when the message likely needs CRM analytics (for LLM classifier fallback)."""
+    text = (message or "").strip().lower().replace("ي", "ی").replace("ك", "ک")
+    if not text:
+        return False
+    cues = (
+        "لید",
+        "داغ",
+        "فروش",
+        "اپراتور",
+        "کارمند",
+        "تسک",
+        "وظیفه",
+        "رتبه",
+        "برتر",
+        "بیشتر",
+        "کیا",
+        "کدوم",
+        "کدام",
+        "پیشنهاد",
+        "گفتگو",
+        "آنالیز",
+        "انالیز",
+        "ریسک",
+        "خرید",
+        "hot",
+        "top",
+        "task",
+        "lead",
+    )
+    return any(c in text for c in cues)
+
+
+def classify_analytics_intents_llm(db: Session, message: str) -> tuple[list[str], int]:
+    """Optional LLM JSON classifier when phrase matching finds nothing."""
+    try:
+        from app.services.ai_reply import generate_llm_text, get_platform_ai_settings
+
+        platform = get_platform_ai_settings(db)
+        kinds = ", ".join(sorted(ANALYTICS_KINDS))
+        system = (
+            "You classify CRM coach questions. Reply ONLY with compact JSON: "
+            '{"intents":["hot_today"],"limit":10}. '
+            f"Allowed intents: {kinds}. Max 2 intents. limit 1-20."
+        )
+        user = f"Message:\n{(message or '').strip()[:500]}"
+        result = generate_llm_text(platform, system_prompt=system, user_prompt=user, temperature=0.0)
+        raw = (result.get("reply") or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        data = json.loads(raw)
+        intents = [
+            str(x).strip()
+            for x in (data.get("intents") or [])
+            if str(x).strip() in ANALYTICS_KINDS
+        ][:2]
+        limit = int(data.get("limit") or TOP_N)
+        limit = max(1, min(limit, 20))
+        return intents, limit
+    except Exception:  # noqa: BLE001
+        return [], TOP_N
+
+
+def resolve_analytics_intents(
+    db: Session, message: str, *, use_llm_fallback: bool = True
+) -> tuple[list[str], int]:
+    """Phrase detect first; optional LLM fallback for analytical free-form Persian."""
+    limit = parse_requested_limit(message, TOP_N)
+    intents = detect_analytics_intents(message)[:2]
+    if intents or not use_llm_fallback or not looks_analytical(message):
+        return intents, limit
+    llm_intents, llm_limit = classify_analytics_intents_llm(db, message)
+    if llm_intents:
+        return llm_intents, llm_limit or limit
+    return intents, limit
 
 
 def _user_label(db: Session, user_id: str | None) -> str:
@@ -310,7 +483,6 @@ def rank_top_operators(
         closed = closed_map.get(aid, 0)
         msgs = msg_map.get(aid, 0)
         tasks = task_map.get(aid, 0)
-        # Weights: closing deals matters most
         score = closed * 10.0 + msgs * 1.0 + tasks * 3.0
         if score <= 0:
             continue
@@ -325,6 +497,79 @@ def rank_top_operators(
             }
         )
     ranked.sort(key=lambda r: (-r["score"], -r["closed_deals_30d"], r["name"]))
+    return ranked[: max(1, min(int(limit or TOP_N), 20))]
+
+
+def rank_tasks_by_assignee(
+    db: Session, org_id: str, *, limit: int = TOP_N, days: int = ACTIVITY_DAYS
+) -> list[dict[str, Any]]:
+    """Rank staff by completed tasks; include open/overdue counts."""
+    if not org_id:
+        return []
+    since = _since_days(days)
+    now = datetime.utcnow()
+    done_map: dict[str | None, int] = {
+        aid: int(c or 0)
+        for aid, c in (
+            db.query(Task.assignee_id, func.count(Task.id))
+            .filter(
+                Task.org_id == org_id,
+                Task.status == TaskStatus.done,
+                Task.assignee_id.isnot(None),
+                Task.updated_at >= since,
+            )
+            .group_by(Task.assignee_id)
+            .all()
+        )
+    }
+    open_map: dict[str | None, int] = {
+        aid: int(c or 0)
+        for aid, c in (
+            db.query(Task.assignee_id, func.count(Task.id))
+            .filter(
+                Task.org_id == org_id,
+                Task.status.in_([TaskStatus.open, TaskStatus.in_progress]),
+                Task.assignee_id.isnot(None),
+            )
+            .group_by(Task.assignee_id)
+            .all()
+        )
+    }
+    overdue_map: dict[str | None, int] = {
+        aid: int(c or 0)
+        for aid, c in (
+            db.query(Task.assignee_id, func.count(Task.id))
+            .filter(
+                Task.org_id == org_id,
+                Task.status.in_([TaskStatus.open, TaskStatus.in_progress]),
+                Task.assignee_id.isnot(None),
+                Task.due_at.isnot(None),
+                Task.due_at < now,
+            )
+            .group_by(Task.assignee_id)
+            .all()
+        )
+    }
+    ids = {aid for aid in (set(done_map) | set(open_map) | set(overdue_map)) if aid}
+    ranked: list[dict[str, Any]] = []
+    for aid in ids:
+        done = done_map.get(aid, 0)
+        open_n = open_map.get(aid, 0)
+        overdue = overdue_map.get(aid, 0)
+        ranked.append(
+            {
+                "assignee_id": aid,
+                "name": _user_label(db, aid),
+                "tasks_done": done,
+                "tasks_open": open_n,
+                "tasks_overdue": overdue,
+                "window_days": days,
+            }
+        )
+    ranked.sort(key=lambda r: (-r["tasks_done"], -r["tasks_open"], r["name"]))
+    # Include people with open work even if done=0 so coach can answer
+    if not any(r["tasks_done"] > 0 for r in ranked):
+        ranked.sort(key=lambda r: (-r["tasks_open"], r["tasks_overdue"], r["name"]))
     return ranked[: max(1, min(int(limit or TOP_N), 20))]
 
 
@@ -360,11 +605,7 @@ def rank_top_buyers(
 def rank_hot_leads_today(
     db: Session, org_id: str, *, limit: int = TOP_N, hours: int = HOT_HOURS
 ) -> list[dict[str, Any]]:
-    """Open-funnel leads ranked by score, conversation activity, tags, recency.
-
-    Always returns up to N open-funnel leads when any exist (never empty solely
-    because scores are zero) so the coach can name real people.
-    """
+    """Open-funnel leads ranked by score, conversation activity, tags, recency."""
     if not org_id:
         return []
     since_24h = _since_hours(hours)
@@ -378,7 +619,6 @@ def rank_hot_leads_today(
         .all()
     )
     if not candidates:
-        # Fallback: any non-terminal lead
         candidates = (
             db.query(Lead)
             .filter(
@@ -421,7 +661,6 @@ def rank_hot_leads_today(
         ):
             msgs_7d[str(lid)] = int(c or 0)
 
-        # Latest inbound body per lead (conversation signal)
         recent_msgs = (
             db.query(Message)
             .filter(
@@ -505,7 +744,6 @@ def rank_risk_leads(db: Session, org_id: str, *, limit: int = TOP_N) -> list[dic
     rows: list[dict[str, Any]] = []
     for lead in leads:
         if lead.stage in ("خرید", "بسته", "از دست رفته"):
-            # still include if explicitly risk-tagged, else skip closed
             tags = {str(t).lower() for t in (lead.tags or [])}
             meta = lead.ai_meta if isinstance(lead.ai_meta, dict) else {}
             if not (
@@ -545,7 +783,7 @@ def rank_risk_leads(db: Session, org_id: str, *, limit: int = TOP_N) -> list[dic
 
 
 def rank_open_leads(db: Session, org_id: str, *, limit: int = TOP_N) -> list[dict[str, Any]]:
-    """Open-funnel leads (پیگیری/پیشنهاد/جدید) — maps colloquial «مذاکره» to these stages."""
+    """Open-funnel leads (پیگیری/پیشنهاد/جدید)."""
     if not org_id:
         return []
     rows = (
@@ -571,6 +809,78 @@ def rank_open_leads(db: Session, org_id: str, *, limit: int = TOP_N) -> list[dic
     return out
 
 
+def _suggest_next_action(last_customer: str, stage: str, tags: list[str]) -> str:
+    """Rule-based playbook suggestion from last customer message + stage."""
+    body = (last_customer or "").lower()
+    tagset = {str(t).lower() for t in (tags or [])}
+    if any(w in body for w in ("بازدید", "میام", "ببینم", "هماهنگ")):
+        return "هماهنگی بازدید حضوری امروز/فردا"
+    if any(w in body for w in ("وام", "بانک", "اقساط")):
+        return "پیگیری مدارک وام و ارسال چک‌لیست بانکی"
+    if any(w in body for w in ("قیمت", "تخفیف", "نهایی", "میلیارد", "رهن")):
+        return "ارسال پیشنهاد قیمت شفاف با ۲ گزینه جایگزین"
+    if any(w in body for w in ("عکس", "فایل", "پلان", "ویدیو")):
+        return "ارسال پکیج فایل (عکس + پلان + مشخصات)"
+    if any(w in body for w in ("قولنامه", "قرارداد", "مبایعه‌نامه", "مبایعه")):
+        return "تنظیم پیش‌نویس قرارداد و هماهنگی جلسه امضا"
+    if tagset.intersection({"ready_to_buy", "high_intent"}):
+        return "تماس فوری فروش — قصد خرید بالاست"
+    if stage == "جدید":
+        return "تماس اولیه + معرفی ۲ فایل مناسب بودجه"
+    if stage == "پیگیری":
+        return "پیگیری نوبت بعدی با خلاصه مزایای ملک"
+    if stage == "پیشنهاد":
+        return "بستن پیشنهاد نهایی و تعیین مهلت پاسخ"
+    if stage == "خرید":
+        return "هماهنگی مدارک و زمان تحویل"
+    return "پیگیری دوستانه و پرسش نیاز باقی‌مانده"
+
+
+def build_lead_playbook(
+    db: Session, org_id: str, *, limit: int = TOP_N, msg_limit: int = PLAYBOOK_MSG_LIMIT
+) -> list[dict[str, Any]]:
+    """Hot leads + recent conversation snippets + next-action suggestions."""
+    hot = rank_hot_leads_today(db, org_id, limit=limit)
+    if not hot:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in hot:
+        lead_id = row["lead_id"]
+        lead = db.get(Lead, lead_id)
+        msgs = (
+            db.query(Message)
+            .filter(Message.org_id == org_id, Message.lead_id == lead_id)
+            .order_by(Message.created_at.desc())
+            .limit(max(1, min(int(msg_limit or PLAYBOOK_MSG_LIMIT), 20)))
+            .all()
+        )
+        msgs = list(reversed(msgs))
+        thread: list[str] = []
+        last_customer = ""
+        for m in msgs:
+            who = "مشتری" if m.direction == MessageDirection.inbound else (
+                "AI" if m.sender_type == SenderType.ai else "کارشناس"
+            )
+            body = (m.body or "").strip().replace("\n", " ")[:160]
+            if not body:
+                continue
+            thread.append(f"{who}: {body}")
+            if m.direction == MessageDirection.inbound:
+                last_customer = body
+        tags = list(lead.tags or []) if lead else list(row.get("tags") or [])
+        stage = (lead.stage if lead else None) or row.get("stage") or "—"
+        suggestion = _suggest_next_action(last_customer, stage, tags)
+        out.append(
+            {
+                **row,
+                "suggestion": suggestion,
+                "recent_messages": thread[-msg_limit:],
+                "last_customer": last_customer,
+            }
+        )
+    return out
+
+
 def run_analytics(
     db: Session, org_id: str, intents: list[str], *, limit: int = TOP_N
 ) -> dict[str, list[dict[str, Any]]]:
@@ -591,6 +901,10 @@ def run_analytics(
             out[intent] = rank_risk_leads(db, org_id, limit=limit)
         elif intent == INTENT_OPEN_LEADS:
             out[intent] = rank_open_leads(db, org_id, limit=limit)
+        elif intent == INTENT_TASKS_COMPLETED:
+            out[intent] = rank_tasks_by_assignee(db, org_id, limit=limit)
+        elif intent == INTENT_LEAD_PLAYBOOK:
+            out[intent] = build_lead_playbook(db, org_id, limit=limit)
     return out
 
 
@@ -599,7 +913,7 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
     if not results:
         return ""
     lines: list[str] = [
-        "### گزارش تحلیلی",
+        "### گزارش تحلیلی (SQL)",
         "فقط از اعداد و نام‌های زیر استفاده کن؛ چیزی جعل نکن.",
         "هرگز نگو «برو کانبان را ببین» — بورد لیدها / صفحه وظایف را فقط در صورت نیاز ذکر کن.",
     ]
@@ -634,6 +948,23 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
                     f"وظیفه {r['tasks_done_7d']})"
                 )
 
+    if INTENT_TASKS_COMPLETED in results:
+        rows = results[INTENT_TASKS_COMPLETED]
+        lines.append("")
+        lines.append(
+            f"#### رتبه‌بندی انجام وظایف "
+            f"(انجام‌شده در {ACTIVITY_DAYS} روز + باز/عقب‌افتاده)"
+        )
+        if not rows:
+            lines.append("- هنوز وظیفه‌ای با مسئول ثبت نشده.")
+        else:
+            lines.append("نام کارمند با بیشترین تسک انجام‌شده را عیناً بگو.")
+            for i, r in enumerate(rows, 1):
+                lines.append(
+                    f"- {i}. {r['name']}: انجام‌شده {r['tasks_done']} · "
+                    f"باز {r['tasks_open']} · عقب‌افتاده {r['tasks_overdue']}"
+                )
+
     if INTENT_TOP_BUYER in results:
         rows = results[INTENT_TOP_BUYER]
         lines.append("")
@@ -652,13 +983,13 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
         rows = results[INTENT_HOT_TODAY]
         lines.append("")
         lines.append(
-            f"#### پتانسیل خرید / داغ‌ترین لیدها "
-            f"(قیف باز + گفتگو؛ نام‌ها را عیناً بگو)"
+            "#### پتانسیل خرید / داغ‌ترین لیدها "
+            "(قیف باز + گفتگو؛ نام‌ها را عیناً بگو)"
         )
         if not rows:
             lines.append("- هیچ لید بازی در CRM این سازمان پیدا نشد.")
         else:
-            lines.append("حتماً ۱ تا ۳ نام برتر را با مرحله و دلیل کوتاه بگو.")
+            lines.append(f"لیست کامل {len(rows)} نفر برتر را با مرحله و دلیل کوتاه بگو.")
             for i, r in enumerate(rows, 1):
                 tags = "، ".join(r.get("tags") or []) or "—"
                 snip = (r.get("last_inbound") or "").strip()
@@ -670,6 +1001,28 @@ def format_analytics_report(results: dict[str, list[dict[str, Any]]]) -> str:
                     f"پیام۷روز {r.get('msgs_7d', 0)} · تگ: {tags} · "
                     f"hot {r['hot_score']} · مسئول: {r['assignee']}{snip_bit}"
                 )
+
+    if INTENT_LEAD_PLAYBOOK in results:
+        rows = results[INTENT_LEAD_PLAYBOOK]
+        lines.append("")
+        lines.append(
+            "#### پیشنهاد اقدام بر اساس گفتگو (playbook) "
+            "— برای هر لید پیشنهاد و خلاصه پیام‌ها را بگو"
+        )
+        if not rows:
+            lines.append("- داده کافی برای پیشنهاد اقدام نیست.")
+        else:
+            for i, r in enumerate(rows, 1):
+                phone = f" · {r['phone']}" if r.get("phone") else ""
+                lines.append(
+                    f"- {i}. {r['name']}{phone} · {r['stage']} · hot {r.get('hot_score', 0)} · "
+                    f"پیشنهاد: {r.get('suggestion') or '—'}"
+                )
+                thread = r.get("recent_messages") or []
+                if thread:
+                    lines.append("  گفتگوی اخیر:")
+                    for line in thread[-6:]:
+                        lines.append(f"  · {line}")
 
     if INTENT_RISK in results:
         rows = results[INTENT_RISK]
@@ -742,10 +1095,14 @@ def lead_snapshot_for_context(db: Session, org_id: str, *, limit: int = 8) -> st
     return "\n".join(lines)
 
 
-def analytics_for_message(db: Session, org_id: str, message: str) -> str:
+def analytics_for_message(
+    db: Session, org_id: str, message: str, *, use_llm_fallback: bool = True
+) -> str:
     """Detect intents (max 2), run tools, return formatted report or empty string."""
-    intents = detect_analytics_intents(message)[:2]
+    intents, limit = resolve_analytics_intents(
+        db, message, use_llm_fallback=use_llm_fallback
+    )
     if not intents:
         return ""
-    results = run_analytics(db, org_id, intents)
+    results = run_analytics(db, org_id, intents, limit=limit)
     return format_analytics_report(results)

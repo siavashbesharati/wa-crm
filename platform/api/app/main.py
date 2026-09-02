@@ -104,6 +104,11 @@ def _ensure_db_columns() -> None:
         if "plan_expires_at" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE organizations ADD COLUMN plan_expires_at DATETIME"))
+        if "crm_index_enabled" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE organizations ADD COLUMN crm_index_enabled BOOLEAN DEFAULT TRUE")
+                )
     if "leads" in tables:
         cols = {c["name"] for c in insp.get_columns("leads")}
         with engine.begin() as conn:
@@ -201,11 +206,28 @@ def _ensure_db_columns() -> None:
                 )
 
 
+def _ensure_pgvector() -> None:
+    """Enable pgvector on Postgres when the extension/image is available."""
+    if settings.is_sqlite:
+        return
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except Exception:
+        # Image may not include pgvector yet — JSON embeddings still work
+        return
+    # Optional HNSW cannot index JSON directly; retrieval uses Python cosine.
+    # Extension presence is enough for future Vector columns / raw SQL.
+
+
 _mount_routers()
 
 # Ensure tables exist for local/sqlite and TestClient (no lifespan)
 Base.metadata.create_all(bind=engine)
 _ensure_db_columns()
+_ensure_pgvector()
 
 try:
     from app.plans import ensure_default_plans

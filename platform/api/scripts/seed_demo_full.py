@@ -1247,11 +1247,26 @@ def _migrate_then_create_all():
         print("migrate skipped:", exc)
         Base.metadata.create_all(bind=engine)
     try:
-        from app.main import _ensure_db_columns
+        from app.main import _ensure_db_columns, _ensure_pgvector
 
         _ensure_db_columns()
+        _ensure_pgvector()
     except Exception as exc:  # noqa: BLE001
         print("column migrate skipped:", exc)
+        try:
+            from app.main import _ensure_db_columns
+
+            _ensure_db_columns()
+        except Exception:
+            pass
+
+
+def _seed_crm_index(db, org):
+    """Index showcase CRM data for آقای میوژن semantic retrieval."""
+    from app.services.crm_index import reindex_org
+
+    stats = reindex_org(db, org.id, limit_leads=80, prefer_local=True)
+    print(f"crm_index: {stats}")
 
 
 def _seed_demo_extras(db, org, accounts, owner, users) -> None:
@@ -1264,6 +1279,7 @@ def _seed_demo_extras(db, org, accounts, owner, users) -> None:
         ("support", lambda: _ensure_support(db, org, owner)),
         ("audit", lambda: _ensure_audit(db, org, owner)),
         ("payments", lambda: _ensure_payments(db, org, owner)),
+        ("crm_index", lambda: _seed_crm_index(db, org)),
     ]
     for label, fn in steps:
         try:
