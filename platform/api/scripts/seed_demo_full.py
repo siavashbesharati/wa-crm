@@ -550,7 +550,38 @@ def _row_for_lead(lead: Lead, idx: int) -> dict:
     return row
 
 
-def _ensure_conversations(db, org, accounts, users, leads):
+def _utc_naive(dt: datetime | None = None) -> datetime:
+    """PostgreSQL TIMESTAMP WITHOUT TIME ZONE expects naive UTC values."""
+    value = dt or datetime.now(timezone.utc)
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+_MIN_DEMO_CHAT_MESSAGES = 8
+
+
+def _demo_chat_count(db, lead_id: str) -> int:
+    return (
+        db.query(Message)
+        .filter(Message.lead_id == lead_id, Message.wa_message_id.like("demo-chat-%"))
+        .count()
+    )
+
+
+def _clear_demo_thread(db, org, lead_id: str) -> None:
+    db.query(Message).filter(
+        Message.org_id == org.id,
+        Message.lead_id == lead_id,
+        Message.wa_message_id.like("demo-%"),
+    ).delete(synchronize_session=False)
+    for event in db.query(AiEvent).filter(AiEvent.org_id == org.id, AiEvent.lead_id == lead_id).all():
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("source", "")).startswith("seed-demo"):
+            db.delete(event)
+
+
+def _ensure_conversations(db, org, accounts, users, leads, *, force: bool = False):
     """Seed natural Farsi real-estate threads for the showcase inbox."""
     wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
     divar_accounts = [a for a in accounts if a.channel == ChannelType.divar]
@@ -560,10 +591,12 @@ def _ensure_conversations(db, org, accounts, users, leads):
     operator_users = [users.get(name) for name in operator_names if users.get(name)]
 
     if not leads:
-        return
+        return 0
 
+    seeded = 0
     for idx, lead in enumerate(leads):
-        if db.query(Message).filter(Message.lead_id == lead.id).count() > 0:
+        demo_msgs = _demo_chat_count(db, lead.id)
+        if not force and demo_msgs >= _MIN_DEMO_CHAT_MESSAGES:
             continue
 
         row = _row_for_lead(lead, idx)
@@ -580,10 +613,35 @@ def _ensure_conversations(db, org, accounts, users, leads):
         if account is None:
             continue
 
+        if force or demo_msgs > 0:
+            _clear_demo_thread(db, org, lead.id)
+
+        if account:
+            ext = lead.external_chat_id or _lead_external_id(row)
+            link = (
+                db.query(LeadAccountLink)
+                .filter(
+                    LeadAccountLink.org_id == org.id,
+                    LeadAccountLink.lead_id == lead.id,
+                    LeadAccountLink.account_id == account.id,
+                )
+                .first()
+            )
+            if not link:
+                db.add(LeadAccountLink(
+                    org_id=org.id,
+                    lead_id=lead.id,
+                    account_id=account.id,
+                    chat_name=row["name"],
+                    external_chat_id=ext,
+                ))
+
         script = build_conversation(row)
         rng = random.Random(f"paramis-chat-{lead.phone}-{idx}")
         days_ago = rng.randint(0, 12)
-        last_message_at = lead.last_message_at or (datetime.now(timezone.utc) - timedelta(days=days_ago))
+        last_message_at = _utc_naive(lead.last_message_at) or (
+            _utc_naive() - timedelta(days=days_ago)
+        )
         base_time = last_message_at - timedelta(hours=max(3, len(script) * 4))
         operator = operator_users[idx % len(operator_users)] if operator_users else None
         previous_ts = base_time
@@ -602,6 +660,7 @@ def _ensure_conversations(db, org, accounts, users, leads):
                     gap = rng.choice([2, 4, 7, 11, 18, 25, 40, 55, 90, 140])
                 ts = previous_ts + timedelta(minutes=gap)
             previous_ts = ts
+            ts = _utc_naive(ts)
 
             if kind == "customer":
                 direction = MessageDirection.inbound
@@ -669,22 +728,18 @@ def _ensure_conversations(db, org, accounts, users, leads):
                     created_at=last_message_at, updated_at=last_message_at,
                 ))
 
+        seeded += 1
+
     for lead in leads:
         latest = db.query(Message).filter(Message.lead_id == lead.id).order_by(
             Message.created_at.desc()
         ).first()
         if latest:
-            lead.last_message_at = latest.created_at
-            lead.updated_at = latest.created_at
+            lead.last_message_at = _utc_naive(latest.created_at)
+            lead.updated_at = _utc_naive(latest.created_at)
             db.add(lead)
 
-
-def _utc_naive(dt: datetime | None = None) -> datetime:
-    """PostgreSQL TIMESTAMP WITHOUT TIME ZONE expects naive UTC values."""
-    value = dt or datetime.now(timezone.utc)
-    if value.tzinfo is not None:
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value
+    return seeded
 
 
 def _demo_task_marker(message_key: str, *, fallback: bool = False) -> str:
@@ -1113,7 +1168,7 @@ def _ensure_kpis(db, org):
                                  target_value=k["target"], unit=k["unit"]))
     rng = random.Random(42)
     for w in range(12, 0, -1):
-        ts = datetime.now(timezone.utc) - timedelta(weeks=w)
+        ts = _utc_naive() - timedelta(weeks=w)
         for k in kpi_defs:
             base = k["target"]; trend = (12 - w) / 12.0
             noise = rng.uniform(0.7, 1.3)
@@ -1136,12 +1191,12 @@ def _ensure_support(db, org, owner):
     db.add(SupportMessage(
         ticket_id=t.id, user_id=owner.id, sender_side="business",
         body="سلام، لطفاً کانکتور بله را برای شعبه شمال فعال کنید. تیم پشتیبانی فروش نیاز دارد.",
-        created_at=datetime.now(timezone.utc) - timedelta(days=2),
+        created_at=_utc_naive() - timedelta(days=2),
     ))
     db.add(SupportMessage(
         ticket_id=t.id, user_id=None, sender_side="platform",
         body="سلام، درخواست شما دریافت شد. تیم فنی تا فردا اتصال را بررسی می‌کند.",
-        created_at=datetime.now(timezone.utc) - timedelta(days=1, hours=12),
+        created_at=_utc_naive() - timedelta(days=1, hours=12),
     ))
 
 
@@ -1163,7 +1218,7 @@ def _ensure_audit(db, org, owner):
         db.add(AuditEvent(
             org_id=org.id, user_id=owner.id, event_type=etype, message=msg,
             meta={"source": "seed-demo"},
-            created_at=datetime.now(timezone.utc) - timedelta(days=len(events) - i),
+            created_at=_utc_naive() - timedelta(days=len(events) - i),
         ))
 
 
@@ -1175,7 +1230,7 @@ def _ensure_payments(db, org, owner):
             org_id=org.id, user_id=owner.id, purpose="renew", plan="growth",
             amount_irr=4_900_000, provider="zibal",
             track_id=f"TRK-DEMO-{i:04d}", ref_number=f"REF-DEMO-{i:08d}",
-            status="paid", paid_at=datetime.now(timezone.utc) - timedelta(days=30 * i + 5),
+            status="paid", paid_at=_utc_naive() - timedelta(days=30 * i + 5),
         ))
 
 def _migrate_then_create_all():
@@ -1199,6 +1254,26 @@ def _migrate_then_create_all():
         print("column migrate skipped:", exc)
 
 
+def _seed_demo_extras(db, org, accounts, owner, users) -> None:
+    """Optional demo layers — each step commits independently so tasks are not lost."""
+    steps: list[tuple[str, object]] = [
+        ("knowledge", lambda: _ensure_knowledge(db, org)),
+        ("campaigns", lambda: _ensure_campaigns(db, org, accounts, owner)),
+        ("okrs", lambda: _ensure_okrs(db, org, users)),
+        ("kpis", lambda: _ensure_kpis(db, org)),
+        ("support", lambda: _ensure_support(db, org, owner)),
+        ("audit", lambda: _ensure_audit(db, org, owner)),
+        ("payments", lambda: _ensure_payments(db, org, owner)),
+    ]
+    for label, fn in steps:
+        try:
+            fn()
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            print(f"seed extra [{label}] skipped: {exc}")
+
+
 def seed():
     _migrate_then_create_all()
     db = SessionLocal()
@@ -1218,7 +1293,9 @@ def seed():
             Lead.org_id == org.id,
             Lead.phone.in_(list(showcase_phones)),
         ).all()
-        _ensure_conversations(db, org, accounts, users, all_leads)
+        inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads)
+        if inbox_seeded:
+            print(f"inbox: seeded {inbox_seeded} showcase conversation(s)")
         _ensure_tasks(db, org, all_leads, users)
         try:
             db.flush()
@@ -1226,18 +1303,7 @@ def seed():
             raise RuntimeError(f"demo task seed failed: {exc}") from exc
         db.commit()
 
-        _ensure_knowledge(db, org)
-        _ensure_campaigns(db, org, accounts, owner)
-        _ensure_okrs(db, org, users)
-        _ensure_kpis(db, org)
-        _ensure_support(db, org, owner)
-        _ensure_audit(db, org, owner)
-        _ensure_payments(db, org, owner)
-        try:
-            db.execute(text("PRAGMA foreign_keys=ON"))
-        except Exception:
-            pass
-        db.commit()
+        _seed_demo_extras(db, org, accounts, owner, users)
         return org
     except Exception:
         db.rollback()
@@ -1287,23 +1353,11 @@ def gen_conversations_cli(*, replace: bool = False):
                 lead.external_chat_id = _lead_external_id(row)
                 lead.tags = row["tags"]
                 db.add(lead)
-            lead_ids = [lead.id for lead in all_leads]
-            demo_messages = db.query(Message).filter(
-                Message.org_id == org.id,
-                Message.lead_id.in_(lead_ids),
-                Message.wa_message_id.like("demo-%"),
-            ).all()
-            for message in demo_messages:
-                db.delete(message)
-            demo_events = db.query(AiEvent).filter(AiEvent.org_id == org.id).all()
-            for event in demo_events:
-                if isinstance(event.payload, dict) and str(event.payload.get("source", "")).startswith("seed-demo-"):
-                    db.delete(event)
             db.flush()
-            print(f"Removed {len(demo_messages)} demo messages before generation.")
-        _ensure_conversations(db, org, accounts, users, all_leads)
+        inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads, force=replace)
         _ensure_tasks(db, org, all_leads, users)
         db.commit()
+        print(f"inbox: {inbox_seeded} conversation thread(s) ready")
     except Exception:
         db.rollback()
         raise

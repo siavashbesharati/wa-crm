@@ -28,6 +28,7 @@ services:
   db:
     image: postgres:16-alpine
     container_name: iranexpedia-db
+    # Service name is "db" (not postgres). Shell: docker compose exec db psql -U crm -d crm
     restart: unless-stopped
     environment:
       POSTGRES_USER: crm
