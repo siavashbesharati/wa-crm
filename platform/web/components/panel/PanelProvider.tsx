@@ -43,7 +43,7 @@ const PANEL_PREFIXES = [
   "/team",
   "/knowledge",
   "/ai-settings",
-  "/aghaye-pashmak",
+  "/ai-coach",
   "/kpi",
   "/billing",
   "/support",
@@ -113,7 +113,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
           "/team": "تیم",
           "/knowledge": "دانش AI",
           "/ai-settings": "تنظیمات AI",
-          "/aghaye-pashmak": "آقای میوژن",
+          "/ai-coach": "آقای میوژن",
           "/kpi": "KPI / OKR",
           "/billing": "اشتراک و پرداخت",
           "/support": "پشتیبانی"

@@ -46,7 +46,7 @@ All services share a dedicated bridge network `iranexpedia-net` so the connector
 ```
 repo root
 ├── docker-compose.yml              # production stack (single file)
-├── deploy/nginx-miogen.example.conf  # Nginx reverse proxy template
+├── deploy/nginx-bidar.example.conf  # Nginx reverse proxy template
 ├── .env.example                    # documented env vars
 └── DOCKER.md                       # this file
 

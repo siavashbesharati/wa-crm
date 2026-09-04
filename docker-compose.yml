@@ -1,9 +1,10 @@
-# Miogen / Iranexpedia — production-ready single compose file
+# Bidar / Iranexpedia — production-ready single compose file
 #
 # VPS (first time, once):
-#   sudo cp deploy/nginx-miogen.example.conf /etc/nginx/sites-available/miogen
-#   sudo ln -sf /etc/nginx/sites-available/miogen /etc/nginx/sites-enabled/miogen
+#   sudo cp deploy/nginx-bidar.example.conf /etc/nginx/sites-available/bidar
+#   sudo ln -sf /etc/nginx/sites-available/bidar /etc/nginx/sites-enabled/bidar
 #   sudo nginx -t && sudo systemctl reload nginx
+#   (or keep existing miogen.* host until DNS for bidar is ready)
 #
 # Then every deploy:
 #   docker compose up -d --build
@@ -13,7 +14,7 @@
 #   docker compose exec api python scripts/seed_demo_full.py --conversations --replace
 #   docker compose ps api   # if exec fails, check api is running
 #
-# No .env required — defaults target https://miogen.iranexpedia.ir
+# Defaults keep current host miogen.iranexpedia.ir (override in .env when DNS moves to bidar.*)
 # Optional: copy .env.example → .env only to override secrets (SMS key, DB password).
 
 name: iranexpedia

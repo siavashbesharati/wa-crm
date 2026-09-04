@@ -348,7 +348,7 @@ function OnboardingPageInner() {
       <div className="wizard-card">
         <div className="wizard-head">
           <div>
-            <div className="brand">میوژن</div>
+            <div className="brand">بیدار</div>
             <div className="brand-sub">راه‌اندازی · {data.user.phone}</div>
           </div>
           <Button

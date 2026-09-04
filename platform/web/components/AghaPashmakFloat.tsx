@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-const CHAT_HREF = "/aghaye-pashmak?chat=1";
+const CHAT_HREF = "/ai-coach?chat=1";
 const POS_KEY = "pashmak-float-pos";
 const DRAG_THRESHOLD = 6;
 
@@ -78,7 +78,7 @@ export function AghaPashmakFloat() {
   const pathname = usePathname();
   const router = useRouter();
   const onCoachPage =
-    pathname === "/aghaye-pashmak" || pathname.startsWith("/aghaye-pashmak/");
+    pathname === "/ai-coach" || pathname.startsWith("/ai-coach/");
   const [mood, setMood] = useState<PashmakMood>("normal");
   const [alertBubble, setAlertBubble] = useState<string | null>(null);
   const [hotCount, setHotCount] = useState(0);

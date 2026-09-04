@@ -222,7 +222,7 @@ export default function BusinessLoginPage() {
     <AuthLayout
       ref={layoutRef}
       variant="business"
-      brand="میوژن"
+      brand="بیدار"
       tagline="ورود سریع با شماره موبایل — اگر تازه باشید، بعد از OTP وارد ویزارد راه‌اندازی می‌شوید."
     >
       <div key={entering ? "entering" : step} className={`auth-flow ${shake ? "is-shake" : ""}`}>

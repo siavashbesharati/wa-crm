@@ -1,7 +1,7 @@
 {
-  "name": "میوژن",
-  "short_name": "miogen",
-  "description": "میوژن — پلتفرم چندکاناله CRM واتساپ و دیوار",
+  "name": "بیدار",
+  "short_name": "bidar",
+  "description": "بیدار — پلتفرم چندکاناله CRM واتساپ و دیوار",
   "icons": [
     {
       "src": "/favicons/android-chrome-192x192.png",

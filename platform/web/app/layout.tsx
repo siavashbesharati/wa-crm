@@ -3,9 +3,9 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "میوژن | miogen",
-  applicationName: "miogen",
-  description: "میوژن — پلتفرم چندکاناله CRM واتساپ و دیوار",
+  title: "بیدار | bidar",
+  applicationName: "bidar",
+  description: "بیدار — پلتفرم چندکاناله CRM واتساپ و دیوار",
   manifest: "/favicons/site.webmanifest",
   icons: {
     icon: [

@@ -121,8 +121,8 @@ export default function SuperShell({
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-block">
-            <div className="brand">میوژن</div>
-            <div className="brand-sub">miogen</div>
+            <div className="brand">بیدار</div>
+            <div className="brand-sub">bidar</div>
           </div>
           <button
             type="button"

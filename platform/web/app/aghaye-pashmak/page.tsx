@@ -1,21 +1,24 @@
 "use client";
 
-import { Suspense } from "react";
-import Shell from "@/components/Shell";
+import { useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageLoading } from "@/components/ui/Spinner";
-import { PASHMAK_NAME } from "@/components/AghaPashmakFloat";
-import PirPageClient from "./PirPageClient";
 
-export default function Page() {
+function RedirectInner() {
+  const router = useRouter();
+  const search = useSearchParams();
+  useEffect(() => {
+    const q = search.toString();
+    router.replace(q ? `/ai-coach?${q}` : "/ai-coach");
+  }, [router, search]);
+  return <PageLoading />;
+}
+
+/** Legacy URL → /ai-coach */
+export default function LegacyAghayePashmakRedirect() {
   return (
-    <Suspense
-      fallback={
-        <Shell title={PASHMAK_NAME} sub="مربی هوشمند کسب‌وکار">
-          <PageLoading />
-        </Shell>
-      }
-    >
-      <PirPageClient />
+    <Suspense fallback={<PageLoading />}>
+      <RedirectInner />
     </Suspense>
   );
 }

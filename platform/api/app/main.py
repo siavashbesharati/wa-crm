@@ -47,7 +47,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="miogen API",
+    title="bidar API",
     version="1.2.0",
     lifespan=lifespan,
 )

@@ -18,7 +18,7 @@ const NAV = [
   { href: "/team", label: "تیم", ico: "☺" },
   { href: "/knowledge", label: "دانش AI", ico: "✦" },
   { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
-  { href: "/aghaye-pashmak", label: "آقای میوژن", ico: "✧" },
+  { href: "/ai-coach", label: "آقای میوژن", ico: "✧" },
   { href: "/kpi", label: "KPI / OKR", ico: "◉" },
   { href: "/support", label: "پشتیبانی", ico: "?" }
 ];
@@ -186,8 +186,8 @@ export default function ShellChrome({
       <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-block">
-            <div className="brand">میوژن</div>
-            <div className="brand-sub">miogen</div>
+            <div className="brand">بیدار</div>
+            <div className="brand-sub">bidar</div>
           </div>
           <button
             type="button"

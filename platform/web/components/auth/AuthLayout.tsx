@@ -171,7 +171,7 @@ export const AuthLayout = forwardRef<
           <div className="auth-brand-inner">
             <div className="auth-brand-mark">
               <span className="auth-mark-dot" aria-hidden />
-              <p className="auth-eyebrow">miogen</p>
+              <p className="auth-eyebrow">bidar</p>
             </div>
             <p className="auth-portal-chip">
               {variant === "business" ? "Business Console" : "Platform Console"}
