@@ -1,10 +1,9 @@
-# Bidar / Iranexpedia — production-ready single compose file
+# Bidar — production-ready single compose file
 #
 # VPS (first time, once):
 #   sudo cp deploy/nginx-bidar.example.conf /etc/nginx/sites-available/bidar
 #   sudo ln -sf /etc/nginx/sites-available/bidar /etc/nginx/sites-enabled/bidar
 #   sudo nginx -t && sudo systemctl reload nginx
-#   (or keep existing miogen.* host until DNS for bidar is ready)
 #
 # Then every deploy:
 #   docker compose up -d --build
@@ -14,16 +13,16 @@
 #   docker compose exec api python scripts/seed_demo_full.py --conversations --replace
 #   docker compose ps api   # if exec fails, check api is running
 #
-# Defaults keep current host miogen.iranexpedia.ir (override in .env when DNS moves to bidar.*)
+# Defaults target https://bidar-app.ir
 # Optional: copy .env.example → .env only to override secrets (SMS key, DB password).
 
 name: iranexpedia
 
 x-app-env: &app_env
   APP_ENV: production
-  CORS_ORIGINS: https://miogen.iranexpedia.ir,http://localhost:3000,http://127.0.0.1:3000
-  PUBLIC_BASE_URL: https://miogen.iranexpedia.ir
-  WEB_BASE_URL: https://miogen.iranexpedia.ir
+  CORS_ORIGINS: https://bidar-app.ir,https://www.bidar-app.ir,http://localhost:3000,http://127.0.0.1:3000
+  PUBLIC_BASE_URL: https://bidar-app.ir
+  WEB_BASE_URL: https://bidar-app.ir
   SUPER_ADMIN_PHONE: "09120674032"
   SMS_IR_DEV_FALLBACK: "false"
   DEMO_ENABLED: "true"
