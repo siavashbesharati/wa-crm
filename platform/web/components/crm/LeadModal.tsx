@@ -565,6 +565,7 @@ export function LeadModal({
         open={open && !deleteOpen}
         title={mode === "edit" ? `ویرایش: ${leadDisplayName(lead)}` : ""}
         panelClassName={mode === "view" ? "lead-modal lead-modal-panel" : "lead-modal-panel"}
+        presentation="sheet"
         onClose={closeAll}
         headerActions={
           mode === "view" ? (
@@ -722,6 +723,7 @@ export function LeadModal({
         open={deleteOpen}
         title="تأیید حذف لید"
         panelClassName="lead-modal-panel"
+        presentation="sheet"
         onClose={() => {
           setDeleteOpen(false);
           setDeleteConfirmName("");

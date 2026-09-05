@@ -49,6 +49,7 @@ export function CampaignReportModal({ open, onClose, report, loading }: Props) {
       open={open}
       onClose={onClose}
       title="گزارش کمپین"
+      presentation="full"
       panelClassName="camp-report-modal"
     >
       {loading ? (

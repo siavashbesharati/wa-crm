@@ -68,6 +68,7 @@ export function TaskCreateModal({
       open={open}
       title="وظیفه جدید"
       onClose={onClose}
+      presentation="sheet"
       footer={
         <>
           <Button loading={busy} onClick={create}>

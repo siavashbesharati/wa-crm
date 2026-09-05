@@ -22,6 +22,7 @@ export type PanelMeta = {
   actions?: ReactNode;
   search?: string;
   onSearch?: (v: string) => void;
+  hideTabBar?: boolean;
 };
 
 type PanelContextValue = {
@@ -77,7 +78,8 @@ export function PanelProvider({ children }: { children: ReactNode }) {
     pathname === "/onboarding" || pathname.startsWith("/onboarding/");
   const [meta, setMetaState] = useState<PanelMeta>({
     title: "پنل",
-    sub: ""
+    sub: "",
+    hideTabBar: false
   });
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
@@ -87,7 +89,8 @@ export function PanelProvider({ children }: { children: ReactNode }) {
         prev.title === next.title &&
         prev.sub === next.sub &&
         prev.search === next.search &&
-        prev.onSearch === next.onSearch
+        prev.onSearch === next.onSearch &&
+        prev.hideTabBar === next.hideTabBar
       ) {
         // Avoid re-render loops from inline `actions={<.../>}` on every page render.
         return prev;
@@ -171,6 +174,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
         search={meta.search}
         onSearch={meta.onSearch}
         onNavigate={beginNav}
+        hideTabBar={!!meta.hideTabBar}
       >
         {showNavShimmer ? <PageLoading /> : children}
       </ShellChrome>
@@ -188,5 +192,5 @@ export function usePanelPage(meta: PanelMeta) {
     ctx.setMeta(meta);
     // actions omitted on purpose — often an inline element; title/sub/search drive updates
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx, meta.title, meta.sub, meta.search, meta.onSearch]);
+  }, [ctx, meta.title, meta.sub, meta.search, meta.onSearch, meta.hideTabBar]);
 }

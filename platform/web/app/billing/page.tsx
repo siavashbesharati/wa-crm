@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
+import { List, ListItem } from "@/components/ui/List";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api, getSession } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -280,23 +281,65 @@ function BillingPageInner() {
                 body: "تراکنش‌های موفق، ناموفق و در انتظار سازمان."
               }}
             >
-              <table>
-                <thead>
-                  <tr>
-                    <th>هدف</th>
-                    <th>پلن</th>
-                    <th>مبلغ</th>
-                    <th>وضعیت</th>
-                    <th>زمان</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <div className="leads-desktop-only">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>هدف</th>
+                      <th>پلن</th>
+                      <th>مبلغ</th>
+                      <th>وضعیت</th>
+                      <th>زمان</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.slice(0, 20).map((h) => (
+                      <tr key={h.id}>
+                        <td>{h.purpose}</td>
+                        <td>{h.plan}</td>
+                        <td>{Math.round(h.amount_irr || 0).toLocaleString("fa-IR")} ریال</td>
+                        <td>
+                          <Badge
+                            tone={
+                              h.status === "paid"
+                                ? "success"
+                                : h.status === "failed"
+                                  ? "danger"
+                                  : "accent"
+                            }
+                          >
+                            {h.status === "paid"
+                              ? "موفق"
+                              : h.status === "failed"
+                                ? "ناموفق"
+                                : h.status === "pending"
+                                  ? "در انتظار"
+                                  : h.status}
+                          </Badge>
+                        </td>
+                        <td className="hint">
+                          {h.created_at
+                            ? new Date(h.created_at).toLocaleString("fa-IR")
+                            : "—"}
+                          {h.ref_number ? ` · ${h.ref_number}` : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="leads-mobile-only">
+                <List>
                   {history.slice(0, 20).map((h) => (
-                    <tr key={h.id}>
-                      <td>{h.purpose}</td>
-                      <td>{h.plan}</td>
-                      <td>{Math.round(h.amount_irr || 0).toLocaleString("fa-IR")} ریال</td>
-                      <td>
+                    <ListItem
+                      key={h.id}
+                      title={`${h.purpose} · ${h.plan}`}
+                      subtitle={`${Math.round(h.amount_irr || 0).toLocaleString("fa-IR")} ریال · ${
+                        h.created_at
+                          ? new Date(h.created_at).toLocaleString("fa-IR")
+                          : "—"
+                      }${h.ref_number ? ` · ${h.ref_number}` : ""}`}
+                      trailing={
                         <Badge
                           tone={
                             h.status === "paid"
@@ -314,17 +357,11 @@ function BillingPageInner() {
                                 ? "در انتظار"
                                 : h.status}
                         </Badge>
-                      </td>
-                      <td className="hint">
-                        {h.created_at
-                          ? new Date(h.created_at).toLocaleString("fa-IR")
-                          : "—"}
-                        {h.ref_number ? ` · ${h.ref_number}` : ""}
-                      </td>
-                    </tr>
+                      }
+                    />
                   ))}
-                </tbody>
-              </table>
+                </List>
+              </div>
             </Card>
           ) : null}
 

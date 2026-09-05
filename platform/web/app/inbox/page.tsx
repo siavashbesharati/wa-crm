@@ -6,6 +6,7 @@ import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { IconBack } from "@/components/ui/Icons";
 import {
   initials,
   leadHref,
@@ -518,11 +519,17 @@ export default function InboxPage() {
   const suggestedStage = (active?.lead.ai_meta?.suggested_stage || "").trim();
 
   return (
-    <Shell title="اینباکس" sub="گفتگوهای واتساپ، دیوار و بله در یک جا" search={q} onSearch={setQ}>
+    <Shell
+      title="اینباکس"
+      sub="گفتگوهای واتساپ، دیوار و بله در یک جا"
+      search={q}
+      onSearch={setQ}
+      hideTabBar={!!active}
+    >
       {loading ? (
         <PageLoading variant="list" />
       ) : (
-        <div className="chat-app">
+        <div className={`chat-app${active ? " chat-thread-open" : ""}`}>
           <aside className="chat-list" aria-label="لیست گفتگوها">
             <div className="chat-list-filters" role="tablist" aria-label="فیلتر کانال">
               {(
@@ -586,11 +593,23 @@ export default function InboxPage() {
           <section className="chat-stage" aria-label="پنجره گفتگو">
             {!active ? (
               <div className="chat-empty">
-                <EmptyState title="یک گفتگو را انتخاب کنید" text="لیست سمت راست را باز کنید و چت را ادامه دهید." />
+                <EmptyState title="یک گفتگو را انتخاب کنید" text="از فهرست گفتگوها یکی را باز کنید." />
               </div>
             ) : (
               <>
                 <header className="chat-head">
+                  <button
+                    type="button"
+                    className="chat-back-btn"
+                    aria-label="بازگشت به فهرست"
+                    onClick={() => {
+                      setActive(null);
+                      setMessages([]);
+                      setDraft(null);
+                    }}
+                  >
+                    <IconBack size={20} />
+                  </button>
                   <span className={`chat-avatar ${channelOf(active) || "unknown"}`} aria-hidden>
                     {initials(leadDisplayName(threadLead(active)))}
                   </span>
@@ -763,6 +782,7 @@ export default function InboxPage() {
                     }}
                     placeholder="پیام…"
                     dir="auto"
+                    enterKeyHint="send"
                     aria-label="متن پیام"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {

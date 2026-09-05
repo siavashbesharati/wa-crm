@@ -45,9 +45,9 @@ function readSavedPos(): Pos | null {
 }
 
 function defaultPos(elW = 100, elH = 120): Pos {
-  const mobile = typeof window !== "undefined" && window.innerWidth <= 720;
+  const mobile = typeof window !== "undefined" && window.innerWidth <= 960;
   const left = mobile ? 10 : 18;
-  const bottom = mobile ? 72 : 18;
+  const bottom = mobile ? 88 : 18;
   return {
     x: left,
     y: Math.max(8, window.innerHeight - bottom - elH)

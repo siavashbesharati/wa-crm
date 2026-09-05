@@ -202,52 +202,100 @@ export default function KnowledgePage() {
             {docs.length === 0 ? (
               <EmptyState title="سندی نیست" text="FAQ یا قیمت‌ها را آپلود کنید." />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>عنوان</th>
-                    <th>منبع</th>
-                    <th>تکه‌ها</th>
-                    <th>تاریخ</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {docs.map((d) => (
-                    <tr
-                      key={d.id}
-                      className="kb-row"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => void openDoc(d)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          void openDoc(d);
-                        }
-                      }}
-                    >
-                      <td>
-                        <strong>{d.title}</strong>
-                      </td>
-                      <td>{d.source}</td>
-                      <td>{(d.chunk_count ?? 0).toLocaleString("fa-IR")}</td>
-                      <td>{new Date(d.created_at).toLocaleString("fa-IR")}</td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          loading={deletingId === d.id}
-                          disabled={!!deletingId}
-                          onClick={(e) => void removeDoc(d, e)}
+              <>
+                <div className="leads-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>عنوان</th>
+                        <th>منبع</th>
+                        <th>تکه‌ها</th>
+                        <th>تاریخ</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {docs.map((d) => (
+                        <tr
+                          key={d.id}
+                          className="kb-row"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => void openDoc(d)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              void openDoc(d);
+                            }
+                          }}
                         >
-                          حذف
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          <td>
+                            <strong>{d.title}</strong>
+                          </td>
+                          <td>{d.source}</td>
+                          <td>{(d.chunk_count ?? 0).toLocaleString("fa-IR")}</td>
+                          <td>{new Date(d.created_at).toLocaleString("fa-IR")}</td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              loading={deletingId === d.id}
+                              disabled={!!deletingId}
+                              onClick={(e) => void removeDoc(d, e)}
+                            >
+                              حذف
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="leads-mobile-only">
+                  <div className="leads-card-list">
+                    {docs.map((d) => (
+                      <article
+                        key={d.id}
+                        className="leads-card"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => void openDoc(d)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void openDoc(d);
+                          }
+                        }}
+                      >
+                        <div className="leads-card-top">
+                          <div>
+                            <h3 className="leads-card-name">{d.title}</h3>
+                            <div className="leads-card-meta">
+                              <span>{d.source}</span>
+                              <span>
+                                {(d.chunk_count ?? 0).toLocaleString("fa-IR")} تکه
+                              </span>
+                              <span>{new Date(d.created_at).toLocaleString("fa-IR")}</span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            loading={deletingId === d.id}
+                            disabled={!!deletingId}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void removeDoc(d, e);
+                            }}
+                          >
+                            حذف
+                          </Button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </Card>
 
@@ -255,6 +303,7 @@ export default function KnowledgePage() {
             open={!!activeId}
             title={detail?.title || "سند دانش"}
             onClose={closeModal}
+            presentation="full"
             panelClassName="kb-doc-modal"
             footer={
               <>

@@ -422,6 +422,7 @@ export default function TasksBoardPage() {
         open={!!detailTask}
         title={detailTask?.title || "وظیفه"}
         onClose={() => setDetailTask(null)}
+        presentation="sheet"
         footer={
           <>
             {detailTask?.lead_id && leadById.get(detailTask.lead_id) ? (

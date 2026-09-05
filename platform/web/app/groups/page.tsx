@@ -202,39 +202,70 @@ export default function GroupsPage() {
               </div>
 
               {groups.length > 0 ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>نام گروه</th>
-                      <th>تعداد اعضا</th>
-                      <th>JID</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groups.map((g) => (
-                      <tr key={g.jid}>
-                        <td>{g.subject || "(بدون نام)"}</td>
-                        <td>{g.size}</td>
-                        <td>
-                          <span dir="ltr" className="hint">
-                            {g.jid}
-                          </span>
-                        </td>
-                        <td>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            loading={membersBusyJid === g.jid}
-                            onClick={() => void downloadMembers(g)}
-                          >
-                            دانلود اعضا
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <>
+                  <div className="leads-desktop-only">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>نام گروه</th>
+                          <th>تعداد اعضا</th>
+                          <th>JID</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groups.map((g) => (
+                          <tr key={g.jid}>
+                            <td>{g.subject || "(بدون نام)"}</td>
+                            <td>{g.size}</td>
+                            <td>
+                              <span dir="ltr" className="hint">
+                                {g.jid}
+                              </span>
+                            </td>
+                            <td>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                loading={membersBusyJid === g.jid}
+                                onClick={() => void downloadMembers(g)}
+                              >
+                                دانلود اعضا
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="leads-mobile-only">
+                    <div className="leads-card-list">
+                      {groups.map((g) => (
+                        <article key={g.jid} className="leads-card">
+                          <div className="leads-card-top">
+                            <div>
+                              <h3 className="leads-card-name">{g.subject || "(بدون نام)"}</h3>
+                              <div className="leads-card-meta">
+                                <span>{g.size.toLocaleString("fa-IR")} عضو</span>
+                              </div>
+                              <div className="hint" dir="ltr" style={{ marginTop: 4 }}>
+                                {g.jid}
+                              </div>
+                            </div>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              loading={membersBusyJid === g.jid}
+                              onClick={() => void downloadMembers(g)}
+                            >
+                              دانلود اعضا
+                            </Button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                </>
               ) : (
                 <p className="hint" style={{ marginTop: 12 }}>
                   روی «دریافت لیست گروه‌ها» بزنید.

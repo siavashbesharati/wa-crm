@@ -6,21 +6,37 @@ import { clearSession, getSession, logoutOrg, ORG_KEY, isNetworkErrorMessage } f
 import { getCachedOrgMe, loadOrgMe } from "@/lib/me-cache";
 import { useEffect, useState, type ReactNode } from "react";
 import { PageLoading } from "@/components/ui/Spinner";
+import { BottomNav } from "@/components/ui/BottomNav";
+import {
+  IconBilling,
+  IconCampaigns,
+  IconChannels,
+  IconGroups,
+  IconHome,
+  IconInbox,
+  IconKpi,
+  IconPeople,
+  IconSettings,
+  IconSpark,
+  IconSupport,
+  IconTasks,
+  IconTeam
+} from "@/components/ui/Icons";
 
 const NAV = [
-  { href: "/home", label: "میز کار", ico: "⌂" },
-  { href: "/leads", label: "مخاطبین", ico: "☰" },
-  { href: "/inbox", label: "اینباکس", ico: "✉" },
-  { href: "/tasks", label: "وظایف", ico: "☑" },
-  { href: "/campaigns", label: "کمپین‌ها", ico: "◎" },
-  { href: "/channels", label: "کانال‌ها", ico: "☎" },
-  { href: "/groups", label: "گروه‌ها", ico: "▦" },
-  { href: "/team", label: "تیم", ico: "☺" },
-  { href: "/knowledge", label: "دانش AI", ico: "✦" },
-  { href: "/ai-settings", label: "تنظیمات AI", ico: "⚙" },
-  { href: "/ai-coach", label: "آقای میوژن", ico: "✧" },
-  { href: "/kpi", label: "KPI / OKR", ico: "◉" },
-  { href: "/support", label: "پشتیبانی", ico: "?" }
+  { href: "/home", label: "میز کار", Icon: IconHome },
+  { href: "/inbox", label: "اینباکس", Icon: IconInbox },
+  { href: "/leads", label: "مخاطبین", Icon: IconPeople },
+  { href: "/tasks", label: "وظایف", Icon: IconTasks },
+  { href: "/campaigns", label: "کمپین‌ها", Icon: IconCampaigns },
+  { href: "/channels", label: "کانال‌ها", Icon: IconChannels },
+  { href: "/groups", label: "گروه‌ها", Icon: IconGroups },
+  { href: "/team", label: "تیم", Icon: IconTeam },
+  { href: "/knowledge", label: "دانش AI", Icon: IconSpark },
+  { href: "/ai-settings", label: "تنظیمات AI", Icon: IconSettings },
+  { href: "/ai-coach", label: "آقای میوژن", Icon: IconSpark },
+  { href: "/kpi", label: "KPI / OKR", Icon: IconKpi },
+  { href: "/support", label: "پشتیبانی", Icon: IconSupport }
 ];
 
 function isNavActive(pathname: string, href: string) {
@@ -56,7 +72,8 @@ export default function ShellChrome({
   actions,
   search,
   onSearch,
-  onNavigate
+  onNavigate,
+  hideTabBar = false
 }: {
   title: string;
   sub: string;
@@ -65,6 +82,7 @@ export default function ShellChrome({
   search?: string;
   onSearch?: (v: string) => void;
   onNavigate?: (href: string) => void;
+  hideTabBar?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -73,7 +91,6 @@ export default function ShellChrome({
 
   const [ready, setReady] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [orgName, setOrgName] = useState(initial.orgName);
   const [userLabel, setUserLabel] = useState(initial.userLabel);
   const [planId, setPlanId] = useState(initial.planId);
@@ -138,22 +155,9 @@ export default function ShellChrome({
     return () => window.removeEventListener("storage", onStorage);
   }, [router]);
 
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    if (!mobileOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [mobileOpen]);
-
   if (!ready) {
     return (
-      <div className="page-loading shell-boot" style={{ minHeight: "100vh" }}>
+      <div className="page-loading shell-boot" style={{ minHeight: "100dvh" }}>
         <PageLoading />
       </div>
     );
@@ -173,17 +177,20 @@ export default function ShellChrome({
     onNavigate?.(href);
   }
 
+  function doLogout() {
+    void logoutOrg().finally(() => {
+      setReady(false);
+      router.replace("/login");
+    });
+  }
+
+  const tabHidden = hideTabBar;
+
   return (
-    <div className={`app-shell ${collapsed ? "collapsed" : ""}${mobileOpen ? " nav-open" : ""}`}>
-      {mobileOpen && (
-        <button
-          type="button"
-          className="sidebar-backdrop"
-          aria-label="بستن منو"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+    <div
+      className={`app-shell has-tabbar ${collapsed ? "collapsed" : ""}${tabHidden ? " tabbar-hidden" : ""}`}
+    >
+      <aside className="sidebar desktop-sidebar">
         <div className="sidebar-top">
           <div className="brand-block">
             <div className="brand">بیدار</div>
@@ -192,18 +199,10 @@ export default function ShellChrome({
           <button
             type="button"
             className="icon-btn sidebar-collapse-btn"
-            aria-label="جمع کردن منو"
+            aria-label={collapsed ? "باز کردن منو" : "جمع کردن منو"}
             onClick={() => setCollapsed((v) => !v)}
           >
             ☰
-          </button>
-          <button
-            type="button"
-            className="icon-btn sidebar-close-btn"
-            aria-label="بستن منو"
-            onClick={() => setMobileOpen(false)}
-          >
-            ✕
           </button>
         </div>
 
@@ -226,7 +225,9 @@ export default function ShellChrome({
               title={item.label}
               onClick={() => navTo(item.href)}
             >
-              <span className="nav-ico">{item.ico}</span>
+              <span className="nav-ico" aria-hidden>
+                <item.Icon size={18} />
+              </span>
               <span className="label">{item.label}</span>
             </Link>
           ))}
@@ -241,22 +242,14 @@ export default function ShellChrome({
             onClick={() => navTo("/billing")}
           >
             <span className="billing-cta-ico" aria-hidden>
-              ◆
+              <IconBilling size={16} />
             </span>
             <span className="label billing-cta-meta">
               <strong>اشتراک</strong>
               <em>{billingSub}</em>
             </span>
           </Link>
-          <button
-            className="btn secondary"
-            onClick={() => {
-              void logoutOrg().finally(() => {
-                setReady(false);
-                router.replace("/login");
-              });
-            }}
-          >
+          <button className="btn secondary" onClick={doLogout}>
             <span className="label">خروج</span>
           </button>
         </div>
@@ -275,31 +268,31 @@ export default function ShellChrome({
           </div>
         )}
         <header className="topbar">
-          <button
-            type="button"
-            className="icon-btn topbar-menu-btn"
-            aria-label="منو"
-            aria-expanded={mobileOpen}
-            onClick={() => setMobileOpen((v) => !v)}
-          >
-            ☰
-          </button>
           <div className="topbar-titles">
             <h1 className="page-title">{title}</h1>
-            <p className="page-sub">{sub}</p>
+            {sub ? <p className="page-sub">{sub}</p> : null}
           </div>
           {onSearch && (
             <input
               className="top-search"
+              type="search"
+              enterKeyHint="search"
               placeholder="جستجو…"
               value={search || ""}
               onChange={(e) => onSearch(e.target.value)}
+              aria-label="جستجو"
             />
           )}
-          <div className="topbar-actions">{actions}</div>
+          {actions ? <div className="topbar-actions">{actions}</div> : null}
         </header>
-        <main className="main">{children}</main>
+        <main className={`main${tabHidden ? " main-no-tabbar" : ""}`}>{children}</main>
       </div>
+
+      <BottomNav
+        hidden={tabHidden}
+        onNavigate={navTo}
+        onLogout={doLogout}
+      />
     </div>
   );
 }

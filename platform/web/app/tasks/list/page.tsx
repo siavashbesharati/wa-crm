@@ -203,80 +203,141 @@ export default function TasksListPage() {
                 action={<Button onClick={() => setCreateOpen(true)}>وظیفه جدید</Button>}
               />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>عنوان</th>
-                    <th>مخاطب</th>
-                    <th>ارجاع</th>
-                    <th>سررسید</th>
-                    <th>وضعیت</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((t) => {
-                    const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
-                    const who = members.find((m) => m.user_id === t.assignee_id);
-                    return (
-                      <tr key={t.id}>
-                        <td>
-                          {(() => {
-                            const href = setupTaskHref(t);
-                            return href ? (
-                              <Link href={href}>
-                                <strong>{t.title}</strong>
-                                {t.message ? <div className="hint">{t.message}</div> : null}
-                              </Link>
-                            ) : (
-                              <>
-                                <strong>{t.title}</strong>
-                                {t.message ? <div className="hint">{t.message}</div> : null}
-                              </>
-                            );
-                          })()}
-                        </td>
-                        <td>
-                          {lead ? (
-                            <Link className="lead-task-link" href={leadHref(lead.id)}>
-                              {lead.name}
-                            </Link>
-                          ) : (
-                            <span className="hint">بدون مخاطب</span>
-                          )}
-                        </td>
-                        <td>{who ? memberLabel(who) : "—"}</td>
-                        <td>{t.due_at ? formatJalali(t.due_at) : "—"}</td>
-                        <td>
-                          <Badge
-                            tone={
-                              t.status === "open"
-                                ? "accent"
-                                : t.status === "done"
-                                  ? "success"
-                                  : "accent"
-                            }
-                          >
-                            {TASK_STATUS_LABELS[t.status] || t.status}
-                          </Badge>
-                        </td>
-                        <td className="row-actions">
-                          {t.status === "open" || t.status === "in_progress" ? (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              loading={doneId === t.id}
-                              onClick={() => markDone(t.id)}
-                            >
-                              انجام شد
-                            </Button>
-                          ) : null}
-                        </td>
+              <>
+                <div className="leads-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>عنوان</th>
+                        <th>مخاطب</th>
+                        <th>ارجاع</th>
+                        <th>سررسید</th>
+                        <th>وضعیت</th>
+                        <th></th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {visible.map((t) => {
+                        const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
+                        const who = members.find((m) => m.user_id === t.assignee_id);
+                        return (
+                          <tr key={t.id}>
+                            <td>
+                              {(() => {
+                                const href = setupTaskHref(t);
+                                return href ? (
+                                  <Link href={href}>
+                                    <strong>{t.title}</strong>
+                                    {t.message ? <div className="hint">{t.message}</div> : null}
+                                  </Link>
+                                ) : (
+                                  <>
+                                    <strong>{t.title}</strong>
+                                    {t.message ? <div className="hint">{t.message}</div> : null}
+                                  </>
+                                );
+                              })()}
+                            </td>
+                            <td>
+                              {lead ? (
+                                <Link className="lead-task-link" href={leadHref(lead.id)}>
+                                  {lead.name}
+                                </Link>
+                              ) : (
+                                <span className="hint">بدون مخاطب</span>
+                              )}
+                            </td>
+                            <td>{who ? memberLabel(who) : "—"}</td>
+                            <td>{t.due_at ? formatJalali(t.due_at) : "—"}</td>
+                            <td>
+                              <Badge
+                                tone={
+                                  t.status === "open"
+                                    ? "accent"
+                                    : t.status === "done"
+                                      ? "success"
+                                      : "accent"
+                                }
+                              >
+                                {TASK_STATUS_LABELS[t.status] || t.status}
+                              </Badge>
+                            </td>
+                            <td className="row-actions">
+                              {t.status === "open" || t.status === "in_progress" ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  loading={doneId === t.id}
+                                  onClick={() => markDone(t.id)}
+                                >
+                                  انجام شد
+                                </Button>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="leads-mobile-only">
+                  <div className="leads-card-list">
+                    {visible.map((t) => {
+                      const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
+                      const who = members.find((m) => m.user_id === t.assignee_id);
+                      const href = setupTaskHref(t);
+                      return (
+                        <article key={t.id} className="leads-card">
+                          <div className="leads-card-top">
+                            <div>
+                              {href ? (
+                                <Link href={href}>
+                                  <h3 className="leads-card-name">{t.title}</h3>
+                                </Link>
+                              ) : (
+                                <h3 className="leads-card-name">{t.title}</h3>
+                              )}
+                              {t.message ? <div className="hint">{t.message}</div> : null}
+                              <div className="leads-card-meta">
+                                {lead ? (
+                                  <Link className="lead-task-link" href={leadHref(lead.id)}>
+                                    {lead.name}
+                                  </Link>
+                                ) : (
+                                  <span className="hint">بدون مخاطب</span>
+                                )}
+                                <span>{who ? memberLabel(who) : "—"}</span>
+                                <span>{t.due_at ? formatJalali(t.due_at) : "—"}</span>
+                                <Badge
+                                  tone={
+                                    t.status === "open"
+                                      ? "accent"
+                                      : t.status === "done"
+                                        ? "success"
+                                        : "accent"
+                                  }
+                                >
+                                  {TASK_STATUS_LABELS[t.status] || t.status}
+                                </Badge>
+                              </div>
+                            </div>
+                            {t.status === "open" || t.status === "in_progress" ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                loading={doneId === t.id}
+                                onClick={() => markDone(t.id)}
+                              >
+                                انجام شد
+                              </Button>
+                            ) : null}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
             )}
           </Card>
         </>

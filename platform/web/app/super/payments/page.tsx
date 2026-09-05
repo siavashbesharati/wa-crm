@@ -153,49 +153,83 @@ function SuperPaymentsInner() {
             {!rows.length ? (
               <EmptyState title="پرداختی نیست" text="با این فیلتر تراکنشی یافت نشد." />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>کسب‌وکار</th>
-                    <th>هدف</th>
-                    <th>مبلغ</th>
-                    <th>درگاه</th>
-                    <th>وضعیت</th>
-                    <th>زمان</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <strong>{p.org_name || "—"}</strong>
-                        <div className="hint" style={{ margin: 0 }}>
-                          {p.plan}
+              <>
+                <div className="leads-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>کسب‌وکار</th>
+                        <th>هدف</th>
+                        <th>مبلغ</th>
+                        <th>درگاه</th>
+                        <th>وضعیت</th>
+                        <th>زمان</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((p) => (
+                        <tr key={p.id}>
+                          <td>
+                            <strong>{p.org_name || "—"}</strong>
+                            <div className="hint" style={{ margin: 0 }}>
+                              {p.plan}
+                            </div>
+                          </td>
+                          <td>{p.purpose}</td>
+                          <td>{fmt(p.amount_irr)} ریال</td>
+                          <td>{p.provider}</td>
+                          <td>
+                            <Badge tone={statusTone(p.status)}>
+                              {STATUS_FA[p.status] || p.status}
+                            </Badge>
+                          </td>
+                          <td className="hint">
+                            {p.created_at
+                              ? new Date(p.created_at).toLocaleString("fa-IR")
+                              : "—"}
+                          </td>
+                          <td>
+                            <Button variant="secondary" onClick={() => openDetail(p.id)}>
+                              جزئیات
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="leads-mobile-only">
+                  <div className="leads-card-list">
+                    {rows.map((p) => (
+                      <article key={p.id} className="leads-card">
+                        <div className="leads-card-top">
+                          <div>
+                            <h3 className="leads-card-name">{p.org_name || "—"}</h3>
+                            <div className="leads-card-meta">
+                              <span>{p.purpose}</span>
+                              <span>{p.plan}</span>
+                              <span>{fmt(p.amount_irr)} ریال</span>
+                              <span>{p.provider}</span>
+                              <Badge tone={statusTone(p.status)}>
+                                {STATUS_FA[p.status] || p.status}
+                              </Badge>
+                            </div>
+                            <div className="hint" style={{ marginTop: 4 }}>
+                              {p.created_at
+                                ? new Date(p.created_at).toLocaleString("fa-IR")
+                                : "—"}
+                            </div>
+                          </div>
+                          <Button variant="secondary" size="sm" onClick={() => openDetail(p.id)}>
+                            جزئیات
+                          </Button>
                         </div>
-                      </td>
-                      <td>{p.purpose}</td>
-                      <td>{fmt(p.amount_irr)} ریال</td>
-                      <td>{p.provider}</td>
-                      <td>
-                        <Badge tone={statusTone(p.status)}>
-                          {STATUS_FA[p.status] || p.status}
-                        </Badge>
-                      </td>
-                      <td className="hint">
-                        {p.created_at
-                          ? new Date(p.created_at).toLocaleString("fa-IR")
-                          : "—"}
-                      </td>
-                      <td>
-                        <Button variant="secondary" onClick={() => openDetail(p.id)}>
-                          جزئیات
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </Card>
 

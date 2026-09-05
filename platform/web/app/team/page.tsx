@@ -5,6 +5,7 @@ import Link from "next/link";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
+import { List, ListItem } from "@/components/ui/List";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
@@ -90,7 +91,13 @@ export default function TeamPage() {
             <div className="form-grid">
               <label>
                 موبایل عضو جدید
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
               </label>
               <label>
                 نقش
@@ -116,26 +123,42 @@ export default function TeamPage() {
             {members.length === 0 ? (
               <EmptyState title="عضوی نیست" />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>نام</th>
-                    <th>موبایل</th>
-                    <th>نقش</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((m) => (
-                    <tr key={m.id}>
-                      <td>{m.display_name || "-"}</td>
-                      <td>{m.phone}</td>
-                      <td>
-                        <Badge tone="accent">{m.role}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div className="leads-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>نام</th>
+                        <th>موبایل</th>
+                        <th>نقش</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.map((m) => (
+                        <tr key={m.id}>
+                          <td>{m.display_name || "-"}</td>
+                          <td dir="ltr">{m.phone}</td>
+                          <td>
+                            <Badge tone="accent">{m.role}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="leads-mobile-only">
+                  <List>
+                    {members.map((m) => (
+                      <ListItem
+                        key={m.id}
+                        title={m.display_name || "بدون نام"}
+                        subtitle={m.phone}
+                        trailing={<Badge tone="accent">{m.role}</Badge>}
+                      />
+                    ))}
+                  </List>
+                </div>
+              </>
             )}
           </Card>
         </>

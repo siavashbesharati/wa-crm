@@ -7,6 +7,7 @@ import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
+import { ActionSheet } from "@/components/ui/ActionSheet";
 import { Switch } from "@/components/ui/Switch";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
@@ -88,12 +89,8 @@ export default function LeadsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [openTaskComposer, setOpenTaskComposer] = useState(false);
-  const [menuLead, setMenuLead] = useState<{ leadId: string; x: number; y: number } | null>(
-    null
-  );
-  const [tagsPop, setTagsPop] = useState<{ leadId: string; x: number; y: number } | null>(
-    null
-  );
+  const [menuLead, setMenuLead] = useState<Lead | null>(null);
+  const [tagsPop, setTagsPop] = useState<Lead | null>(null);
   const tagsPopCloseTimer = useRef<number | null>(null);
   const { busy, run } = useMutation();
   const toast = useToast();
@@ -105,31 +102,15 @@ export default function LeadsPage() {
     }
   }
 
-  function openTagsPop(leadId: string, clientX: number, clientY: number) {
+  function openTagsPop(lead: Lead) {
     clearTagsPopTimer();
     setMenuLead(null);
-    // Fixed above the cursor tip
-    const x = Math.min(Math.max(12, clientX), window.innerWidth - 12);
-    const y = Math.min(Math.max(12, clientY - 6), window.innerHeight - 12);
-    setTagsPop({ leadId, x, y });
+    setTagsPop(lead);
   }
 
-  function openRowMenu(leadId: string, clientX: number, clientY: number) {
+  function openRowMenu(lead: Lead) {
     setTagsPop(null);
-    setMenuLead((cur) => {
-      if (cur?.leadId === leadId) return null;
-      const x = Math.min(Math.max(12, clientX), window.innerWidth - 12);
-      const y = Math.min(Math.max(12, clientY), window.innerHeight - 12);
-      return { leadId, x, y };
-    });
-  }
-
-  function scheduleCloseTagsPop() {
-    clearTagsPopTimer();
-    tagsPopCloseTimer.current = window.setTimeout(() => {
-      setTagsPop(null);
-      tagsPopCloseTimer.current = null;
-    }, 160);
+    setMenuLead((cur) => (cur?.id === lead.id ? null : lead));
   }
 
   const load = useCallback(async () => {
@@ -151,17 +132,6 @@ export default function LeadsPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    if (!menuLead) return;
-    const onDoc = () => setMenuLead(null);
-    // defer so the opening click doesn't immediately close
-    const t = window.setTimeout(() => document.addEventListener("click", onDoc), 0);
-    return () => {
-      window.clearTimeout(t);
-      document.removeEventListener("click", onDoc);
-    };
-  }, [menuLead]);
 
   useEffect(() => {
     return () => clearTagsPopTimer();
@@ -544,7 +514,7 @@ export default function LeadsPage() {
                   ) : null}
                 </div>
 
-                <div style={{ overflow: "auto" }}>
+                <div className="leads-desktop-only" style={{ overflow: "auto" }}>
                   <table className="leads-table leads-table-compact">
                     <thead>
                       <tr>
@@ -561,7 +531,7 @@ export default function LeadsPage() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={7} style={{ textAlign: "center", padding: "28px 12px" }}>
+                          <td colSpan={8} style={{ textAlign: "center", padding: "28px 12px" }}>
                             <span style={{ color: "var(--muted)", fontWeight: 600 }}>
                               نتیجه‌ای با این فیلتر نیست — فیلترها را تغییر دهید.
                             </span>
@@ -572,7 +542,6 @@ export default function LeadsPage() {
                           const tags = l.tags || [];
                           const visibleTags = tags.slice(0, 2);
                           const extraTags = tags.length - visibleTags.length;
-                          const menuOpen = menuLead?.leadId === l.id;
                           return (
                             <tr key={l.id}>
                               <td>
@@ -609,48 +578,17 @@ export default function LeadsPage() {
                                     </Link>
                                   ))}
                                   {extraTags > 0 ? (
-                                    <span
-                                      className="lead-tags-pop-wrap"
-                                      onMouseEnter={(e) => {
-                                        openTagsPop(l.id, e.clientX, e.clientY);
+                                    <button
+                                      type="button"
+                                      className="lead-tag-more"
+                                      aria-label="برچسب‌های بیشتر"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openTagsPop(l);
                                       }}
-                                      onMouseLeave={() => scheduleCloseTagsPop()}
                                     >
-                                      <span
-                                        className="lead-tag-more"
-                                        aria-expanded={tagsPop?.leadId === l.id}
-                                        aria-haspopup="dialog"
-                                      >
-                                        +{extraTags}
-                                      </span>
-                                      {tagsPop?.leadId === l.id ? (
-                                        <div
-                                          className="lead-tags-pop"
-                                          role="tooltip"
-                                          aria-label="برچسب‌های مخاطب"
-                                          style={{
-                                            top: tagsPop.y,
-                                            left: tagsPop.x
-                                          }}
-                                          onMouseEnter={() => clearTagsPopTimer()}
-                                          onMouseLeave={() => scheduleCloseTagsPop()}
-                                        >
-                                          <div className="lead-tags-pop-title">برچسب‌ها</div>
-                                          <div className="lead-tags-pop-list">
-                                            {tags.map((t) => (
-                                              <Link
-                                                key={t}
-                                                className="lead-tags-pop-item"
-                                                href={tasksByTagHref(t)}
-                                                onClick={() => setTagsPop(null)}
-                                              >
-                                                {tagLabel(t)}
-                                              </Link>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ) : null}
-                                    </span>
+                                      +{extraTags}
+                                    </button>
                                   ) : null}
                                   {(l.lead_score || 0) > 0 ? (
                                     <span className="lead-score-pill">
@@ -715,96 +653,18 @@ export default function LeadsPage() {
                                 </select>
                               </td>
                               <td className="leads-actions-cell">
-                                <div className="lead-row-menu-wrap">
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    aria-expanded={menuOpen}
-                                    aria-haspopup="menu"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openRowMenu(l.id, e.clientX, e.clientY);
-                                    }}
-                                  >
-                                    ⋯
-                                  </Button>
-                                  {menuOpen && menuLead ? (
-                                    <div
-                                      className="lead-row-menu"
-                                      role="menu"
-                                      style={{
-                                        top: menuLead.y,
-                                        left: menuLead.x
-                                      }}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        onClick={() => {
-                                          setMenuLead(null);
-                                          openContact(l, false);
-                                        }}
-                                      >
-                                        جزئیات
-                                      </button>
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        onClick={() => {
-                                          setMenuLead(null);
-                                          openContact(l, true);
-                                        }}
-                                      >
-                                        وظیفه جدید
-                                      </button>
-                                      <Link
-                                        className="lead-row-menu-link"
-                                        href={tasksBoardHref(l.id)}
-                                        role="menuitem"
-                                        onClick={() => setMenuLead(null)}
-                                      >
-                                        برد وظایف
-                                      </Link>
-                                      {l.bot_paused ? (
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          disabled={busy}
-                                          onClick={() => {
-                                            setMenuLead(null);
-                                            void setBotPaused(l.id, false);
-                                          }}
-                                        >
-                                          شروع ربات
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          disabled={busy}
-                                          onClick={() => {
-                                            setMenuLead(null);
-                                            void setBotPaused(l.id, true);
-                                          }}
-                                        >
-                                          توقف ربات
-                                        </button>
-                                      )}
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        className="danger"
-                                        onClick={() => {
-                                          setMenuLead(null);
-                                          openDeleteConfirm(l);
-                                        }}
-                                      >
-                                        حذف
-                                      </button>
-                                    </div>
-                                  ) : null}
-                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  aria-haspopup="menu"
+                                  aria-label={`عملیات ${leadDisplayName(l)}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openRowMenu(l);
+                                  }}
+                                >
+                                  ⋯
+                                </Button>
                               </td>
                             </tr>
                           );
@@ -813,14 +673,146 @@ export default function LeadsPage() {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="leads-mobile-only">
+                  {filtered.length === 0 ? (
+                    <EmptyState
+                      title="نتیجه‌ای نیست"
+                      text="فیلترها را تغییر دهید یا مخاطب جدید اضافه کنید."
+                    />
+                  ) : (
+                    <div className="leads-card-list">
+                      {filtered.map((l) => {
+                        const tags = l.tags || [];
+                        const assignee = members.find((m) => m.user_id === l.assignee_id);
+                        return (
+                          <article key={l.id} className="leads-card">
+                            <div className="leads-card-top">
+                              <div>
+                                <button
+                                  type="button"
+                                  className="lead-name-link"
+                                  onClick={() => openContact(l)}
+                                >
+                                  <h3 className="leads-card-name">{leadDisplayName(l)}</h3>
+                                </button>
+                                <div className="leads-card-meta">
+                                  {l.source_channel ? (
+                                    <ChannelBadge channel={l.source_channel} />
+                                  ) : null}
+                                  <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />
+                                  <span>{l.stage}</span>
+                                  {l.bot_paused ? <Badge tone="danger">ربات متوقف</Badge> : null}
+                                </div>
+                              </div>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                aria-label="عملیات"
+                                onClick={() => openRowMenu(l)}
+                              >
+                                ⋯
+                              </Button>
+                            </div>
+                            <div className="leads-card-meta">
+                              {leadPhone(l) ? <LtrText>{leadPhone(l)}</LtrText> : null}
+                              {assignee ? <span>{memberLabel(assignee)}</span> : <span>بدون ارجاع</span>}
+                            </div>
+                            {tags.length > 0 ? (
+                              <div className="leads-card-meta">
+                                {tags.slice(0, 4).map((t) => (
+                                  <Link key={t} href={tasksByTagHref(t)}>
+                                    <Badge tone="accent">{tagLabel(t)}</Badge>
+                                  </Link>
+                                ))}
+                                {tags.length > 4 ? (
+                                  <button
+                                    type="button"
+                                    className="lead-tag-more"
+                                    onClick={() => openTagsPop(l)}
+                                  >
+                                    +{tags.length - 4}
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            <div className="leads-card-actions">
+                              <Button size="sm" variant="secondary" onClick={() => openContact(l)}>
+                                جزئیات
+                              </Button>
+                              <Button size="sm" onClick={() => openContact(l, true)}>
+                                وظیفه
+                              </Button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </Card>
+
+          <ActionSheet
+            open={!!menuLead}
+            title={menuLead ? leadDisplayName(menuLead) : undefined}
+            onClose={() => setMenuLead(null)}
+            items={
+              menuLead
+                ? [
+                    {
+                      id: "detail",
+                      label: "جزئیات",
+                      onSelect: () => openContact(menuLead, false)
+                    },
+                    {
+                      id: "task",
+                      label: "وظیفه جدید",
+                      onSelect: () => openContact(menuLead, true)
+                    },
+                    {
+                      id: "board",
+                      label: "برد وظایف",
+                      href: tasksBoardHref(menuLead.id)
+                    },
+                    {
+                      id: "bot",
+                      label: menuLead.bot_paused ? "شروع ربات" : "توقف ربات",
+                      disabled: busy,
+                      onSelect: () => void setBotPaused(menuLead.id, !menuLead.bot_paused)
+                    },
+                    {
+                      id: "delete",
+                      label: "حذف",
+                      tone: "danger",
+                      onSelect: () => openDeleteConfirm(menuLead)
+                    }
+                  ]
+                : []
+            }
+          />
+
+          <ActionSheet
+            open={!!tagsPop}
+            title="برچسب‌ها"
+            onClose={() => setTagsPop(null)}
+            items={
+              tagsPop
+                ? (tagsPop.tags || []).map((t) => ({
+                    id: t,
+                    label: tagLabel(t),
+                    href: tasksByTagHref(t)
+                  }))
+                : []
+            }
+          />
 
           <Modal
             open={formOpen && !!editForm}
             title={isEditing ? `ویرایش: ${editingLead?.name}` : "افزودن لید"}
             onClose={closeForm}
+            presentation="sheet"
             footer={
               <>
                 <Button loading={busy} onClick={saveForm}>
@@ -946,6 +938,7 @@ export default function LeadsPage() {
             open={!!deleteTarget}
             title="تأیید حذف لید"
             onClose={closeDeleteConfirm}
+            presentation="sheet"
             footer={
               <>
                 <Button

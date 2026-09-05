@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { List, ListItem } from "@/components/ui/List";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -210,42 +211,67 @@ export default function SupportPage() {
                   text="اولین درخواست پشتیبانی را از فرم بالا ثبت کنید."
                 />
               ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>موضوع</th>
-                      <th>وضعیت</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((t) => (
-                      <tr
-                        key={t.id}
-                        style={{
-                          cursor: "pointer",
-                          background:
-                            detail?.id === t.id ? "var(--surface-2, #f1f5f9)" : undefined
-                        }}
-                        onClick={() => openDetail(t.id)}
-                      >
-                        <td>
-                          <strong>{t.subject}</strong>
-                          <div className="hint" style={{ margin: 0 }}>
-                            {CAT_FA[t.category] || t.category}
-                            {typeof t.message_count === "number"
+                <>
+                  <div className="leads-desktop-only">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>موضوع</th>
+                          <th>وضعیت</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((t) => (
+                          <tr
+                            key={t.id}
+                            style={{
+                              cursor: "pointer",
+                              background:
+                                detail?.id === t.id ? "var(--surface-2, #f1f5f9)" : undefined
+                            }}
+                            onClick={() => openDetail(t.id)}
+                          >
+                            <td>
+                              <strong>{t.subject}</strong>
+                              <div className="hint" style={{ margin: 0 }}>
+                                {CAT_FA[t.category] || t.category}
+                                {typeof t.message_count === "number"
+                                  ? ` · ${t.message_count} پیام`
+                                  : ""}
+                              </div>
+                            </td>
+                            <td>
+                              <Badge tone={statusTone(t.status)}>
+                                {STATUS_FA[t.status] || t.status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="leads-mobile-only">
+                    <List>
+                      {rows.map((t) => (
+                        <ListItem
+                          key={t.id}
+                          title={t.subject}
+                          subtitle={`${CAT_FA[t.category] || t.category}${
+                            typeof t.message_count === "number"
                               ? ` · ${t.message_count} پیام`
-                              : ""}
-                          </div>
-                        </td>
-                        <td>
-                          <Badge tone={statusTone(t.status)}>
-                            {STATUS_FA[t.status] || t.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                              : ""
+                          }`}
+                          trailing={
+                            <Badge tone={statusTone(t.status)}>
+                              {STATUS_FA[t.status] || t.status}
+                            </Badge>
+                          }
+                          onClick={() => openDetail(t.id)}
+                        />
+                      ))}
+                    </List>
+                  </div>
+                </>
               )}
             </Card>
 

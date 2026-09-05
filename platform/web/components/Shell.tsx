@@ -15,7 +15,8 @@ export default function Shell({
   children,
   actions,
   search,
-  onSearch
+  onSearch,
+  hideTabBar = false
 }: {
   title: string;
   sub: string;
@@ -23,9 +24,10 @@ export default function Shell({
   actions?: ReactNode;
   search?: string;
   onSearch?: (v: string) => void;
+  hideTabBar?: boolean;
 }) {
   const panel = usePanelOptional();
-  usePanelPage({ title, sub, actions, search, onSearch });
+  usePanelPage({ title, sub, actions, search, onSearch, hideTabBar });
 
   if (panel) {
     return <>{children}</>;
@@ -38,6 +40,7 @@ export default function Shell({
       actions={actions}
       search={search}
       onSearch={onSearch}
+      hideTabBar={hideTabBar}
     >
       {children}
     </ShellChrome>

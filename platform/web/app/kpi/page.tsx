@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState } from "@/components/ui/Card";
+import { List, ListItem } from "@/components/ui/List";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
@@ -150,26 +151,41 @@ export default function KpiPage() {
             {(dash?.agents || []).length === 0 ? (
               <EmptyState title="داده‌ای نیست" />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>نام</th>
-                    <th>لید ارجاعی</th>
-                    <th>وظیفه باز</th>
-                    <th>انجام‌شده</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(dash?.agents || []).map((a) => (
-                    <tr key={a.user_id}>
-                      <td>{a.name}</td>
-                      <td>{a.assigned_leads}</td>
-                      <td>{a.tasks_open}</td>
-                      <td>{a.tasks_done}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div className="leads-desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>نام</th>
+                        <th>لید ارجاعی</th>
+                        <th>وظیفه باز</th>
+                        <th>انجام‌شده</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(dash?.agents || []).map((a) => (
+                        <tr key={a.user_id}>
+                          <td>{a.name}</td>
+                          <td>{a.assigned_leads}</td>
+                          <td>{a.tasks_open}</td>
+                          <td>{a.tasks_done}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="leads-mobile-only">
+                  <List>
+                    {(dash?.agents || []).map((a) => (
+                      <ListItem
+                        key={a.user_id}
+                        title={a.name}
+                        subtitle={`ارجاعی: ${a.assigned_leads} · باز: ${a.tasks_open} · انجام‌شده: ${a.tasks_done}`}
+                      />
+                    ))}
+                  </List>
+                </div>
+              </>
             )}
           </Card>
 

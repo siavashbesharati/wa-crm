@@ -501,6 +501,7 @@ export default function ChannelsPage() {
         open={modal?.kind === "whatsapp"}
         title="اتصال واتساپ"
         onClose={closeModal}
+        presentation="full"
         panelClassName="pair-modal"
         footer={
           <Button variant="secondary" onClick={closeModal}>
@@ -617,6 +618,7 @@ export default function ChannelsPage() {
         open={modal?.kind === "divar"}
         title={modal?.kind === "divar" && modal.step === "code" ? "کد تأیید دیوار" : "اتصال دیوار"}
         onClose={closeModal}
+        presentation="full"
         panelClassName="pair-modal"
         footer={
           modal?.kind === "divar" && modal.step === "code" ? (
@@ -673,6 +675,7 @@ export default function ChannelsPage() {
               : "اتصال بله"
         }
         onClose={closeModal}
+        presentation="full"
         panelClassName="pair-modal"
         footer={
           modal?.kind === "bale" && modal.step === "otp" ? (
@@ -746,6 +749,7 @@ export default function ChannelsPage() {
         open={!!removeTarget}
         title="حذف کانال"
         onClose={() => setRemoveTarget(null)}
+        presentation="sheet"
         panelClassName="pair-modal"
         footer={
           <>
@@ -769,6 +773,7 @@ export default function ChannelsPage() {
         open={demoNotice}
         title="حالت دمو"
         onClose={() => setDemoNotice(false)}
+        presentation="sheet"
         panelClassName="pair-modal"
         footer={
           <>

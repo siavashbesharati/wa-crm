@@ -238,6 +238,7 @@ export default function BusinessLoginPage() {
             <label className="auth-field">
               <span>موبایل</span>
               <input
+                type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="0912xxxxxxx"

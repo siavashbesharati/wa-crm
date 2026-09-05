@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   applicationName: "bidar",
   description: "بیدار — پلتفرم چندکاناله CRM واتساپ و دیوار",
   manifest: "/favicons/site.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "بیدار",
+    statusBarStyle: "black-translucent"
+  },
   icons: {
     icon: [
       { url: "/favicons/favicon.ico" },
@@ -21,7 +26,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0071e3"
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f5f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" }
+  ],
+  viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

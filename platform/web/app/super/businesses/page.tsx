@@ -154,52 +154,122 @@ export default function SuperBusinessesPage() {
           ) : rows.length === 0 ? (
             <EmptyState title="هنوز کسب‌وکاری نیست" text="از فرم بالا یکی بسازید." />
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>نام</th>
-                  <th>مالک</th>
-                  <th>پلن</th>
-                  <th>وضعیت</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((b) => (
-                  <tr key={b.org_id}>
-                    <td>
-                      <strong>{b.name}</strong>
-                      <div className="hint">{b.owner_name}</div>
-                    </td>
-                    <td>{b.owner_phone}</td>
-                    <td>
-                      <select
-                        value={b.plan}
-                        disabled={busy}
-                        onChange={(e) => changePlan(b.org_id, e.target.value)}
-                        style={{ minWidth: 110 }}
-                      >
-                        {[
-                          ...planOpts,
-                          ...(!planOpts.some((p) => p.id === b.plan)
-                            ? [{ id: b.plan, label: b.plan }]
-                            : [])
-                        ].map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <Badge tone={b.status === "active" ? "accent" : "danger"}>
-                        {b.status === "active" ? "فعال" : "تعلیق"}
-                      </Badge>
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <>
+              <div className="leads-desktop-only">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>نام</th>
+                      <th>مالک</th>
+                      <th>پلن</th>
+                      <th>وضعیت</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((b) => (
+                      <tr key={b.org_id}>
+                        <td>
+                          <strong>{b.name}</strong>
+                          <div className="hint">{b.owner_name}</div>
+                        </td>
+                        <td>{b.owner_phone}</td>
+                        <td>
+                          <select
+                            value={b.plan}
+                            disabled={busy}
+                            onChange={(e) => changePlan(b.org_id, e.target.value)}
+                            style={{ minWidth: 110 }}
+                          >
+                            {[
+                              ...planOpts,
+                              ...(!planOpts.some((p) => p.id === b.plan)
+                                ? [{ id: b.plan, label: b.plan }]
+                                : [])
+                            ].map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <Badge tone={b.status === "active" ? "accent" : "danger"}>
+                            {b.status === "active" ? "فعال" : "تعلیق"}
+                          </Badge>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <Button
+                              variant="secondary"
+                              loading={busy}
+                              onClick={() => enterBusiness(b.org_id)}
+                            >
+                              ورود به پنل
+                            </Button>
+                            {b.status === "active" ? (
+                              <Button
+                                variant="secondary"
+                                loading={busy}
+                                onClick={() => setStatus(b.org_id, "suspended")}
+                              >
+                                تعلیق
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                loading={busy}
+                                onClick={() => setStatus(b.org_id, "active")}
+                              >
+                                فعال‌سازی
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="leads-mobile-only">
+                <div className="leads-card-list">
+                  {rows.map((b) => (
+                    <article key={b.org_id} className="leads-card">
+                      <div className="leads-card-top">
+                        <div>
+                          <h3 className="leads-card-name">{b.name}</h3>
+                          <div className="leads-card-meta">
+                            <span>{b.owner_name}</span>
+                            <span dir="ltr">{b.owner_phone}</span>
+                            <Badge tone={b.status === "active" ? "accent" : "danger"}>
+                              {b.status === "active" ? "فعال" : "تعلیق"}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      <label>
+                        پلن
+                        <select
+                          value={b.plan}
+                          disabled={busy}
+                          onChange={(e) => changePlan(b.org_id, e.target.value)}
+                        >
+                          {[
+                            ...planOpts,
+                            ...(!planOpts.some((p) => p.id === b.plan)
+                              ? [{ id: b.plan, label: b.plan }]
+                              : [])
+                          ].map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="row-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <Button
                           variant="secondary"
+                          size="sm"
                           loading={busy}
                           onClick={() => enterBusiness(b.org_id)}
                         >
@@ -208,6 +278,7 @@ export default function SuperBusinessesPage() {
                         {b.status === "active" ? (
                           <Button
                             variant="secondary"
+                            size="sm"
                             loading={busy}
                             onClick={() => setStatus(b.org_id, "suspended")}
                           >
@@ -216,6 +287,7 @@ export default function SuperBusinessesPage() {
                         ) : (
                           <Button
                             variant="secondary"
+                            size="sm"
                             loading={busy}
                             onClick={() => setStatus(b.org_id, "active")}
                           >
@@ -223,11 +295,11 @@ export default function SuperBusinessesPage() {
                           </Button>
                         )}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </Card>
       </div>
