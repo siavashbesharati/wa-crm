@@ -71,7 +71,7 @@ export default function OnboardingPage() {
   return (
     <Suspense
       fallback={
-        <div className="page-loading" style={{ minHeight: "100vh" }}>
+        <div className="page-loading" style={{ minHeight: "100dvh" }}>
           <PageLoading />
         </div>
       }
@@ -305,7 +305,7 @@ function OnboardingPageInner() {
 
   if (loading || !data) {
     return (
-      <div className="page-loading" style={{ minHeight: "100vh" }}>
+      <div className="page-loading" style={{ minHeight: "100dvh" }}>
         <PageLoading />
       </div>
     );

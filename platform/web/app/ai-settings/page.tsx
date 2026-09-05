@@ -312,7 +312,7 @@ export default function AiSettingsPage() {
                 onChange={(v) => setPolicy({ ...policy, business_hours_only: v })}
               />
               {policy.business_hours_only ? (
-                <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="form-grid ai-hours-grid">
                   <label>
                     از ساعت
                     <input

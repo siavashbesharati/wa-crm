@@ -43,11 +43,11 @@ export default function Home() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         display: "grid",
         placeItems: "center",
-        fontFamily: "system-ui, sans-serif",
-        color: "#64748b",
+        fontFamily: "var(--font), system-ui, sans-serif",
+        color: "var(--muted)",
         fontSize: 14,
       }}
     >

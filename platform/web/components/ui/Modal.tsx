@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "./Button";
 import { IconClose } from "./Icons";
 
@@ -34,6 +34,10 @@ function useIsNarrow(breakpoint = 768) {
   return narrow;
 }
 
+function rubberband(overshoot: number, dimension: number, constant = 0.55) {
+  return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+}
+
 export function Modal({
   open,
   title,
@@ -50,8 +54,10 @@ export function Modal({
   onCloseRef.current = onClose;
   const narrow = useIsNarrow();
   const dragY = useRef(0);
+  const dragV = useRef(0);
   const dragging = useRef(false);
   const startY = useRef(0);
+  const lastSample = useRef({ y: 0, t: 0 });
 
   const asSheet =
     presentation === "sheet" ||
@@ -108,21 +114,29 @@ export function Modal({
     };
   }, [open]);
 
-  function onPointerDown(e: React.PointerEvent) {
+  function onPointerDown(e: ReactPointerEvent) {
     if (!asSheet) return;
     const target = e.target as HTMLElement;
     if (!target.closest(".sheet-grab")) return;
     dragging.current = true;
     startY.current = e.clientY;
     dragY.current = 0;
+    dragV.current = 0;
+    lastSample.current = { y: e.clientY, t: performance.now() };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
 
-  function onPointerMove(e: React.PointerEvent) {
+  function onPointerMove(e: ReactPointerEvent) {
     if (!dragging.current || !panelRef.current) return;
-    const dy = Math.max(0, e.clientY - startY.current);
-    dragY.current = dy;
-    panelRef.current.style.transform = `translateY(${dy}px)`;
+    const raw = e.clientY - startY.current;
+    const h = panelRef.current.offsetHeight || 400;
+    const dy = raw < 0 ? -rubberband(-raw, h) : raw;
+    const now = performance.now();
+    const dt = Math.max(1, now - lastSample.current.t);
+    dragV.current = ((e.clientY - lastSample.current.y) / dt) * 1000;
+    lastSample.current = { y: e.clientY, t: now };
+    dragY.current = Math.max(0, dy);
+    panelRef.current.style.transform = `translateY(${dragY.current}px)`;
     panelRef.current.style.transition = "none";
   }
 
@@ -130,13 +144,15 @@ export function Modal({
     if (!dragging.current || !panelRef.current) return;
     dragging.current = false;
     panelRef.current.style.transition = "";
-    if (dragY.current > 120) {
+    const shouldClose = dragY.current > 120 || dragV.current > 900;
+    if (shouldClose) {
       panelRef.current.style.transform = "";
       onCloseRef.current();
     } else {
       panelRef.current.style.transform = "";
     }
     dragY.current = 0;
+    dragV.current = 0;
   }
 
   if (!open) return null;

@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
+import { ActionSheet } from "@/components/ui/ActionSheet";
 import { Switch } from "@/components/ui/Switch";
 import { PageLoading } from "@/components/ui/Spinner";
+import { IconPlus } from "@/components/ui/Icons";
 import { STAGES, TAG_LABELS_FA, tagLabel } from "@/components/crm/shared";
 import { CampaignReportModal } from "@/components/campaigns/CampaignReportModal";
 import { api, type CampaignReport } from "@/lib/api";
@@ -72,6 +75,8 @@ export default function CampaignsPage() {
   const [report, setReport] = useState<CampaignReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [menuCampaign, setMenuCampaign] = useState<Campaign | null>(null);
   const { busy, run } = useMutation();
   const toast = useToast();
 
@@ -164,6 +169,7 @@ export default function CampaignsPage() {
       setStages([]);
       setMinScore(0);
       setPreviewCount(null);
+      setCreateOpen(false);
       await load();
     }
   }
@@ -248,114 +254,133 @@ export default function CampaignsPage() {
     }
   }
 
+  const createForm = (
+    <div className="form-grid" style={{ gap: 12 }}>
+      <label className="full">
+        نام کمپین
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="مثلاً پیگیری قصد خرید بالا"
+        />
+      </label>
+      <label className="full">
+        اکانت کانال
+        <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="">انتخاب کنید</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {accountLabel[a.id]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="full">
+        متن پیام
+        <textarea
+          rows={4}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="سلام {{name}}، …"
+        />
+        <span className="hint">
+          جای‌نگهدار: {"{{name}}"} با نام مخاطب و {"{{phone}}"} با شماره جایگزین می‌شود
+        </span>
+      </label>
+      <div className="full">
+        <strong>برچسب‌ها</strong>
+        <div className="hint" style={{ marginTop: 4 }}>
+          خالی = همه مخاطبین · انتخاب‌شده = حداقل یکی از این برچسب‌ها
+        </div>
+        <div className="ai-stage-chips" style={{ marginTop: 8 }}>
+          {TAG_KEYS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`ai-stage-chip${tags.includes(key) ? " active" : ""}`}
+              onClick={() => toggleTag(key)}
+            >
+              {tagLabel(key)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="full">
+        <strong>مراحل</strong>
+        <div className="hint" style={{ marginTop: 4 }}>
+          خالی = همه مراحل
+        </div>
+        <div className="ai-stage-chips" style={{ marginTop: 8 }}>
+          {STAGES.map((stage) => (
+            <button
+              key={stage}
+              type="button"
+              className={`ai-stage-chip${stages.includes(stage) ? " active" : ""}`}
+              onClick={() => toggleStage(stage)}
+            >
+              {stage}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="full campaigns-actions-row">
+        <label className="campaigns-actions-field">
+          حداقل امتیاز AI
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={minScore}
+            onChange={(e) => setMinScore(Number(e.target.value) || 0)}
+          />
+        </label>
+        <Switch
+          className="campaigns-actions-switch"
+          label="شامل گروه‌ها"
+          checked={includeGroups}
+          onChange={setIncludeGroups}
+        />
+      </div>
+    </div>
+  );
+
   return (
-    <Shell title="کمپین‌ها" sub="ارسال یک‌باره پیام به سگمنت برچسب / مرحله / امتیاز">
+    <Shell
+      title="کمپین‌ها"
+      sub="ارسال یک‌باره پیام به سگمنت برچسب / مرحله / امتیاز"
+      actions={
+        <Button size="sm" onClick={() => setCreateOpen(true)} aria-label="کمپین جدید">
+          <IconPlus size={18} />
+          <span className="campaign-new-label">جدید</span>
+        </Button>
+      }
+    >
       {loading ? (
         <PageLoading />
       ) : (
         <>
-          <Card title="کمپین جدید">
-            <div className="form-grid" style={{ gap: 12 }}>
-              <label className="full">
-                نام کمپین
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="مثلاً پیگیری قصد خرید بالا"
-                />
-              </label>
-              <label className="full">
-                اکانت کانال
-                <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-                  <option value="">انتخاب کنید</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {accountLabel[a.id]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="full">
-                متن پیام
-                <textarea
-                  rows={4}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="سلام {{name}}، …"
-                />
-                <span className="hint">
-                  جای‌نگهدار: {"{{name}}"} با نام مخاطب و {"{{phone}}"} با شماره جایگزین می‌شود
-                </span>
-              </label>
-              <div className="full">
-                <strong>برچسب‌ها</strong>
-                <div className="hint" style={{ marginTop: 4 }}>
-                  خالی = همه مخاطبین · انتخاب‌شده = حداقل یکی از این برچسب‌ها
-                </div>
-                <div className="ai-stage-chips" style={{ marginTop: 8 }}>
-                  {TAG_KEYS.map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`ai-stage-chip${tags.includes(key) ? " active" : ""}`}
-                      onClick={() => toggleTag(key)}
-                    >
-                      {tagLabel(key)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="full">
-                <strong>مراحل</strong>
-                <div className="hint" style={{ marginTop: 4 }}>
-                  خالی = همه مراحل
-                </div>
-                <div className="ai-stage-chips" style={{ marginTop: 8 }}>
-                  {STAGES.map((stage) => (
-                    <button
-                      key={stage}
-                      type="button"
-                      className={`ai-stage-chip${stages.includes(stage) ? " active" : ""}`}
-                      onClick={() => toggleStage(stage)}
-                    >
-                      {stage}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="full campaigns-actions-row">
-                <label className="campaigns-actions-field">
-                  حداقل امتیاز AI
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={minScore}
-                    onChange={(e) => setMinScore(Number(e.target.value) || 0)}
-                  />
-                </label>
-                <Switch
-                  className="campaigns-actions-switch"
-                  label="شامل گروه‌ها"
-                  checked={includeGroups}
-                  onChange={setIncludeGroups}
-                />
-                <div className="campaigns-actions-btns">
-                  <Button loading={busy} onClick={() => void create()}>
-                    ذخیره پیش‌نویس
-                  </Button>
-                  <Button variant="secondary" loading={busy} onClick={() => void previewDraft()}>
-                    ذخیره و شمارش مخاطب
-                    {previewCount != null ? ` (${previewCount})` : ""}
-                  </Button>
-                </div>
-              </div>
+          <Card title="کمپین جدید" className="campaign-create-desktop">
+            {createForm}
+            <div className="campaigns-actions-btns" style={{ marginTop: 12 }}>
+              <Button loading={busy} onClick={() => void create()}>
+                ذخیره پیش‌نویس
+              </Button>
+              <Button variant="secondary" loading={busy} onClick={() => void previewDraft()}>
+                ذخیره و شمارش مخاطب
+                {previewCount != null ? ` (${previewCount})` : ""}
+              </Button>
             </div>
           </Card>
 
           <Card title="کمپین‌های موجود">
             {rows.length === 0 ? (
-              <EmptyState title="کمپینی نیست" text="اولین کمپین nurture را بسازید." />
+              <EmptyState
+                title="کمپینی نیست"
+                text="اولین کمپین nurture را بسازید."
+                action={
+                  <Button onClick={() => setCreateOpen(true)}>کمپین جدید</Button>
+                }
+              />
             ) : (
               <div className="campaign-list">
                 {rows.map((c) => {
@@ -377,9 +402,20 @@ export default function CampaignsPage() {
                       <div className="campaign-card-body">
                         <div className="campaign-card-head">
                           <h3 className="campaign-card-title">{c.name}</h3>
-                          <Badge tone={STATUS_TONE[c.status] || "default"}>
-                            {STATUS_FA[c.status] || c.status}
-                          </Badge>
+                          <div className="campaign-card-head-trail">
+                            <Badge tone={STATUS_TONE[c.status] || "default"}>
+                              {STATUS_FA[c.status] || c.status}
+                            </Badge>
+                            <Button
+                              className="campaign-more-btn"
+                              variant="secondary"
+                              size="sm"
+                              aria-label="عملیات کمپین"
+                              onClick={() => setMenuCampaign(c)}
+                            >
+                              ⋯
+                            </Button>
+                          </div>
                         </div>
                         <div className="campaign-card-meta">
                           <span>{accountLabel[c.channel_account_id || ""] || "بدون اکانت"}</span>
@@ -445,7 +481,7 @@ export default function CampaignsPage() {
                           {c.message_template}
                         </p>
                       </div>
-                      <div className="campaign-card-actions">
+                      <div className="campaign-card-actions campaign-card-actions-desktop">
                         {c.status === "draft" || c.status === "paused" || c.status === "done" ? (
                           <Button
                             className="campaign-action-btn"
@@ -484,26 +520,14 @@ export default function CampaignsPage() {
                         >
                           شمارش مخاطب
                         </Button>
-                        {reportCampaignId === c.id ? (
-                          <Button
-                            className="campaign-action-btn"
-                            size="sm"
-                            variant="secondary"
-                            loading={reportLoading}
-                            onClick={() => closeReport()}
-                          >
-                            بستن
-                          </Button>
-                        ) : (
-                          <Button
-                            className="campaign-action-btn"
-                            size="sm"
-                            loading={reportLoading}
-                            onClick={() => openReport(c.id)}
-                          >
-                            گزارش
-                          </Button>
-                        )}
+                        <Button
+                          className="campaign-action-btn"
+                          size="sm"
+                          loading={reportLoading}
+                          onClick={() => openReport(c.id)}
+                        >
+                          گزارش
+                        </Button>
                         <Button
                           className="campaign-action-btn"
                           size="sm"
@@ -522,6 +546,83 @@ export default function CampaignsPage() {
           </Card>
         </>
       )}
+
+      <Modal
+        open={createOpen}
+        title="کمپین جدید"
+        onClose={() => setCreateOpen(false)}
+        presentation="full"
+        footer={
+          <>
+            <Button loading={busy} onClick={() => void create()}>
+              ذخیره پیش‌نویس
+            </Button>
+            <Button variant="secondary" loading={busy} onClick={() => void previewDraft()}>
+              شمارش مخاطب
+              {previewCount != null ? ` (${previewCount})` : ""}
+            </Button>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              انصراف
+            </Button>
+          </>
+        }
+      >
+        {createForm}
+      </Modal>
+
+      <ActionSheet
+        open={!!menuCampaign}
+        title={menuCampaign?.name}
+        onClose={() => setMenuCampaign(null)}
+        items={
+          menuCampaign
+            ? [
+                ...(menuCampaign.status === "draft" ||
+                menuCampaign.status === "paused" ||
+                menuCampaign.status === "done"
+                  ? [
+                      {
+                        id: "start",
+                        label: "شروع ارسال",
+                        tone: "accent" as const,
+                        disabled:
+                          busy ||
+                          (menuCampaign.audience_count ?? 0) <= 0 ||
+                          rows.some((x) => x.status === "running" || x.status === "queued"),
+                        onSelect: () => void start(menuCampaign.id)
+                      }
+                    ]
+                  : []),
+                ...(menuCampaign.status === "running"
+                  ? [
+                      {
+                        id: "pause",
+                        label: "توقف",
+                        onSelect: () => void pause(menuCampaign.id)
+                      }
+                    ]
+                  : []),
+                {
+                  id: "preview",
+                  label: "شمارش مخاطب",
+                  onSelect: () => void previewExisting(menuCampaign.id)
+                },
+                {
+                  id: "report",
+                  label: "گزارش",
+                  onSelect: () => openReport(menuCampaign.id)
+                },
+                {
+                  id: "delete",
+                  label: "حذف",
+                  tone: "danger" as const,
+                  onSelect: () => void remove(menuCampaign.id)
+                }
+              ]
+            : []
+        }
+      />
+
       <CampaignReportModal
         open={reportCampaignId !== null}
         onClose={closeReport}

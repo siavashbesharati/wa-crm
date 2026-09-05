@@ -50,14 +50,20 @@ type Dash = {
 };
 
 const STAGE_COLORS: Record<string, string> = {
-  جدید: "#f59e0b",
-  پیگیری: "#f43f5e",
-  پیشنهاد: "#0ea5e9",
-  خرید: "#6366f1",
-  بسته: "#22c55e"
+  جدید: "var(--stage-new)",
+  پیگیری: "var(--stage-follow)",
+  پیشنهاد: "var(--stage-offer)",
+  خرید: "var(--stage-buy)",
+  بسته: "var(--stage-closed)"
 };
 
-const CHANNEL_COLORS = ["#2563eb", "#0ea5e9", "#8b5cf6", "#14b8a6", "#f59e0b"];
+const CHANNEL_COLORS = [
+  "var(--accent)",
+  "var(--stage-offer)",
+  "var(--stage-buy)",
+  "var(--success)",
+  "var(--warning)"
+];
 
 function fmt(n: number) {
   return Math.round(n).toLocaleString("fa-IR");
@@ -101,7 +107,7 @@ function BarChart({
                 background:
                   item.color ||
                   (colorKey ? colorKey(item.label) : undefined) ||
-                  "linear-gradient(90deg, #38bdf8, #2563eb)"
+                  "linear-gradient(90deg, var(--accent), var(--accent-hover))"
               }}
             />
           </div>

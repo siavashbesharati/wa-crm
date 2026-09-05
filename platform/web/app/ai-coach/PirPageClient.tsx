@@ -291,7 +291,11 @@ export default function PirPageClient() {
     .join("، ");
 
   return (
-    <Shell title={PASHMAK_NAME} sub="مربی خردمند تیم فروش">
+    <Shell
+      title={PASHMAK_NAME}
+      sub="مربی خردمند تیم فروش"
+      hideTabBar={mode === "chat"}
+    >
       <div className={`pir-page${mode === "chat" ? " pir-page--chat" : ""}`}>
         {mode !== "chat" ? (
           <header className="pir-hero">
