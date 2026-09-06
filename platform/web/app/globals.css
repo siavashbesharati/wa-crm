@@ -1046,7 +1046,7 @@ input.ltr-text {
 }
 .leads-table-compact td,
 .leads-table-compact th {
-  padding: 8px 10px;
+  padding: 5px 8px;
   vertical-align: middle;
 }
 .leads-table-compact select {
@@ -6538,6 +6538,31 @@ input, select, textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.bottom-nav-featured {
+  position: relative;
+  z-index: 1;
+  margin-top: -10px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.bottom-nav-featured-ico {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.bottom-nav-featured.active .bottom-nav-featured-ico {
+  background: var(--accent-hover);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.bottom-nav-featured span:last-child {
+  margin-top: 2px;
+  color: var(--accent);
+}
 
 .sheet-handle {
   width: 36px;
@@ -6883,6 +6908,41 @@ input, select, textarea {
   margin-top: 4px;
   padding-top: 10px;
   border-top: 1px solid var(--separator);
+}
+
+/* Contacts (leads) — denser list rows */
+.contacts-list {
+  gap: 4px;
+}
+.contacts-list .contacts-row {
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.contacts-list .leads-card-top {
+  align-items: center;
+  gap: 8px;
+}
+.contacts-list .contacts-row-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.contacts-list .leads-card-name {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.contacts-list .leads-card-meta {
+  gap: 4px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.contacts-list .leads-card-top .btn {
+  min-height: 30px;
+  padding: 4px 8px;
 }
 
 /* Chat mobile back — always visible when thread is open */

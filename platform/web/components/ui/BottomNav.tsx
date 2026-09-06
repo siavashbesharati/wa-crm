@@ -21,21 +21,28 @@ import {
   IconTeam
 } from "@/components/ui/Icons";
 
+/** Order matches RTL visual: میز کار | وظایف | مربی | اینباکس (+ بیشتر) */
 export const PRIMARY_TABS = [
-  { href: "/inbox", label: "اینباکس", Icon: IconInbox },
-  { href: "/leads", label: "مخاطبین", Icon: IconPeople },
-  { href: "/tasks/list", label: "وظایف", Icon: IconTasks },
-  { href: "/home", label: "میز کار", Icon: IconHome }
+  { href: "/home", label: "میز کار", Icon: IconHome, featured: false },
+  { href: "/tasks/list", label: "وظایف", Icon: IconTasks, featured: false },
+  {
+    href: "/ai-coach",
+    label: "مربی",
+    ariaLabel: "مربی هوش مصنوعی",
+    Icon: IconSpark,
+    featured: true
+  },
+  { href: "/inbox", label: "اینباکس", Icon: IconInbox, featured: false }
 ] as const;
 
 export const MORE_LINKS = [
+  { href: "/leads", label: "مخاطبین", Icon: IconPeople },
   { href: "/campaigns", label: "کمپین‌ها", Icon: IconCampaigns },
   { href: "/channels", label: "کانال‌ها", Icon: IconChannels },
   { href: "/groups", label: "گروه‌ها", Icon: IconGroups },
   { href: "/team", label: "تیم", Icon: IconTeam },
   { href: "/knowledge", label: "دانش AI", Icon: IconSpark },
   { href: "/ai-settings", label: "تنظیمات AI", Icon: IconSettings },
-  { href: "/ai-coach", label: "مربی AI", Icon: IconSpark },
   { href: "/kpi", label: "KPI / OKR", Icon: IconKpi },
   { href: "/support", label: "پشتیبانی", Icon: IconSupport },
   { href: "/billing", label: "اشتراک", Icon: IconBilling }
@@ -82,18 +89,25 @@ export function BottomNav({
   return (
     <>
       <nav className="bottom-nav" aria-label="منوی اصلی">
-        {PRIMARY_TABS.map(({ href, label, Icon }) => {
+        {PRIMARY_TABS.map((tab) => {
+          const { href, label, Icon, featured } = tab;
           const active = isActive(pathname, href);
+          const ariaLabel = "ariaLabel" in tab ? tab.ariaLabel : undefined;
           return (
             <Link
               key={href}
               href={href}
               prefetch
-              className={`bottom-nav-item${active ? " active" : ""}`}
+              className={`bottom-nav-item${featured ? " bottom-nav-featured" : ""}${
+                active ? " active" : ""
+              }`}
+              aria-label={ariaLabel}
               aria-current={active ? "page" : undefined}
               onClick={() => onNavigate?.(href)}
             >
-              <Icon size={22} />
+              <span className={featured ? "bottom-nav-featured-ico" : undefined} aria-hidden>
+                <Icon size={featured ? 24 : 22} />
+              </span>
               <span>{label}</span>
             </Link>
           );

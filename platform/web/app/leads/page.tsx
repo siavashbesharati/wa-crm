@@ -666,18 +666,26 @@ export default function LeadsPage() {
                       text="فیلترها را تغییر دهید یا مخاطب جدید اضافه کنید."
                     />
                   ) : (
-                    <div className="leads-card-list">
+                    <div className="leads-card-list contacts-list">
                       {filtered.map((l) => {
                         const tags = l.tags || [];
                         const assignee = members.find((m) => m.user_id === l.assignee_id);
+                        const phone = leadPhone(l);
                         return (
-                          <article key={l.id} className="leads-card">
+                          <article
+                            key={l.id}
+                            className="leads-card contacts-row"
+                            onClick={() => openContact(l)}
+                          >
                             <div className="leads-card-top">
-                              <div>
+                              <div className="contacts-row-main">
                                 <button
                                   type="button"
                                   className="lead-name-link"
-                                  onClick={() => openContact(l)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openContact(l);
+                                  }}
                                 >
                                   <h3 className="leads-card-name">{leadDisplayName(l)}</h3>
                                 </button>
@@ -687,46 +695,46 @@ export default function LeadsPage() {
                                   ) : null}
                                   <span className={`stage-dot ${STAGE_DOT[l.stage] || "new"}`} />
                                   <span>{l.stage}</span>
+                                  {phone ? <LtrText>{phone}</LtrText> : null}
+                                  {assignee ? (
+                                    <span>{memberLabel(assignee)}</span>
+                                  ) : (
+                                    <span>بدون ارجاع</span>
+                                  )}
                                   {l.bot_paused ? <Badge tone="danger">ربات متوقف</Badge> : null}
+                                  {tags.slice(0, 2).map((t) => (
+                                    <Link
+                                      key={t}
+                                      href={tasksByTagHref(t)}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Badge tone="accent">{tagLabel(t)}</Badge>
+                                    </Link>
+                                  ))}
+                                  {tags.length > 2 ? (
+                                    <button
+                                      type="button"
+                                      className="lead-tag-more"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openTagsPop(l);
+                                      }}
+                                    >
+                                      +{tags.length - 2}
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
                               <Button
                                 variant="secondary"
                                 size="sm"
                                 aria-label="عملیات"
-                                onClick={() => openRowMenu(l)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openRowMenu(l);
+                                }}
                               >
                                 ⋯
-                              </Button>
-                            </div>
-                            <div className="leads-card-meta">
-                              {leadPhone(l) ? <LtrText>{leadPhone(l)}</LtrText> : null}
-                              {assignee ? <span>{memberLabel(assignee)}</span> : <span>بدون ارجاع</span>}
-                            </div>
-                            {tags.length > 0 ? (
-                              <div className="leads-card-meta">
-                                {tags.slice(0, 4).map((t) => (
-                                  <Link key={t} href={tasksByTagHref(t)}>
-                                    <Badge tone="accent">{tagLabel(t)}</Badge>
-                                  </Link>
-                                ))}
-                                {tags.length > 4 ? (
-                                  <button
-                                    type="button"
-                                    className="lead-tag-more"
-                                    onClick={() => openTagsPop(l)}
-                                  >
-                                    +{tags.length - 4}
-                                  </button>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            <div className="leads-card-actions">
-                              <Button size="sm" variant="secondary" onClick={() => openContact(l)}>
-                                جزئیات
-                              </Button>
-                              <Button size="sm" onClick={() => openContact(l, true)}>
-                                وظیفه
                               </Button>
                             </div>
                           </article>
