@@ -641,19 +641,20 @@ def get_pir_messages(
 ):
     from app.services.pir_kharabat import list_messages
 
-    rows = list_messages(db, auth.org.id, thread_id=thread_id)
+    tid = (thread_id or "").strip() or None
+    rows = list_messages(db, auth.org.id, thread_id=tid)
     return {
-        "thread_id": (thread_id or auth.org.id).strip() or auth.org.id,
+        "thread_id": tid or auth.org.id,
         "messages": [
             {
                 "id": m.id,
                 "role": m.role,
-                "body": m.body,
-                "created_at": m.created_at,
-                "thread_id": m.thread_id or "",
+                "body": m.body or "",
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "thread_id": (m.thread_id or "").strip(),
             }
             for m in rows
-        ]
+        ],
     }
 
 

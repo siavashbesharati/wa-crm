@@ -433,35 +433,6 @@ DEMO_COACH_THREADS: list[dict] = [
 def _ensure_coach_chats(db, org, owner, *, force: bool = False) -> int:
     """Seed مربی هوش مصنوعی conversation history (WhatsApp-style thread list)."""
     demo_ids = [t["id"] for t in DEMO_COACH_THREADS]
-    existing_demo = (
-        db.query(CoachMessage)
-        .filter(CoachMessage.org_id == org.id, CoachMessage.thread_id.in_(demo_ids))
-        .count()
-    )
-    any_msgs = (
-        db.query(CoachMessage).filter(CoachMessage.org_id == org.id).count()
-    )
-    # Rebuild when forced, when demo threads are missing, or when DB has no coach msgs
-    if existing_demo and not force:
-        # Still ensure wizard is complete so the chat list opens
-        profile = db.query(OrgCoachProfile).filter(OrgCoachProfile.org_id == org.id).first()
-        if profile and not profile.wizard_completed:
-            profile.wizard_completed = True
-        return 0
-
-    if force or existing_demo == 0:
-        if force and any_msgs:
-            db.query(CoachMessage).filter(CoachMessage.org_id == org.id).delete(
-                synchronize_session=False
-            )
-            db.flush()
-        elif existing_demo == 0 and demo_ids:
-            # Remove only incomplete/missing demo threads, keep user chats
-            db.query(CoachMessage).filter(
-                CoachMessage.org_id == org.id,
-                CoachMessage.thread_id.in_(demo_ids),
-            ).delete(synchronize_session=False)
-            db.flush()
 
     # Ensure coach profile exists + wizard done so UI opens chat list
     profile = db.query(OrgCoachProfile).filter(OrgCoachProfile.org_id == org.id).first()
@@ -477,6 +448,7 @@ def _ensure_coach_chats(db, org, owner, *, force: bool = False) -> int:
             wizard_completed=True,
         )
         db.add(profile)
+        db.flush()
     else:
         profile.wizard_completed = True
         if not profile.niche:
@@ -484,10 +456,11 @@ def _ensure_coach_chats(db, org, owner, *, force: bool = False) -> int:
         if not profile.tone:
             profile.tone = "رسمی"
 
-    # Skip insert if demo already present and not forced
-    if existing_demo and not force:
+    if force:
+        db.query(CoachMessage).filter(CoachMessage.org_id == org.id).delete(
+            synchronize_session=False
+        )
         db.flush()
-        return 0
 
     now = _utc_naive()
     created = 0
