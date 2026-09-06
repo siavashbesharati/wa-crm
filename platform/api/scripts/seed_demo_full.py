@@ -90,10 +90,14 @@ LEADS = [
     {"name": "سارا مرادی", "phone": "09121111105", "stage": "جدید", "area": "شهرک غرب", "intent": "اجاره", "type": "آپارتمان", "budget": "۸۰ میلیون", "size": 160, "rooms": "۳ خواب", "floor": 5, "year": 1397, "source": "whatsapp", "tags": ["مبله"], "score": 59, "assignee": "مریم احمدی"},
     {"name": "رضا زارع", "phone": "09121111106", "stage": "جدید", "area": "تجریش", "intent": "خرید", "type": "مغازه", "budget": "۱۲ میلیارد", "size": 80, "rooms": "—", "floor": 0, "year": 1385, "source": "divar", "tags": ["تجاری"], "score": 67, "assignee": "علی محمدی"},
     {"name": "نرگس فلاحی", "phone": "09121111107", "stage": "جدید", "area": "ونک", "intent": "خرید", "type": "آپارتمان", "budget": "۳۰ میلیارد", "size": 200, "rooms": "۳ خواب", "floor": 8, "year": 1399, "source": "whatsapp", "tags": ["ویو"], "score": 76, "assignee": "حسین رضایی"},
+    {"name": "بهنام یزدانی", "phone": "09121111131", "stage": "جدید", "area": "دولت", "intent": "خرید", "type": "آپارتمان", "budget": "۲۴ میلیارد", "size": 150, "rooms": "۳ خواب", "floor": 5, "year": 1400, "source": "bale", "tags": ["نوساز"], "score": 74, "assignee": "مریم احمدی", "bale_uid": 381966131},
+    {"name": "مینا فرهادی", "phone": "09121111132", "stage": "جدید", "area": "میرداماد", "intent": "اجاره", "type": "آپارتمان", "budget": "۵۵ میلیون", "size": 105, "rooms": "۲ خواب", "floor": 3, "year": 1394, "source": "divar", "tags": ["فوری"], "score": 61, "assignee": "حسین رضایی"},
     {"name": "حسین غلامی", "phone": "09121111108", "stage": "پیگیری", "area": "زعفرانیه", "intent": "خرید", "type": "آپارتمان", "budget": "۴۵ میلیارد", "size": 250, "rooms": "۴ خواب", "floor": 6, "year": 1401, "source": "whatsapp", "tags": ["ویو باز"], "score": 91, "assignee": "علی محمدی"},
     {"name": "دکتر اکبری", "phone": "09121111109", "stage": "پیگیری", "area": "قیطریه", "intent": "خرید", "type": "آپارتمان", "budget": "۲۸ میلیارد", "size": 170, "rooms": "۳ خواب", "floor": 3, "year": 1396, "source": "whatsapp", "tags": ["وام‌دار"], "score": 78, "assignee": "مریم احمدی"},
     {"name": "مریم رنجبر", "phone": "09121111110", "stage": "پیگیری", "area": "پاسداران", "intent": "اجاره", "type": "آپارتمان", "budget": "۴۵ میلیون", "size": 110, "rooms": "۲ خواب", "floor": 2, "year": 1390, "source": "divar", "tags": ["مستاجر"], "score": 55, "assignee": "حسین رضایی"},
     {"name": "کاوه توکلی", "phone": "09121111111", "stage": "پیگیری", "area": "جردن", "intent": "خرید", "type": "آپارتمان", "budget": "۳۵ میلیارد", "size": 190, "rooms": "۳ خواب", "floor": 7, "year": 1398, "source": "bale", "tags": ["پارکینگ"], "score": 83, "assignee": "علی محمدی", "bale_uid": 381966111},
+    {"name": "شیدا کرمی", "phone": "09121111133", "stage": "پیگیری", "area": "نیاوران", "intent": "خرید", "type": "آپارتمان", "budget": "۴۰ میلیارد", "size": 220, "rooms": "۳ خواب", "floor": 8, "year": 1401, "source": "bale", "tags": ["ویو"], "score": 86, "assignee": "حسین رضایی", "bale_uid": 381966133},
+    {"name": "پیمان عباسی", "phone": "09121111134", "stage": "پیگیری", "area": "ونک", "intent": "خرید", "type": "دفتر کار", "budget": "۱۸ میلیارد", "size": 90, "rooms": "۳ اتاق", "floor": 2, "year": 1390, "source": "divar", "tags": ["اداری"], "score": 69, "assignee": "علی محمدی"},
     {"name": "الناز سلطانی", "phone": "09121111112", "stage": "پیگیری", "area": "کامرانیه", "intent": "خرید", "type": "ویلا", "budget": "۹۰ میلیارد", "size": 600, "rooms": "۶ خواب", "floor": 0, "year": 1395, "source": "whatsapp", "tags": ["استخر"], "score": 87, "assignee": "مریم احمدی"},
     {"name": "مهدی موسوی", "phone": "09121111113", "stage": "پیگیری", "area": "اقدسیه", "intent": "خرید", "type": "زمین", "budget": "۲۰ میلیارد", "size": 500, "rooms": "—", "floor": 0, "year": 0, "source": "divar", "tags": ["زمین"], "score": 70, "assignee": "حسین رضایی"},
     {"name": "زهرا نجفی", "phone": "09121111114", "stage": "پیگیری", "area": "یوسف‌آباد", "intent": "اجاره", "type": "آپارتمان", "budget": "۳۵ میلیون", "size": 95, "rooms": "۲ خواب", "floor": 1, "year": 1385, "source": "whatsapp", "tags": ["قدیمی"], "score": 48, "assignee": "علی محمدی"},
@@ -398,15 +402,9 @@ def _ensure_channels(db, org):
                     )
                 )
 
-        for Model, attr in (
-            (WaAuthState, "account_id"),
-            (DivarAuthState, "account_id"),
-            (BaleAuthState, "account_id"),
-            (ConnectorSession, "account_id"),
-        ):
-            stale = db.query(Model).filter(getattr(Model, attr) == acc.id).first()
-            if stale:
-                db.delete(stale)
+        # Drop live connector worker sessions only — keep demo auth snapshots.
+        for sess in db.query(ConnectorSession).filter(ConnectorSession.account_id == acc.id).all():
+            db.delete(sess)
         accounts.append(acc)
     return accounts
 
@@ -425,10 +423,7 @@ def _lead_external_id(row: dict) -> str | None:
 
 
 def _ensure_leads(db, org, accounts, users):
-    existing_count = db.query(Lead).filter(Lead.org_id == org.id).count()
-    if existing_count >= len(LEADS):
-        return db.query(Lead).filter(Lead.org_id == org.id).all()
-
+    """Create any missing showcase leads (bulk campaign leads must not block this)."""
     wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
     divar_accounts = [a for a in accounts if a.channel == ChannelType.divar]
     bale_accounts = [a for a in accounts if a.channel == ChannelType.bale]
@@ -442,6 +437,16 @@ def _ensure_leads(db, org, accounts, users):
             .first()
         )
         if lead:
+            changed = False
+            if (lead.source_channel or "") != row["source"]:
+                lead.source_channel = row["source"]
+                changed = True
+            ext = _lead_external_id(row)
+            if ext and (lead.external_chat_id or "") != ext:
+                lead.external_chat_id = ext
+                changed = True
+            if changed:
+                db.add(lead)
             leads.append(lead)
             continue
 
@@ -689,11 +694,34 @@ def _seed_campaign_mini_thread(
     return added
 
 
+def _thread_has_empty_bodies(db, lead_id: str) -> bool:
+    msgs = (
+        db.query(Message)
+        .filter(Message.lead_id == lead_id, Message.wa_message_id.like("demo-chat-%"))
+        .all()
+    )
+    if not msgs:
+        return True
+    return any(not (m.body or "").strip() for m in msgs)
+
+
+def _pick_account_for_source(source: str, accounts, *, idx: int = 0):
+    wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
+    divar_accounts = [a for a in accounts if a.channel == ChannelType.divar]
+    bale_accounts = [a for a in accounts if a.channel == ChannelType.bale]
+    src = (source or "whatsapp").strip().lower()
+    if src == "divar" and divar_accounts:
+        return divar_accounts[0]
+    if src == "bale" and bale_accounts:
+        return bale_accounts[0]
+    if wa_accounts:
+        return wa_accounts[idx % len(wa_accounts)]
+    return accounts[0] if accounts else None
+
+
 def _backfill_campaign_inbox_threads(db, org, accounts, *, force: bool = False) -> int:
     """Give bulk campaign leads multi-message threads (inbox preview ≠ single line)."""
-    wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
-    channel = wa_accounts[0] if wa_accounts else (accounts[0] if accounts else None)
-    if channel is None:
+    if not accounts:
         return 0
 
     showcase = _showcase_phone_set()
@@ -718,6 +746,10 @@ def _backfill_campaign_inbox_threads(db, org, accounts, *, force: bool = False) 
             db.query(Message).filter(
                 Message.lead_id == lead.id, Message.wa_message_id.like(f"{prefix}%")
             ).delete(synchronize_session=False)
+
+        channel = _pick_account_for_source(lead.source_channel or "whatsapp", accounts)
+        if channel is None:
+            continue
 
         rng = random.Random(f"camp-opener-{lead.id}")
         opener = rng.choice(_CAMPAIGN_REPLY_OPENERS)
@@ -746,10 +778,6 @@ def _clear_demo_thread(db, org, lead_id: str) -> None:
 
 def _ensure_conversations(db, org, accounts, users, leads, *, force: bool = False):
     """Seed natural Farsi real-estate threads for the showcase inbox."""
-    wa_accounts = [a for a in accounts if a.channel == ChannelType.whatsapp]
-    divar_accounts = [a for a in accounts if a.channel == ChannelType.divar]
-    bale_accounts = [a for a in accounts if a.channel == ChannelType.bale]
-
     operator_names = ["علی محمدی", "مریم احمدی", "حسین رضایی", "مهندس لطفی"]
     operator_users = [users.get(name) for name in operator_names if users.get(name)]
 
@@ -759,24 +787,22 @@ def _ensure_conversations(db, org, accounts, users, leads, *, force: bool = Fals
     seeded = 0
     for idx, lead in enumerate(leads):
         demo_msgs = _demo_chat_count(db, lead.id)
-        if not force and demo_msgs >= _MIN_DEMO_CHAT_MESSAGES:
+        needs_refresh = force or demo_msgs < _MIN_DEMO_CHAT_MESSAGES or _thread_has_empty_bodies(
+            db, lead.id
+        )
+        if not needs_refresh:
             continue
 
         row = _row_for_lead(lead, idx)
-        source = row.get("source") or lead.source_channel or "whatsapp"
+        # Prefer CRM channel over row fallback so Divar/Bale stay on the right account.
+        source = (lead.source_channel or row.get("source") or "whatsapp").strip().lower()
+        row["source"] = source
 
-        if source == "whatsapp" and wa_accounts:
-            account = wa_accounts[idx % len(wa_accounts)]
-        elif source == "divar" and divar_accounts:
-            account = divar_accounts[0]
-        elif source == "bale" and bale_accounts:
-            account = bale_accounts[0]
-        else:
-            account = wa_accounts[0] if wa_accounts else (accounts[0] if accounts else None)
+        account = _pick_account_for_source(source, accounts, idx=idx)
         if account is None:
             continue
 
-        if force or demo_msgs > 0:
+        if force or demo_msgs > 0 or _thread_has_empty_bodies(db, lead.id):
             _clear_demo_thread(db, org, lead.id)
 
         if account:
@@ -798,8 +824,13 @@ def _ensure_conversations(db, org, accounts, users, leads, *, force: bool = Fals
                     chat_name=row["name"],
                     external_chat_id=ext,
                 ))
+            elif ext and not (link.external_chat_id or "").strip():
+                link.external_chat_id = ext
+                db.add(link)
 
         script = build_conversation(row)
+        if not script:
+            continue
         rng = random.Random(f"paramis-chat-{lead.phone}-{idx}")
         days_ago = rng.randint(0, 12)
         last_message_at = _utc_naive(lead.last_message_at) or (
@@ -811,7 +842,7 @@ def _ensure_conversations(db, org, accounts, users, leads, *, force: bool = Fals
 
         for j, turn in enumerate(script):
             kind = turn[0]
-            body = turn[1]
+            body = (turn[1] or "").strip() or "سلام، پیام دمو"
             media_type = (turn[2] if len(turn) > 2 else "text") or "text"
             if j == 0:
                 ts = base_time
@@ -865,6 +896,7 @@ def _ensure_conversations(db, org, accounts, users, leads, *, force: bool = Fals
                         "confidence": round(0.78 + (lead.lead_score or 70) / 1000, 2),
                         "intent": intent,
                         "source": "seed-demo-natural",
+                        "channel": source,
                     },
                     created_at=ts,
                 ))
@@ -1451,9 +1483,22 @@ def seed():
             Lead.org_id == org.id,
             Lead.phone.in_(list(showcase_phones)),
         ).all()
-        inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads)
+        # Rebuild any showcase thread that is missing or has blank bodies (all channels).
+        force_inbox = any(_thread_has_empty_bodies(db, lead.id) for lead in all_leads)
+        inbox_seeded = _ensure_conversations(
+            db, org, accounts, users, all_leads, force=force_inbox
+        )
         if inbox_seeded:
             print(f"inbox: seeded {inbox_seeded} showcase conversation(s)")
+        by_ch: dict[str, int] = {"whatsapp": 0, "divar": 0, "bale": 0}
+        for lead in all_leads:
+            ch = (lead.source_channel or "whatsapp").lower()
+            if ch in by_ch and _demo_chat_count(db, lead.id) > 0:
+                by_ch[ch] += 1
+        print(
+            "inbox channels: "
+            + ", ".join(f"{k}={v}" for k, v in by_ch.items())
+        )
         camp_threads = _backfill_campaign_inbox_threads(db, org, accounts)
         if camp_threads:
             print(f"inbox: upgraded {camp_threads} campaign thread(s)")
@@ -1484,6 +1529,8 @@ def gen_conversations_cli(*, replace: bool = False):
         org = _ensure_org(db, owner)
         users = _ensure_operators(db, org)
         accounts = _ensure_channels(db, org)
+        # Always create any missing showcase leads (incl. new Divar/Bale rows)
+        _ensure_leads(db, org, accounts, users)
         # Prefer new 09… phones; also match legacy 98… rows
         alias_to_row: dict[str, dict] = {}
         for row in LEADS:
@@ -1494,14 +1541,6 @@ def gen_conversations_cli(*, replace: bool = False):
             .filter(Lead.org_id == org.id, Lead.phone.in_(list(alias_to_row.keys())))
             .all()
         )
-        if not all_leads:
-            # Create missing showcase leads then reload
-            _ensure_leads(db, org, accounts, users)
-            all_leads = (
-                db.query(Lead)
-                .filter(Lead.org_id == org.id, Lead.phone.in_(list(alias_to_row.keys())))
-                .all()
-            )
         if replace:
             for lead in all_leads:
                 row = alias_to_row.get(lead.phone or "")
@@ -1515,7 +1554,8 @@ def gen_conversations_cli(*, replace: bool = False):
                 lead.tags = row["tags"]
                 db.add(lead)
             db.flush()
-        inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads, force=replace)
+        force = replace or any(_thread_has_empty_bodies(db, lead.id) for lead in all_leads)
+        inbox_seeded = _ensure_conversations(db, org, accounts, users, all_leads, force=force)
         _ensure_tasks(db, org, all_leads, users)
         camp_threads = _backfill_campaign_inbox_threads(db, org, accounts, force=replace)
         db.commit()

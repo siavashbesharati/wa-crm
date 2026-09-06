@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Card";
@@ -228,6 +229,8 @@ function isRiskLead(lead: Thread["lead"]) {
 }
 
 export default function InboxPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [active, setActive] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -247,6 +250,7 @@ export default function InboxPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<number | null>(null);
   const lastTypingSent = useRef(0);
+  const openedFromQuery = useRef(false);
 
   async function load(opts?: { quiet?: boolean }) {
     if (!opts?.quiet) setLoading(true);
@@ -276,6 +280,19 @@ export default function InboxPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (loading || openedFromQuery.current) return;
+    const leadId = searchParams.get("lead");
+    if (!leadId) return;
+    const match = threads.find((t) => t.lead.id === leadId);
+    if (!match) return;
+    openedFromQuery.current = true;
+    void openThread(match).finally(() => {
+      router.replace("/inbox");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, threads, searchParams]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -522,15 +539,27 @@ export default function InboxPage() {
     <Shell
       title="اینباکس"
       sub="گفتگوهای واتساپ، دیوار و بله در یک جا"
-      search={q}
-      onSearch={setQ}
       hideTabBar={!!active}
+      fullBleed
+      hideTopBar
     >
       {loading ? (
         <PageLoading variant="list" />
       ) : (
         <div className={`chat-app${active ? " chat-thread-open" : ""}`}>
           <aside className="chat-list" aria-label="لیست گفتگوها">
+            <div className="chat-list-head">
+              <h1 className="chat-list-title">گفتگوها</h1>
+              <input
+                className="chat-list-search"
+                type="search"
+                enterKeyHint="search"
+                placeholder="جستجو…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                aria-label="جستجوی گفتگو"
+              />
+            </div>
             <div className="chat-list-filters" role="tablist" aria-label="فیلتر کانال">
               {(
                 [

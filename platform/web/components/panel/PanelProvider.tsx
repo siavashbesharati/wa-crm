@@ -14,7 +14,6 @@ import { usePathname, useRouter } from "next/navigation";
 import ShellChrome from "@/components/ShellChrome";
 import { PageLoading } from "@/components/ui/Spinner";
 import { ChannelHealthWatch } from "@/components/channels/ChannelHealthWatch";
-import { AghaPashmakFloat } from "@/components/AghaPashmakFloat";
 
 export type PanelMeta = {
   title: string;
@@ -23,6 +22,10 @@ export type PanelMeta = {
   search?: string;
   onSearch?: (v: string) => void;
   hideTabBar?: boolean;
+  /** Edge-to-edge main (e.g. WhatsApp-style inbox). */
+  fullBleed?: boolean;
+  /** Hide the shell topbar (page provides its own chrome). */
+  hideTopBar?: boolean;
 };
 
 type PanelContextValue = {
@@ -74,12 +77,12 @@ export function PanelProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const onPanel = isPanelPath(pathname);
-  const onOnboarding =
-    pathname === "/onboarding" || pathname.startsWith("/onboarding/");
   const [meta, setMetaState] = useState<PanelMeta>({
     title: "پنل",
     sub: "",
-    hideTabBar: false
+    hideTabBar: false,
+    fullBleed: false,
+    hideTopBar: false
   });
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
@@ -90,7 +93,9 @@ export function PanelProvider({ children }: { children: ReactNode }) {
         prev.sub === next.sub &&
         prev.search === next.search &&
         prev.onSearch === next.onSearch &&
-        prev.hideTabBar === next.hideTabBar
+        prev.hideTabBar === next.hideTabBar &&
+        prev.fullBleed === next.fullBleed &&
+        prev.hideTopBar === next.hideTopBar
       ) {
         // Avoid re-render loops from inline `actions={<.../>}` on every page render.
         return prev;
@@ -155,12 +160,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
   );
 
   if (!onPanel) {
-    return (
-      <>
-        {children}
-        {onOnboarding ? <AghaPashmakFloat /> : null}
-      </>
-    );
+    return <>{children}</>;
   }
 
   const showNavShimmer = !!pendingHref && pendingHref !== pathname;
@@ -175,10 +175,11 @@ export function PanelProvider({ children }: { children: ReactNode }) {
         onSearch={meta.onSearch}
         onNavigate={beginNav}
         hideTabBar={!!meta.hideTabBar}
+        fullBleed={!!meta.fullBleed}
+        hideTopBar={!!meta.hideTopBar}
       >
         {showNavShimmer ? <PageLoading /> : children}
       </ShellChrome>
-      <AghaPashmakFloat />
       <ChannelHealthWatch />
     </PanelContext.Provider>
   );
@@ -192,5 +193,14 @@ export function usePanelPage(meta: PanelMeta) {
     ctx.setMeta(meta);
     // actions omitted on purpose — often an inline element; title/sub/search drive updates
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx, meta.title, meta.sub, meta.search, meta.onSearch, meta.hideTabBar]);
+  }, [
+    ctx,
+    meta.title,
+    meta.sub,
+    meta.search,
+    meta.onSearch,
+    meta.hideTabBar,
+    meta.fullBleed,
+    meta.hideTopBar
+  ]);
 }

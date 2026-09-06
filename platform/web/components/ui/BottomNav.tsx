@@ -24,7 +24,7 @@ import {
 export const PRIMARY_TABS = [
   { href: "/inbox", label: "اینباکس", Icon: IconInbox },
   { href: "/leads", label: "مخاطبین", Icon: IconPeople },
-  { href: "/tasks", label: "وظایف", Icon: IconTasks },
+  { href: "/tasks/list", label: "وظایف", Icon: IconTasks },
   { href: "/home", label: "میز کار", Icon: IconHome }
 ] as const;
 
@@ -43,6 +43,9 @@ export const MORE_LINKS = [
 
 function isActive(pathname: string, href: string) {
   if (href === "/home") return pathname === "/home" || pathname === "/";
+  if (href === "/tasks/list" || href === "/tasks") {
+    return pathname === "/tasks" || pathname.startsWith("/tasks/");
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

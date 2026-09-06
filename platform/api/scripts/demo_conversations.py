@@ -360,7 +360,7 @@ def script_closed_rent(row: dict[str, Any]) -> Script:
 
 def script_divar_inquiry(row: dict[str, Any]) -> Script:
     return [
-        ("customer", "سلام از دیوار پیام می‌دم"),
+        ("customer", "سلام، از دیوار پیام می‌دم"),
         ("customer", "آگهی {type} {area} هنوز هست؟"),
         (
             "ai",
@@ -382,7 +382,7 @@ def script_divar_inquiry(row: dict[str, Any]) -> Script:
 
 def script_bale_inquiry(row: dict[str, Any]) -> Script:
     return [
-        ("customer", "سلام از بله"),
+        ("customer", "سلام، از بله پیام می‌دم"),
         ("customer", "برای {intent} تو {area} راهنمایی می‌کنید؟"),
         (
             "ai",
@@ -409,38 +409,162 @@ def script_bale_inquiry(row: dict[str, Any]) -> Script:
     ]
 
 
+def script_divar_followup(row: dict[str, Any]) -> Script:
+    return [
+        ("customer", "سلام دوباره از دیوار"),
+        ("customer", "آگهی {type} {area} رو هنوز نگه داشتید؟"),
+        (
+            "ai",
+            "سلام {address} 🙏 بله هنوز موجوده. "
+            "سند و قیمت حدود {budget} هست؛ خلاصه مشخصات رو می‌فرستم.",
+        ),
+        ("ai", "خلاصه آگهی دیوار", "document"),
+        *_files_photos("عکس‌های آگهی"),
+        ("customer", "می‌تونم بازدید بذارم؟"),
+        ("ai", "حتماً. یه لحظه همکارم زمان قطعی رو هماهنگ می‌کنه."),
+        (
+            "agent",
+            "سلام {address}، مریم از پارامیس. فردا ساعت ۱۶ بازدید {area} قطعی شد.",
+        ),
+        ("customer", "اوکی ممنون"),
+    ]
+
+
+def script_bale_followup(row: dict[str, Any]) -> Script:
+    return [
+        ("customer", "سلام از بله"),
+        ("customer", "اون فایل {size} متری {area} رو دوباره چک کردم"),
+        (
+            "ai",
+            "سلام {address} 🙏 خوشحالم که پیگیری کردید. "
+            "سند تک‌برگه و با بودجه {budget} جور درمیاد.",
+        ),
+        ("customer", "وام هم میشه؟"),
+        (
+            "ai",
+            "بله {address}، قابل انجامه. یه فایل راهنمای مدارک هم براتون می‌فرستم.",
+        ),
+        ("ai", "راهنمای مدارک وام", "document"),
+        ("customer", "پنجشنبه عصر آزادم"),
+        ("ai", "عالی. همکارم زمان بازدید رو قفل می‌کنه."),
+        (
+            "agent",
+            "سلام {address}، حسین از پارامیس. پنجشنبه ۱۷ بازدید {area} قطعی شد.",
+        ),
+        ("customer", "باشه ممنون"),
+    ]
+
+
+def script_divar_closed(row: dict[str, Any]) -> Script:
+    return [
+        ("customer", "سلام از دیوار، قولنامه اوکی شد؟"),
+        (
+            "ai",
+            "سلام {address} 🌷 بله، از مسیر دیوار همه‌چیز نهایی شد. "
+            "رسید معامله رو براتون می‌فرستم.",
+        ),
+        ("ai", "رسید معامله", "document"),
+        ("customer", "مرسی از پیگیری"),
+        ("ai", "خواهش می‌کنم {address}. موفق باشید 🌿"),
+    ]
+
+
+def script_bale_closed(row: dict[str, Any]) -> Script:
+    return [
+        ("customer", "سلام از بله، قرارداد نهایی شد؟"),
+        (
+            "ai",
+            "سلام {address} 🌷 بله از بله هم همه‌چیز ثبت شد. "
+            "نسخه قرارداد رو براتون می‌فرستم.",
+        ),
+        ("ai", "نسخه قرارداد", "document"),
+        ("customer", "عالیه ممنون"),
+        ("ai", "خواهش می‌کنم {address}. هر سوالی بود همین‌جا درخدمتم."),
+    ]
+
+
+def _stage_script(row: dict[str, Any]) -> Script:
+    stage = (row.get("stage") or "جدید").strip()
+    intent = (row.get("intent") or "خرید").strip()
+    is_rent = intent == "اجاره"
+
+    if stage == "جدید":
+        return script_new_rent(row) if is_rent else script_new_buy(row)
+    if stage == "پیگیری":
+        return script_followup_rent(row) if is_rent else script_followup_buy(row)
+    if stage == "پیشنهاد":
+        tags = set(row.get("tags") or [])
+        if "لوکس" in tags or "برند" in tags or row.get("type") in ("پنت‌هاوس", "ویلا", "باغ ویلا"):
+            return script_proposal_luxury(row)
+        return script_proposal_viewing(row)
+    if stage == "خرید":
+        return script_rent_negotiation(row) if is_rent else script_buy_negotiation(row)
+    if stage == "بسته":
+        return script_closed_rent(row) if is_rent else script_closed_buy(row)
+    return script_new_buy(row)
+
+
+def _channel_opener(source: str) -> ScriptTurn | None:
+    if source == "divar":
+        return ("customer", "سلام، از دیوار پیام می‌دم")
+    if source == "bale":
+        return ("customer", "سلام، از بله پیام می‌دم")
+    return None
+
+
+def _ensure_channel_voice(raw: Script, source: str) -> Script:
+    """Guarantee Divar/Bale threads open with a clear channel identity + real text."""
+    opener = _channel_opener(source)
+    if not opener:
+        return raw
+    marker = "دیوار" if source == "divar" else "بله"
+    first_body = raw[0][1] if raw else ""
+    if marker in first_body:
+        return raw
+    return [opener, *raw]
+
+
 def build_conversation(row: dict[str, Any]) -> Script:
     """Pick a natural script matching stage / intent / channel."""
     stage = (row.get("stage") or "جدید").strip()
-    intent = (row.get("intent") or "خرید").strip()
     source = (row.get("source") or "whatsapp").strip().lower()
-    is_rent = intent == "اجاره"
 
-    if source == "divar" and stage == "جدید":
-        raw = script_divar_inquiry(row)
-    elif source == "bale" and stage in ("جدید", "پیگیری"):
-        raw = script_bale_inquiry(row)
-    elif stage == "جدید":
-        raw = script_new_rent(row) if is_rent else script_new_buy(row)
-    elif stage == "پیگیری":
-        raw = script_followup_rent(row) if is_rent else script_followup_buy(row)
-    elif stage == "پیشنهاد":
-        tags = set(row.get("tags") or [])
-        if "لوکس" in tags or "برند" in tags or row.get("type") in ("پنت‌هاوس", "ویلا", "باغ ویلا"):
-            raw = script_proposal_luxury(row)
+    if source == "divar":
+        if stage == "جدید":
+            raw = script_divar_inquiry(row)
+        elif stage == "پیگیری":
+            raw = script_divar_followup(row)
+        elif stage == "بسته":
+            raw = script_divar_closed(row)
         else:
-            raw = script_proposal_viewing(row)
-    elif stage == "خرید":
-        raw = script_rent_negotiation(row) if is_rent else script_buy_negotiation(row)
-    elif stage == "بسته":
-        raw = script_closed_rent(row) if is_rent else script_closed_buy(row)
+            raw = _ensure_channel_voice(_stage_script(row), "divar")
+    elif source == "bale":
+        if stage in ("جدید",):
+            raw = script_bale_inquiry(row)
+        elif stage == "پیگیری":
+            raw = script_bale_followup(row)
+        elif stage == "بسته":
+            raw = script_bale_closed(row)
+        else:
+            raw = _ensure_channel_voice(_stage_script(row), "bale")
     else:
-        raw = script_new_buy(row)
+        raw = _stage_script(row)
 
     out: Script = []
     for turn in raw:
         role = turn[0]
-        body = _fmt(turn[1], row)
+        body = (_fmt(turn[1], row) or "").strip()
         media = turn[2] if len(turn) > 2 else "text"
+        if not body:
+            # Never seed blank bubbles — keep a readable Persian fallback.
+            if media and media != "text":
+                body = {
+                    "image": "تصویر ملک",
+                    "document": "فایل مشخصات",
+                    "video": "ویدیو ملک",
+                    "audio": "پیام صوتی",
+                }.get(media, "پیوست")
+            else:
+                body = "سلام، پیام دمو"
         out.append((role, body, media))
     return out

@@ -61,6 +61,7 @@ export default function TasksBoardPage() {
   const router = useRouter();
   const leadFilter = searchParams.get("lead") || "";
   const tagFromUrl = searchParams.get("tag") || "";
+  const preferBoard = searchParams.get("layout") === "board";
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -78,6 +79,18 @@ export default function TasksBoardPage() {
   const dragMovedRef = useRef(false);
   const { busy, run } = useMutation();
   const toast = useToast();
+
+  // Mobile default: list view (kanban stays available via toggle with ?layout=board)
+  useEffect(() => {
+    if (preferBoard) return;
+    const mq = window.matchMedia("(max-width: 960px)");
+    if (!mq.matches) return;
+    const params = new URLSearchParams();
+    if (leadFilter) params.set("lead", leadFilter);
+    if (tagFromUrl) params.set("tag", tagFromUrl);
+    const qs = params.toString();
+    router.replace(`/tasks/list${qs ? `?${qs}` : ""}`);
+  }, [preferBoard, leadFilter, tagFromUrl, router]);
 
   const load = useCallback(async () => {
     setLoading(true);

@@ -16,7 +16,9 @@ export default function Shell({
   actions,
   search,
   onSearch,
-  hideTabBar = false
+  hideTabBar = false,
+  fullBleed = false,
+  hideTopBar = false
 }: {
   title: string;
   sub: string;
@@ -25,9 +27,11 @@ export default function Shell({
   search?: string;
   onSearch?: (v: string) => void;
   hideTabBar?: boolean;
+  fullBleed?: boolean;
+  hideTopBar?: boolean;
 }) {
   const panel = usePanelOptional();
-  usePanelPage({ title, sub, actions, search, onSearch, hideTabBar });
+  usePanelPage({ title, sub, actions, search, onSearch, hideTabBar, fullBleed, hideTopBar });
 
   if (panel) {
     return <>{children}</>;
@@ -41,6 +45,8 @@ export default function Shell({
       search={search}
       onSearch={onSearch}
       hideTabBar={hideTabBar}
+      fullBleed={fullBleed}
+      hideTopBar={hideTopBar}
     >
       {children}
     </ShellChrome>

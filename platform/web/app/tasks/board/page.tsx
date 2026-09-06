@@ -9,7 +9,20 @@ export default function TasksBoardRedirect() {
 
   useEffect(() => {
     const lead = searchParams.get("lead");
-    router.replace(lead ? `/tasks?lead=${encodeURIComponent(lead)}` : "/tasks");
+    const tag = searchParams.get("tag");
+    const params = new URLSearchParams();
+    if (lead) params.set("lead", lead);
+    if (tag) params.set("tag", tag);
+    // Prefer list on mobile entry via /tasks/board redirect; keep board opt-in
+    const mobile = window.matchMedia("(max-width: 960px)").matches;
+    if (mobile) {
+      const qs = params.toString();
+      router.replace(`/tasks/list${qs ? `?${qs}` : ""}`);
+      return;
+    }
+    params.set("layout", "board");
+    const qs = params.toString();
+    router.replace(`/tasks?${qs}`);
   }, [router, searchParams]);
 
   return null;

@@ -47,7 +47,8 @@ function LeadDetailView({
   onApplyStage,
   applyingStage,
   onResumeBot,
-  resumingBot
+  resumingBot,
+  onEdit
 }: {
   lead: Lead;
   assignee: Member | undefined;
@@ -55,6 +56,7 @@ function LeadDetailView({
   applyingStage?: boolean;
   onResumeBot?: () => void;
   resumingBot?: boolean;
+  onEdit?: () => void;
 }) {
   const phone = leadPhone(lead);
   const contactId = leadContactId(lead);
@@ -93,88 +95,106 @@ function LeadDetailView({
     .filter(Boolean)
     .join("\n");
 
+  const identityValue = isGroup ? lead.group_id || "—" : contactId || "—";
+
   return (
     <div className="lead-modal-view">
-      <div className="lead-modal-hero">
+      <header className="lead-modal-hero">
         <div className="lead-modal-avatar" aria-hidden>
           {initials(leadDisplayName(lead))}
         </div>
         <div className="lead-modal-hero-copy">
           <h3 className="lead-modal-name">{leadDisplayName(lead)}</h3>
           <div className="lead-modal-badges">
-            <Badge tone="accent">{isGroup ? "گروه" : "مخاطب"}</Badge>
             <span className="lead-stage-pill">
               <span className={`stage-dot ${STAGE_DOT[lead.stage] || "new"}`} />
-              {lead.stage}
+              {lead.stage || "—"}
             </span>
-            <Badge tone={lead.bot_paused ? "danger" : "accent"}>
-              {lead.bot_paused ? "ربات متوقف" : "ربات فعال"}
+            {lead.source_channel ? <ChannelBadge channel={lead.source_channel} /> : null}
+            <Badge tone={isGroup ? "accent" : "default"}>
+              {isGroup ? "گروه" : "مخاطب"}
             </Badge>
-            {lead.bot_paused && onResumeBot ? (
-              <Button type="button" size="sm" loading={resumingBot} onClick={onResumeBot}>
-                شروع دوباره ربات
-              </Button>
-            ) : null}
-            {risk ? <Badge tone="danger">ریسک / نیاز به کارشناس</Badge> : null}
+            {risk ? <Badge tone="danger">نیاز به کارشناس</Badge> : null}
           </div>
         </div>
+      </header>
+
+      <div className="lead-modal-actions" role="group" aria-label="اقدامات سریع">
+        <Link className="btn secondary sm" href={`/inbox?lead=${encodeURIComponent(lead.id)}`}>
+          گفتگو
+        </Link>
+        {onEdit ? (
+          <Button type="button" size="sm" variant="secondary" onClick={onEdit}>
+            ویرایش
+          </Button>
+        ) : null}
+        <Link className="btn secondary sm" href={tasksBoardHref(lead.id)}>
+          وظایف
+        </Link>
+        {lead.bot_paused && onResumeBot ? (
+          <Button type="button" size="sm" loading={resumingBot} onClick={onResumeBot}>
+            شروع ربات
+          </Button>
+        ) : null}
       </div>
 
-      <div className="lead-info-tiles">
-        <div className="lead-info-tile">
-          <span className="lead-info-tile-label">تلفن</span>
-          <LtrText className="lead-info-tile-value ltr-block">
-            {phone || "—"}
-          </LtrText>
-        </div>
-        <div className="lead-info-tile">
-          <span className="lead-info-tile-label">شناسه مخاطب</span>
-          <LtrText className="lead-info-tile-value ltr-block">
-            {isGroup ? lead.group_id || "—" : contactId || "—"}
-          </LtrText>
-        </div>
-        <div className="lead-info-tile">
-          <span className="lead-info-tile-label">کانال</span>
-          <span className="lead-info-tile-value">
-            {lead.source_channel ? <ChannelBadge channel={lead.source_channel} /> : "—"}
-          </span>
-        </div>
-        <div className="lead-info-tile">
-          <span className="lead-info-tile-label">ارجاع</span>
-          <span className="lead-info-tile-value">
-            {assignee ? memberLabel(assignee) : "بدون ارجاع"}
-          </span>
-        </div>
-        <div className="lead-info-tile">
-          <span className="lead-info-tile-label">امتیاز AI</span>
-          <span className="lead-info-tile-value">{Math.round(score)}</span>
-        </div>
-        <div className="lead-info-tile">
-          <span className="lead-info-tile-label">قصد خرید</span>
-          <span className="lead-info-tile-value">
-            {buyingIntent != null ? `${Math.round(buyingIntent)}٪` : "—"}
-          </span>
-        </div>
-      </div>
+      <section className="lead-modal-section" aria-label="اطلاعات تماس">
+        <span className="lead-modal-section-label">اطلاعات</span>
+        <dl className="lead-fact-list">
+          <div className="lead-fact">
+            <dt>تلفن</dt>
+            <dd>
+              <LtrText className="lead-fact-ltr">{phone || "—"}</LtrText>
+            </dd>
+          </div>
+          <div className="lead-fact">
+            <dt>{isGroup ? "شناسه گروه" : "شناسه مخاطب"}</dt>
+            <dd>
+              <LtrText className="lead-fact-ltr">{identityValue}</LtrText>
+            </dd>
+          </div>
+          <div className="lead-fact">
+            <dt>ارجاع</dt>
+            <dd>{assignee ? memberLabel(assignee) : "بدون ارجاع"}</dd>
+          </div>
+          <div className="lead-fact">
+            <dt>ربات</dt>
+            <dd className={lead.bot_paused ? "lead-fact-warn" : undefined}>
+              {lead.bot_paused ? "متوقف" : "فعال"}
+            </dd>
+          </div>
+          <div className="lead-fact">
+            <dt>امتیاز AI</dt>
+            <dd>{Math.round(score) || "—"}</dd>
+          </div>
+          <div className="lead-fact">
+            <dt>قصد خرید</dt>
+            <dd>{buyingIntent != null ? `${Math.round(buyingIntent)}٪` : "—"}</dd>
+          </div>
+        </dl>
+      </section>
 
-      {(memorySummary || buyingIntent != null || followPlan?.status) && (
-        <div className="lead-modal-section lead-memory-card">
-          <span className="lead-modal-section-label">حافظه AI</span>
-          <div className="lead-memory-body">
+      {(memorySummary || sentiment || suggested || followPlan?.status) && (
+        <section className="lead-modal-section" aria-label="بینش هوش مصنوعی">
+          <span className="lead-modal-section-label">بینش AI</span>
+          <div className="lead-insight-card">
             {memorySummary ? (
               <p className="lead-memory-summary">{memorySummary}</p>
-            ) : (
-              <p className="lead-memory-summary hint">هنوز خلاصه‌ای ثبت نشده.</p>
-            )}
+            ) : null}
             <div className="lead-memory-meta">
+              {sentiment ? (
+                <Badge tone={sentiment === "negative" ? "danger" : "accent"}>
+                  {SENTIMENT_LABELS_FA[sentiment] || sentiment}
+                </Badge>
+              ) : null}
               {buyingIntent != null ? (
                 <Badge tone={buyingIntent >= 70 ? "accent" : "default"}>
                   قصد خرید {Math.round(buyingIntent)}٪
                 </Badge>
               ) : null}
               {followPlan?.status ? (
-                <Badge tone="accent">
-                  پیگیری خودکار:{" "}
+                <Badge tone="default">
+                  پیگیری:{" "}
                   {followPlan.status === "scheduled"
                     ? "زمان‌بندی‌شده"
                     : followPlan.status === "sent"
@@ -184,73 +204,65 @@ function LeadDetailView({
                         : followPlan.status}
                 </Badge>
               ) : null}
+              {suggested && suggested !== lead.stage ? (
+                <>
+                  <Badge tone="accent">پیشنهاد: {suggested}</Badge>
+                  {onApplyStage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      loading={applyingStage}
+                      onClick={() => onApplyStage(suggested)}
+                    >
+                      اعمال
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </div>
-        </div>
+        </section>
       )}
 
-      <div className="lead-modal-section lead-handoff-card">
-        <span className="lead-modal-section-label">بسته ارجاع به کارشناس</span>
-        <pre className="lead-handoff-pack">{handoffPack}</pre>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            void navigator.clipboard?.writeText(handoffPack);
-          }}
-        >
-          کپی برای کارشناس
-        </Button>
-      </div>
-
-      {sentiment || suggested ? (
-        <div className="lead-modal-section">
-          <span className="lead-modal-section-label">بینش هوش مصنوعی</span>
-          <div className="card-meta" style={{ gap: 8, alignItems: "center" }}>
-            {sentiment ? (
-              <Badge tone={sentiment === "negative" ? "danger" : "accent"}>
-                احساس: {SENTIMENT_LABELS_FA[sentiment] || sentiment}
-              </Badge>
-            ) : null}
-            {suggested && suggested !== lead.stage ? (
-              <>
-                <Badge tone="accent">پیشنهاد مرحله: {suggested}</Badge>
-                {onApplyStage ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    loading={applyingStage}
-                    onClick={() => onApplyStage(suggested)}
-                  >
-                    اعمال مرحله
-                  </Button>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
       {(lead.tags || []).length > 0 ? (
-        <div className="lead-modal-section">
+        <section className="lead-modal-section">
           <span className="lead-modal-section-label">برچسب‌ها</span>
-          <div className="card-meta">
+          <div className="lead-modal-badges">
             {(lead.tags || []).map((t) => (
               <Badge key={t} tone="accent">
                 {tagLabel(t)}
               </Badge>
             ))}
           </div>
-        </div>
+        </section>
       ) : null}
 
       {lead.notes ? (
-        <div className="lead-modal-section">
+        <section className="lead-modal-section">
           <span className="lead-modal-section-label">یادداشت</span>
           <div className="lead-modal-notes-box">{lead.notes}</div>
-        </div>
+        </section>
       ) : null}
+
+      <details className="lead-modal-section lead-handoff-details">
+        <summary className="lead-handoff-summary">
+          <span className="lead-modal-section-label">بسته ارجاع به کارشناس</span>
+          <span className="lead-handoff-hint">کپی برای تیم</span>
+        </summary>
+        <div className="lead-handoff-card">
+          <pre className="lead-handoff-pack">{handoffPack}</pre>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              void navigator.clipboard?.writeText(handoffPack);
+            }}
+          >
+            کپی برای کارشناس
+          </Button>
+        </div>
+      </details>
     </div>
   );
 }
@@ -345,19 +357,16 @@ function LeadTasksSection({
     <div className="lead-modal-section lead-tasks-block">
       <div className="lead-tasks-head">
         <span className="lead-modal-section-label">
-          وظایف این مخاطب
-          {openTasks.length > 0 ? ` (${openTasks.length} باز)` : ""}
+          وظایف
+          {openTasks.length > 0 ? ` · ${openTasks.length} باز` : ""}
         </span>
         <div className="lead-tasks-head-actions">
-          <Link className="btn secondary sm" href={tasksBoardHref(lead.id)}>
-            برد وظایف این مخاطب
-          </Link>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setShowComposer((v) => !v)}
           >
-            {showComposer ? "انصراف" : "وظیفه جدید"}
+            {showComposer ? "انصراف" : "جدید"}
           </Button>
         </div>
       </div>
@@ -563,13 +572,15 @@ export function LeadModal({
     <>
       <Modal
         open={open && !deleteOpen}
-        title={mode === "edit" ? `ویرایش: ${leadDisplayName(lead)}` : ""}
-        panelClassName={mode === "view" ? "lead-modal lead-modal-panel" : "lead-modal-panel"}
-        presentation="sheet"
+        title={mode === "edit" ? `ویرایش: ${leadDisplayName(lead)}` : leadDisplayName(lead)}
+        panelClassName={
+          mode === "view" ? "lead-modal lead-modal-panel" : "lead-modal-panel"
+        }
+        presentation="auto"
         onClose={closeAll}
         headerActions={
           mode === "view" ? (
-            <span className="lead-modal-header-tag">جزئیات لید</span>
+            <span className="lead-modal-header-tag">جزئیات</span>
           ) : null
         }
         footer={
@@ -587,7 +598,7 @@ export function LeadModal({
             </>
           ) : (
             <>
-              <Button onClick={() => setMode("edit")}>ویرایش لید</Button>
+              <Button onClick={() => setMode("edit")}>ویرایش</Button>
               <Button variant="secondary" onClick={closeAll}>
                 بستن
               </Button>
@@ -596,22 +607,27 @@ export function LeadModal({
         }
       >
         {mode === "view" ? (
-          <>
-            <LeadDetailView
-              lead={lead}
-              assignee={assignee}
-              onApplyStage={(stage) => void applySuggestedStage(stage)}
-              applyingStage={busy}
-              onResumeBot={() => void resumeBot()}
-              resumingBot={busy}
-            />
-            <LeadTasksSection
-              lead={lead}
-              members={members}
-              onChanged={onChanged}
-              startComposer={startWithTaskComposer}
-            />
-          </>
+          <div className="lead-modal-layout">
+            <div className="lead-modal-main">
+              <LeadDetailView
+                lead={lead}
+                assignee={assignee}
+                onApplyStage={(stage) => void applySuggestedStage(stage)}
+                applyingStage={busy}
+                onResumeBot={() => void resumeBot()}
+                resumingBot={busy}
+                onEdit={() => setMode("edit")}
+              />
+            </div>
+            <aside className="lead-modal-side">
+              <LeadTasksSection
+                lead={lead}
+                members={members}
+                onChanged={onChanged}
+                startComposer={startWithTaskComposer}
+              />
+            </aside>
+          </div>
         ) : editForm ? (
           <div className="form-grid lead-modal-form">
             <label>
@@ -723,7 +739,7 @@ export function LeadModal({
         open={deleteOpen}
         title="تأیید حذف لید"
         panelClassName="lead-modal-panel"
-        presentation="sheet"
+        presentation="auto"
         onClose={() => {
           setDeleteOpen(false);
           setDeleteConfirmName("");

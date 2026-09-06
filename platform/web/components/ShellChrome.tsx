@@ -73,7 +73,9 @@ export default function ShellChrome({
   search,
   onSearch,
   onNavigate,
-  hideTabBar = false
+  hideTabBar = false,
+  fullBleed = false,
+  hideTopBar = false
 }: {
   title: string;
   sub: string;
@@ -83,6 +85,8 @@ export default function ShellChrome({
   onSearch?: (v: string) => void;
   onNavigate?: (href: string) => void;
   hideTabBar?: boolean;
+  fullBleed?: boolean;
+  hideTopBar?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -185,11 +189,19 @@ export default function ShellChrome({
   }
 
   const tabHidden = hideTabBar;
+  const shellClass = [
+    "app-shell",
+    "has-tabbar",
+    collapsed ? "collapsed" : "",
+    tabHidden ? "tabbar-hidden" : "",
+    fullBleed ? "full-bleed" : "",
+    hideTopBar ? "topbar-hidden" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div
-      className={`app-shell has-tabbar ${collapsed ? "collapsed" : ""}${tabHidden ? " tabbar-hidden" : ""}`}
-    >
+    <div className={shellClass}>
       <aside className="sidebar desktop-sidebar">
         <div className="sidebar-top">
           <div className="brand-block">
@@ -267,25 +279,31 @@ export default function ShellChrome({
             </span>
           </div>
         )}
-        <header className="topbar">
-          <div className="topbar-titles">
-            <h1 className="page-title">{title}</h1>
-            {sub ? <p className="page-sub">{sub}</p> : null}
-          </div>
-          {onSearch && (
-            <input
-              className="top-search"
-              type="search"
-              enterKeyHint="search"
-              placeholder="جستجو…"
-              value={search || ""}
-              onChange={(e) => onSearch(e.target.value)}
-              aria-label="جستجو"
-            />
-          )}
-          {actions ? <div className="topbar-actions">{actions}</div> : null}
-        </header>
-        <main className={`main${tabHidden ? " main-no-tabbar" : ""}`}>{children}</main>
+        {!hideTopBar ? (
+          <header className="topbar">
+            <div className="topbar-titles">
+              <h1 className="page-title">{title}</h1>
+              {sub ? <p className="page-sub">{sub}</p> : null}
+            </div>
+            {onSearch && (
+              <input
+                className="top-search"
+                type="search"
+                enterKeyHint="search"
+                placeholder="جستجو…"
+                value={search || ""}
+                onChange={(e) => onSearch(e.target.value)}
+                aria-label="جستجو"
+              />
+            )}
+            {actions ? <div className="topbar-actions">{actions}</div> : null}
+          </header>
+        ) : null}
+        <main
+          className={`main${tabHidden ? " main-no-tabbar" : ""}${fullBleed ? " main-full-bleed" : ""}`}
+        >
+          {children}
+        </main>
       </div>
 
       <BottomNav

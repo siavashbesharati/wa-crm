@@ -192,6 +192,12 @@ export function tasksBoardHref(leadId?: string | null, tag?: string | null) {
   return `/tasks${tasksQuery({ leadId, tag })}`;
 }
 
+/** Board URL that opts out of the mobile→list default redirect. */
+export function tasksBoardHrefExplicit(leadId?: string | null, tag?: string | null) {
+  const base = tasksBoardHref(leadId, tag);
+  return base.includes("?") ? `${base}&layout=board` : `${base}?layout=board`;
+}
+
 export function tasksListHref(leadId?: string | null, tag?: string | null) {
   return `/tasks/list${tasksQuery({ leadId, tag })}`;
 }
@@ -233,7 +239,7 @@ export function TaskViewToggle({
       <Link href={tasksListHref(leadId, tag)} className={mode === "list" ? "active" : ""}>
         لیست
       </Link>
-      <Link href={tasksBoardHref(leadId, tag)} className={mode === "board" ? "active" : ""}>
+      <Link href={tasksBoardHrefExplicit(leadId, tag)} className={mode === "board" ? "active" : ""}>
         برد کانبان
       </Link>
     </div>

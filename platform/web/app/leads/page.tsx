@@ -370,13 +370,7 @@ export default function LeadsPage() {
     }
   }
 
-  async function mergeWaDuplicates() {
-    const ok = await run(
-      () => api<{ ok: boolean; merged: number }>("/leads/merge-wa-duplicates", { method: "POST" }),
-      { success: "ادغام تکراری‌ها انجام شد" }
-    );
-    if (ok) await load();
-  }
+ 
 
   const isEditing = !!editingLead;
   return (
@@ -396,8 +390,7 @@ export default function LeadsPage() {
               title: "فهرست لیدها",
               body: "همه سرنخ‌های مشترک تیم. روی نام کلیک کنید تا جزئیات باز شود.",
               tips: [
-                "فیلترها بالای جدول هستند — سرستون‌ها خلوت مانده‌اند.",
-                "«ادغام تکراری واتساپ» لیدهای LID و شماره را یکی می‌کند.",
+                "فیلترها بالای جدول هستند ",
                 "پاک‌سازی همه فقط برای مدیر/مالک است و برگشت‌پذیر نیست."
               ]
             }}
@@ -406,15 +399,7 @@ export default function LeadsPage() {
                 <Button size="sm" onClick={openCreate}>
                   افزودن لید
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={busy}
-                  disabled={leads.length === 0}
-                  onClick={() => void mergeWaDuplicates()}
-                >
-                  ادغام تکراری واتساپ
-                </Button>
+               
                 <Button
                   variant="danger"
                   size="sm"
@@ -812,7 +797,7 @@ export default function LeadsPage() {
             open={formOpen && !!editForm}
             title={isEditing ? `ویرایش: ${editingLead?.name}` : "افزودن لید"}
             onClose={closeForm}
-            presentation="sheet"
+            presentation="auto"
             footer={
               <>
                 <Button loading={busy} onClick={saveForm}>
@@ -938,7 +923,7 @@ export default function LeadsPage() {
             open={!!deleteTarget}
             title="تأیید حذف لید"
             onClose={closeDeleteConfirm}
-            presentation="sheet"
+            presentation="auto"
             footer={
               <>
                 <Button
