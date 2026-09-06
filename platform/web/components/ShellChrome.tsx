@@ -11,6 +11,7 @@ import {
   IconBilling,
   IconCampaigns,
   IconChannels,
+  IconClose,
   IconGroups,
   IconHome,
   IconInbox,
@@ -22,6 +23,8 @@ import {
   IconTasks,
   IconTeam
 } from "@/components/ui/Icons";
+
+const DEMO_BANNER_KEY = "demo_banner_dismissed";
 
 const NAV = [
   { href: "/home", label: "میز کار", Icon: IconHome },
@@ -102,6 +105,15 @@ export default function ShellChrome({
   const [daysRemaining, setDaysRemaining] = useState<number | null>(
     initial.daysRemaining
   );
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setDemoBannerDismissed(sessionStorage.getItem(DEMO_BANNER_KEY) === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     if (!getSession()) {
@@ -268,7 +280,7 @@ export default function ShellChrome({
       </aside>
 
       <div className="main-wrap">
-        {getSession()?.is_demo && (
+        {getSession()?.is_demo && !demoBannerDismissed ? (
           <div className="demo-banner" role="status">
             <span className="demo-banner-dot" aria-hidden />
             <span className="demo-banner-label">حساب دمو</span>
@@ -277,8 +289,23 @@ export default function ShellChrome({
               داده‌ها از پیش بارگذاری شده‌اند. برای استفادهٔ واقعی، از دکمهٔ خروج
               استفاده کنید.
             </span>
+            <button
+              type="button"
+              className="demo-banner-close"
+              aria-label="بستن هشدار دمو"
+              onClick={() => {
+                setDemoBannerDismissed(true);
+                try {
+                  sessionStorage.setItem(DEMO_BANNER_KEY, "1");
+                } catch {
+                  /* ignore */
+                }
+              }}
+            >
+              <IconClose size={16} />
+            </button>
           </div>
-        )}
+        ) : null}
         {!hideTopBar ? (
           <header className="topbar">
             <div className="topbar-titles">
