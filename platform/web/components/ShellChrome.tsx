@@ -34,7 +34,7 @@ const NAV = [
   { href: "/team", label: "تیم", Icon: IconTeam },
   { href: "/knowledge", label: "دانش AI", Icon: IconSpark },
   { href: "/ai-settings", label: "تنظیمات AI", Icon: IconSettings },
-  { href: "/ai-coach", label: "آقای میوژن", Icon: IconSpark },
+  { href: "/ai-coach", label: "مربی هوش مصنوعی", Icon: IconSpark },
   { href: "/kpi", label: "KPI / OKR", Icon: IconKpi },
   { href: "/support", label: "پشتیبانی", Icon: IconSupport }
 ];

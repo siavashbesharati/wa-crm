@@ -626,18 +626,31 @@ def put_pir_profile(
     return profile_to_dict(row)
 
 
+@router.get("/pir/threads")
+def get_pir_threads(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    from app.services.pir_kharabat import list_threads
+
+    return {"threads": list_threads(db, auth.org.id)}
+
+
 @router.get("/pir/messages")
-def get_pir_messages(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+def get_pir_messages(
+    thread_id: str | None = None,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
     from app.services.pir_kharabat import list_messages
 
-    rows = list_messages(db, auth.org.id)
+    rows = list_messages(db, auth.org.id, thread_id=thread_id)
     return {
+        "thread_id": (thread_id or auth.org.id).strip() or auth.org.id,
         "messages": [
             {
                 "id": m.id,
                 "role": m.role,
                 "body": m.body,
                 "created_at": m.created_at,
+                "thread_id": m.thread_id or "",
             }
             for m in rows
         ]
@@ -646,12 +659,13 @@ def get_pir_messages(auth: AuthContext = Depends(get_auth), db: Session = Depend
 
 @router.delete("/pir/messages")
 def delete_pir_messages(
+    thread_id: str | None = None,
     auth: AuthContext = Depends(require_roles(MemberRole.owner, MemberRole.admin, MemberRole.agent)),
     db: Session = Depends(get_db),
 ):
     from app.services.pir_kharabat import clear_messages
 
-    n = clear_messages(db, auth.org.id)
+    n = clear_messages(db, auth.org.id, thread_id=thread_id)
     db.commit()
     return {"ok": True, "deleted": n}
 
@@ -676,6 +690,7 @@ def pir_chat(
             profile=profile,
             user_id=auth.user.id,
             message=message,
+            thread_id=body.thread_id,
         )
         db.commit()
     except ValueError as exc:
@@ -690,10 +705,12 @@ def pir_chat(
         "reply": result["reply"],
         "provider": result.get("provider") or "",
         "model": result.get("model") or "",
+        "thread_id": result.get("thread_id") or "",
         "message": {
             "id": msg.id,
             "role": msg.role,
             "body": msg.body,
             "created_at": msg.created_at,
+            "thread_id": getattr(msg, "thread_id", "") or "",
         },
     }

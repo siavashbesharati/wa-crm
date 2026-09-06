@@ -1,8 +1,9 @@
-"""آقای میوژن — per-org business coach (wizard prompts + internal chat)."""
+"""مربی هوش مصنوعی — per-org business coach (wizard prompts + internal chat)."""
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,7 @@ from app.services.ai_reply import generate_llm_text, get_platform_ai_settings, r
 
 COACH_HISTORY_LIMIT = 50
 COACH_CONTEXT_MSG_CHARS = 600
+COACH_NAME = "مربی هوش مصنوعی"
 
 # Floating mascot thresholds
 EXHAUST_OPEN_TASKS = 8
@@ -43,7 +45,7 @@ TONE_HINTS = {
 
 def coach_system_prompt() -> str:
     return (
-        "تو «آقای میوژن» هستی — مربی و عامل داخلی (با شخصیت گربه ایرانی بامزه و جدی) "
+        f"تو «{COACH_NAME}» هستی — مربی و عامل داخلی "
         "فقط برای تیم همین کسب‌وکار. "
         "هرگز داده سازمان دیگر را حدس نزن یا قاطی نکن. "
         "فقط به تیم داخلی مشاوره بده؛ پیام واتساپ/دیوار نفرست مگر سیستم صریحاً پیش‌نویس بخواهد. "
@@ -180,7 +182,7 @@ def build_org_context(db: Session, org: Organization, profile: OrgCoachProfile |
         f"نام سازمان: {org.name}",
         f"پلن: {getattr(org, 'plan', '')}",
         "",
-        "### پروفایل آقای میوژن",
+        "### پروفایل مربی هوش مصنوعی",
         f"حوزه: {pdata.get('niche') or '—'}",
         f"مخاطب: {pdata.get('audience') or '—'}",
         f"لحن: {pdata.get('tone') or '—'}",
@@ -230,10 +232,24 @@ def build_org_context(db: Session, org: Organization, profile: OrgCoachProfile |
     return "\n".join(parts)
 
 
-def _trim_history(db: Session, org_id: str) -> None:
+def _normalize_thread_id(org_id: str, thread_id: str | None) -> str:
+    tid = (thread_id or "").strip()
+    return tid or org_id
+
+
+def _title_from_message(text: str) -> str:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return "گفتگوی جدید"
+    if len(clean) <= 48:
+        return clean
+    return clean[:47].rstrip() + "…"
+
+
+def _trim_history(db: Session, org_id: str, thread_id: str) -> None:
     rows = (
         db.query(CoachMessage)
-        .filter(CoachMessage.org_id == org_id)
+        .filter(CoachMessage.org_id == org_id, CoachMessage.thread_id == thread_id)
         .order_by(CoachMessage.created_at.desc())
         .offset(COACH_HISTORY_LIMIT)
         .all()
@@ -242,10 +258,17 @@ def _trim_history(db: Session, org_id: str) -> None:
         db.delete(row)
 
 
-def list_messages(db: Session, org_id: str, *, limit: int = COACH_HISTORY_LIMIT) -> list[CoachMessage]:
+def list_messages(
+    db: Session,
+    org_id: str,
+    *,
+    thread_id: str | None = None,
+    limit: int = COACH_HISTORY_LIMIT,
+) -> list[CoachMessage]:
+    tid = _normalize_thread_id(org_id, thread_id)
     rows = (
         db.query(CoachMessage)
-        .filter(CoachMessage.org_id == org_id)
+        .filter(CoachMessage.org_id == org_id, CoachMessage.thread_id == tid)
         .order_by(CoachMessage.created_at.desc())
         .limit(limit)
         .all()
@@ -253,8 +276,46 @@ def list_messages(db: Session, org_id: str, *, limit: int = COACH_HISTORY_LIMIT)
     return list(reversed(rows))
 
 
-def clear_messages(db: Session, org_id: str) -> int:
-    rows = db.query(CoachMessage).filter(CoachMessage.org_id == org_id).all()
+def list_threads(db: Session, org_id: str, *, limit: int = 80) -> list[dict[str, Any]]:
+    rows = (
+        db.query(CoachMessage)
+        .filter(CoachMessage.org_id == org_id)
+        .order_by(CoachMessage.created_at.desc())
+        .limit(800)
+        .all()
+    )
+    by_thread: dict[str, dict[str, Any]] = {}
+    for m in rows:
+        tid = (m.thread_id or "").strip() or org_id
+        bucket = by_thread.get(tid)
+        if not bucket:
+            title = (m.title or "").strip()
+            if not title and m.role == "user":
+                title = _title_from_message(m.body)
+            by_thread[tid] = {
+                "id": tid,
+                "title": title or "گفتگو",
+                "preview": (m.body or "")[:120],
+                "updated_at": m.created_at,
+                "message_count": 1,
+            }
+            continue
+        bucket["message_count"] += 1
+        stored = (m.title or "").strip()
+        if stored:
+            bucket["title"] = stored
+        elif m.role == "user" and (not bucket["title"] or bucket["title"] == "گفتگو"):
+            bucket["title"] = _title_from_message(m.body)
+    out = list(by_thread.values())
+    out.sort(key=lambda t: t.get("updated_at") or 0, reverse=True)
+    return out[:limit]
+
+
+def clear_messages(db: Session, org_id: str, *, thread_id: str | None = None) -> int:
+    q = db.query(CoachMessage).filter(CoachMessage.org_id == org_id)
+    if thread_id:
+        q = q.filter(CoachMessage.thread_id == _normalize_thread_id(org_id, thread_id))
+    rows = q.all()
     n = len(rows)
     for row in rows:
         db.delete(row)
@@ -268,13 +329,25 @@ def run_coach_turn(
     profile: OrgCoachProfile | None,
     user_id: str | None,
     message: str,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     text = (message or "").strip()
     if not text:
         raise ValueError("پیام خالی است")
 
+    tid = _normalize_thread_id(org.id, thread_id or str(uuid4()))
+    existing = (
+        db.query(CoachMessage)
+        .filter(CoachMessage.org_id == org.id, CoachMessage.thread_id == tid)
+        .order_by(CoachMessage.created_at.asc())
+        .first()
+    )
+    title = (existing.title if existing and existing.title else "") or _title_from_message(text)
+
     user_msg = CoachMessage(
         org_id=org.id,
+        thread_id=tid,
+        title=title,
         user_id=user_id,
         role="user",
         body=text,
@@ -282,12 +355,12 @@ def run_coach_turn(
     db.add(user_msg)
     db.flush()
 
-    history = list_messages(db, org.id, limit=20)
+    history = list_messages(db, org.id, thread_id=tid, limit=20)
     hist_lines = []
     for m in history:
         if m.id == user_msg.id:
             continue
-        role = "کاربر" if m.role == "user" else "آقای میوژن"
+        role = "کاربر" if m.role == "user" else COACH_NAME
         body = (m.body or "")[:COACH_CONTEXT_MSG_CHARS]
         hist_lines.append(f"{role}: {body}")
 
@@ -312,7 +385,7 @@ def run_coach_turn(
 
         crm_hits = retrieve_crm_context(db, org.id, text, k=6)
         formatted = format_crm_hits(crm_hits)
-        if formatted:
+        if crm_hits and formatted:
             crm_bits = "\n\n" + formatted
     except Exception:  # noqa: BLE001
         crm_bits = ""
@@ -356,7 +429,7 @@ def run_coach_turn(
         f"### تاریخچه گفتگوی مربی\n"
         f"{chr(10).join(hist_lines) if hist_lines else '(خالی)'}\n\n"
         f"### سوال کاربر تیم\n{text}\n\n"
-        "پاسخ آقای میوژن:"
+        f"پاسخ {COACH_NAME}:"
     )
 
     platform = get_platform_ai_settings(db)
@@ -379,16 +452,19 @@ def run_coach_turn(
 
     assistant = CoachMessage(
         org_id=org.id,
+        thread_id=tid,
+        title=title,
         user_id=None,
         role="assistant",
         body=reply,
     )
     db.add(assistant)
-    _trim_history(db, org.id)
+    _trim_history(db, org.id, tid)
     db.flush()
     return {
         "reply": reply,
         "message": assistant,
+        "thread_id": tid,
         "provider": provider,
         "model": model,
     }

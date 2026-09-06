@@ -204,6 +204,27 @@ def _ensure_db_columns() -> None:
                 conn.execute(
                     text("ALTER TABLE messages ADD COLUMN delivery_status VARCHAR(20) DEFAULT ''")
                 )
+    if "coach_messages" in tables:
+        cols = {c["name"] for c in insp.get_columns("coach_messages")}
+        with engine.begin() as conn:
+            if "thread_id" not in cols:
+                conn.execute(text("ALTER TABLE coach_messages ADD COLUMN thread_id VARCHAR(36) DEFAULT ''"))
+            if "title" not in cols:
+                conn.execute(text("ALTER TABLE coach_messages ADD COLUMN title VARCHAR(200) DEFAULT ''"))
+        # Fold legacy rows (empty thread_id) into one conversation per org
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE coach_messages SET thread_id = org_id "
+                    "WHERE thread_id IS NULL OR thread_id = ''"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE coach_messages SET title = 'گفتگوی قبلی' "
+                    "WHERE (title IS NULL OR title = '') AND role = 'user'"
+                )
+            )
 
 
 def _ensure_pgvector() -> None:

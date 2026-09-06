@@ -121,7 +121,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
           "/team": "تیم",
           "/knowledge": "دانش AI",
           "/ai-settings": "تنظیمات AI",
-          "/ai-coach": "آقای میوژن",
+          "/ai-coach": "مربی هوش مصنوعی",
           "/kpi": "KPI / OKR",
           "/billing": "اشتراک و پرداخت",
           "/support": "پشتیبانی"

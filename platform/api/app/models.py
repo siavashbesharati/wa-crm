@@ -485,7 +485,7 @@ class AiPolicy(Base):
 
 
 class OrgCoachProfile(Base):
-    """Per-org «پیر خرابات» business profile from the onboarding wizard."""
+    """Per-org «مربی هوش مصنوعی» business profile from the onboarding wizard."""
 
     __tablename__ = "org_coach_profiles"
 
@@ -503,12 +503,14 @@ class OrgCoachProfile(Base):
 
 
 class CoachMessage(Base):
-    """Internal coach chat thread (team ↔ پیر خرابات), never sent to WhatsApp."""
+    """Internal coach chat thread (team ↔ مربی هوش مصنوعی), never sent to WhatsApp."""
 
     __tablename__ = "coach_messages"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    thread_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user")  # user | assistant
     body: Mapped[str] = mapped_column(Text, default="")

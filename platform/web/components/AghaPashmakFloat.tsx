@@ -18,7 +18,7 @@ const MOOD_IMG: Record<PashmakMood, string> = {
 };
 
 const MOOD_TIP: Record<PashmakMood, string> = {
-  normal: "آقای میوژن",
+  normal: "مربی هوش مصنوعی",
   happy: "همه کارها تموم!",
   exhaust: "کار زیاد…",
   alert: "لید مهم!"
@@ -223,7 +223,7 @@ export function AghaPashmakFloat() {
   if (onCoachPage) return null;
 
   const src = MOOD_IMG[mood];
-  const tip = mood === "alert" ? "آقای میوژن" : MOOD_TIP[mood];
+  const tip = mood === "alert" ? "مربی هوش مصنوعی" : MOOD_TIP[mood];
   const showBubble = mood === "alert" && !!alertBubble;
 
   return (
@@ -238,7 +238,7 @@ export function AghaPashmakFloat() {
           ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" }
           : undefined
       }
-      aria-label={`گفتگو با آقای میوژن — ${alertBubble || tip}. بکشید تا جابه‌جا شود.`}
+      aria-label={`گفتگو با مربی هوش مصنوعی — ${alertBubble || tip}. بکشید تا جابه‌جا شود.`}
       title={`${alertBubble || tip} · بکشید تا جابه‌جا شود`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -272,5 +272,5 @@ export function AghaPashmakFloat() {
 
 /** Default chat profile image (calm / normal pose). */
 export const PASHMAK_AVATAR = MOOD_IMG.normal;
-export const PASHMAK_NAME = "آقای میوژن";
+export const PASHMAK_NAME = "مربی هوش مصنوعی";
 export { MOOD_IMG };

@@ -533,6 +533,15 @@ class PirProfileOut(BaseModel):
 
 class PirChatIn(BaseModel):
     message: str
+    thread_id: str | None = None
+
+
+class PirThreadOut(BaseModel):
+    id: str
+    title: str
+    preview: str = ""
+    updated_at: datetime | None = None
+    message_count: int = 0
 
 
 class PirChatMessageOut(BaseModel):
@@ -540,10 +549,12 @@ class PirChatMessageOut(BaseModel):
     role: str
     body: str
     created_at: datetime
+    thread_id: str = ""
 
 
 class PirChatOut(BaseModel):
     reply: str
     message: PirChatMessageOut
+    thread_id: str = ""
     provider: str = ""
     model: str = ""

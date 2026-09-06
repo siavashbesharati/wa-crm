@@ -19,6 +19,7 @@ Usage:
   cd platform/api
   python scripts/seed_demo_full.py
   python scripts/seed_demo_full.py --conversations --replace
+  python scripts/seed_demo_full.py --coach --replace
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ from app.config import get_settings  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models import (  # noqa: E402
     AiEvent, AiPolicy, AuditEvent, BaleAuthState, Campaign, CampaignSend,
-    ChannelAccount, ChannelType, ConnectorSession, DivarAuthState,
+    ChannelAccount, ChannelType, CoachMessage, ConnectorSession, DivarAuthState,
     KpiDefinition, KpiSnapshot, KnowledgeChunk, KnowledgeDoc, Lead,
     LeadAccountLink, MemberRole, Membership, Message, MessageDirection,
     OkrObjective, Organization, OrgCoachProfile, OutboundJob, OutboundStatus,
@@ -316,8 +317,8 @@ def _ensure_org(db, owner):
                 org_id=org.id,
                 niche="املاک و مستغلات",
                 audience="خریداران و مستأجران نهایی در تهران، به‌ویژه مناطق شمال و غرب",
-                tone="formal-friendly",
-                goals=["افزایش فروش فصلی", "رضایت مشتری", "برندینگ محلی"],
+                tone="رسمی",
+                goals=["lead", "booking", "support"],
                 offers="تخفیف کمیسیون برای معاملات بالای ۲۰ میلیارد، بازدید رایگان، مشاوره حقوقی رایگان",
                 banned_phrases="ارزان، تضمین سود، بی‌واسطه، قولنامه دستی",
                 wizard_completed=True,
@@ -325,6 +326,169 @@ def _ensure_org(db, owner):
         )
 
     return org
+
+
+# Curated internal coach threads (مربی هوش مصنوعی) — WhatsApp-style history list
+DEMO_COACH_THREADS: list[dict] = [
+    {
+        "id": "demo-coach-daily",
+        "title": "خلاصه امروز را بده",
+        "days_ago": 0,
+        "messages": [
+            ("user", "خلاصه امروز را بده"),
+            (
+                "assistant",
+                "امروز تا این لحظه:\n"
+                "• ۸ لید جدید (۳ واتساپ، ۳ دیوار، ۲ بله)\n"
+                "• ۵ وظیفه سررسید امروز — ۲ تا عقب‌افتاده\n"
+                "• ۲ گفتگو با برچسب needs_human\n"
+                "پیشنهاد: اول لیدهای داغ سعادت‌آباد و نیاوران را پیگیری کنید، بعد وظایف عقب‌افتاده را ببندید.",
+            ),
+            ("user", "کدام لیدها داغ‌ترند؟"),
+            (
+                "assistant",
+                "داغ‌ترین‌ها الان:\n"
+                "۱) خانم رضایی — سعادت‌آباد، قصد خرید بالا\n"
+                "۲) آقای کریمی — نیاوران، درخواست بازدید\n"
+                "۳) پیام دیوار «آپارتمان ۷۵ متری» — قیمت‌حساس ولی فعال\n"
+                "می‌خواهید برای اولی وظیفه پیگیری بسازم؟",
+            ),
+        ],
+    },
+    {
+        "id": "demo-coach-ops",
+        "title": "کدام اپراتور کارآمدتر است؟",
+        "days_ago": 1,
+        "messages": [
+            ("user", "کدام اپراتور کارآمدتر است؟"),
+            (
+                "assistant",
+                "بر اساس ۷ روز اخیر:\n"
+                "• سارا موسوی — بیشترین وظیفه انجام‌شده و پاسخ سریع\n"
+                "• رضا احمدی — لیدهای بیشتری در مرحله پیشنهاد دارد\n"
+                "• مریم کاظمی — تمرکز روی پشتیبانی و follow-up\n"
+                "اگر هدف فروش است، لیدهای high_intent را به سارا بسپارید.",
+            ),
+        ],
+    },
+    {
+        "id": "demo-coach-risk",
+        "title": "ریسک از دست رفتن مشتری",
+        "days_ago": 2,
+        "messages": [
+            ("user", "کدام نیاز به مداخله انسانی یا ریسک از دست رفتن داره؟"),
+            (
+                "assistant",
+                "۳ مورد پرریسک:\n"
+                "• شکایت تأخیر در بازدید — برچسب complaint\n"
+                "• گفتگوی بله با sentiment منفی\n"
+                "• لید قیمت‌حساس که ۴۸ ساعت پاسخ نگرفته\n"
+                "پیشنهاد: همین امروز تماس دستی + پیشنهاد زمان بازدید جایگزین.",
+            ),
+            ("user", "پیش‌نویس پیام عذرخواهی بده"),
+            (
+                "assistant",
+                "پیش‌نویس:\n"
+                "«سلام وقتتون بخیر، بابت تأخیر در هماهنگی بازدید عذرخواهی می‌کنم. "
+                "اگر موافقید امروز یا فردا یک بازه جایگزین پیشنهاد می‌کنم تا حضوری بررسی کنیم.»\n"
+                "قبل از ارسال، زمان واقعی بازدید را در تقویم تیم چک کنید.",
+            ),
+        ],
+    },
+    {
+        "id": "demo-coach-campaign",
+        "title": "ایده کمپین بازدید آخر هفته",
+        "days_ago": 3,
+        "messages": [
+            ("user", "برای آخر هفته یک کمپین بازدید پیشنهاد بده"),
+            (
+                "assistant",
+                "پیشنهاد کمپین «بازدید رایگان آخر هفته»:\n"
+                "۱) مخاطب: لیدهای مرحله پیگیری و پیشنهاد در شمال/غرب تهران\n"
+                "۲) پیام کوتاه واتساپ + بله با ۲ بازه زمانی\n"
+                "۳) KPI: تعداد بازدید رزرو شده و تبدیل به پیشنهاد\n"
+                "۴) بعد از کمپین، برای هر بازدید یک وظیفه follow-up بسازید.",
+            ),
+        ],
+    },
+    {
+        "id": "demo-coach-prompt",
+        "title": "بهبود لحن پاسخ AI",
+        "days_ago": 5,
+        "messages": [
+            ("user", "لحن پاسخ‌های AI مشتری کمی خشکه؛ چطور بهترش کنیم؟"),
+            (
+                "assistant",
+                "۳ تغییر سریع:\n"
+                "• در پروفایل مربی لحن را «خودمانی» یا رسمی-دوستانه نگه دارید\n"
+                "• در دانش، ۲–۳ نمونه پاسخ خوب اضافه کنید\n"
+                "• عبارات ممنوع را شفاف کنید تا مدل به تخفیف الکی نرود\n"
+                "اگر بخواهید، از منوی جزئیات می‌توانید پروفایل را ویرایش کنید.",
+            ),
+        ],
+    },
+]
+
+
+def _ensure_coach_chats(db, org, owner, *, force: bool = False) -> int:
+    """Seed مربی هوش مصنوعی conversation history (WhatsApp-style thread list)."""
+    existing = (
+        db.query(CoachMessage)
+        .filter(CoachMessage.org_id == org.id)
+        .count()
+    )
+    if existing and not force:
+        return 0
+
+    if force and existing:
+        db.query(CoachMessage).filter(CoachMessage.org_id == org.id).delete(
+            synchronize_session=False
+        )
+        db.flush()
+
+    # Ensure coach profile exists + wizard done so UI opens chat list
+    profile = db.query(OrgCoachProfile).filter(OrgCoachProfile.org_id == org.id).first()
+    if not profile:
+        profile = OrgCoachProfile(
+            org_id=org.id,
+            niche="املاک و مستغلات",
+            audience="خریداران و مستأجران نهایی در تهران",
+            tone="رسمی",
+            goals=["lead", "booking", "support"],
+            offers="بازدید رایگان، مشاوره حقوقی",
+            banned_phrases="تضمین سود، ارزان",
+            wizard_completed=True,
+        )
+        db.add(profile)
+    else:
+        profile.wizard_completed = True
+        if not profile.niche:
+            profile.niche = "املاک و مستغلات"
+        if not profile.tone:
+            profile.tone = "رسمی"
+
+    now = _utc_naive()
+    created = 0
+    for thread in DEMO_COACH_THREADS:
+        tid = thread["id"]
+        title = thread["title"]
+        base = now - timedelta(days=int(thread.get("days_ago") or 0), hours=2)
+        for i, (role, body) in enumerate(thread["messages"]):
+            db.add(
+                CoachMessage(
+                    org_id=org.id,
+                    thread_id=tid,
+                    title=title,
+                    user_id=owner.id if role == "user" else None,
+                    role=role,
+                    body=body,
+                    created_at=base + timedelta(minutes=i * 3),
+                )
+            )
+            created += 1
+    db.flush()
+    return created
+
 
 def _ensure_operators(db, org):
     out = {}
@@ -1507,6 +1671,10 @@ def seed():
             db.flush()
         except Exception as exc:
             raise RuntimeError(f"demo task seed failed: {exc}") from exc
+
+        coach_n = _ensure_coach_chats(db, org, owner, force=False)
+        if coach_n:
+            print(f"coach: seeded {coach_n} message(s) across {len(DEMO_COACH_THREADS)} threads")
         db.commit()
 
         _seed_demo_extras(db, org, accounts, owner, users)
@@ -1571,9 +1739,33 @@ def gen_conversations_cli(*, replace: bool = False):
     print("=" * 60)
 
 
+def seed_coach_cli(*, replace: bool = False):
+    """Seed or refresh مربی هوش مصنوعی chat history."""
+    _migrate_then_create_all()
+    db = SessionLocal()
+    try:
+        owner = _ensure_owner(db)
+        org = _ensure_org(db, owner)
+        n = _ensure_coach_chats(db, org, owner, force=replace)
+        db.commit()
+        if n:
+            print(f"coach: seeded {n} message(s) in {len(DEMO_COACH_THREADS)} threads")
+        else:
+            print("coach: history already present (use --replace to rebuild)")
+        print(f"  org: {org.name}")
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def main():
     if "--conversations" in sys.argv:
         gen_conversations_cli(replace="--replace" in sys.argv)
+        return
+    if "--coach" in sys.argv:
+        seed_coach_cli(replace="--replace" in sys.argv)
         return
     _migrate_then_create_all()
     db = SessionLocal()
