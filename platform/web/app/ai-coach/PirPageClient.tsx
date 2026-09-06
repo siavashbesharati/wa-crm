@@ -134,10 +134,13 @@ export default function PirPageClient() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeTitle, setActiveTitle] = useState("گفتگوی جدید");
   const [messages, setMessages] = useState<CoachMsg[]>([]);
+  const [isDraftChat, setIsDraftChat] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const openReq = useRef(0);
   const { busy, run } = useMutation();
   const toast = useToast();
   const scroller = useRef<HTMLDivElement>(null);
@@ -243,29 +246,48 @@ export default function PirPageClient() {
   }
 
   async function openThread(t: CoachThread) {
+    const req = ++openReq.current;
     setActiveId(t.id);
     setActiveTitle(t.title || "گفتگو");
+    setIsDraftChat(false);
     setMessages([]);
+    setText("");
+    setThreadLoading(true);
     try {
-      const res = await api<{ messages: CoachMsg[] }>(
+      const res = await api<{ messages: CoachMsg[]; thread_id?: string }>(
         `/ai/pir/messages?thread_id=${encodeURIComponent(t.id)}`
       );
-      setMessages(res.messages || []);
+      if (openReq.current !== req) return;
+      const rows = Array.isArray(res.messages) ? res.messages : [];
+      setMessages(rows);
+      if (rows.length === 0) {
+        toast.push("پیامی برای این گفتگو پیدا نشد", "err");
+      }
     } catch (e) {
+      if (openReq.current !== req) return;
       toast.push(e instanceof Error ? e.message : "خطا در بارگذاری گفتگو", "err");
+      setMessages([]);
+    } finally {
+      if (openReq.current === req) setThreadLoading(false);
     }
   }
 
   function startNewChat() {
+    openReq.current += 1;
     const id = newThreadId();
     setActiveId(id);
     setActiveTitle("گفتگوی جدید");
+    setIsDraftChat(true);
+    setThreadLoading(false);
     setMessages([]);
     setText("");
   }
 
   function closeThread() {
+    openReq.current += 1;
     setActiveId(null);
+    setIsDraftChat(false);
+    setThreadLoading(false);
     setMessages([]);
     setText("");
     void loadThreads();
@@ -309,6 +331,7 @@ export default function PirPageClient() {
         const without = m.filter((x) => x.id !== optimistic.id);
         return [...without, { ...optimistic, id: `u-${Date.now()}` }, assistant];
       });
+      setIsDraftChat(false);
       if (res.thread_id && res.thread_id !== activeId) {
         setActiveId(res.thread_id);
       }
@@ -697,7 +720,12 @@ export default function PirPageClient() {
               </header>
 
               <div className="chat-scroll" ref={scroller}>
-                {chronological.length === 0 ? (
+                {threadLoading ? (
+                  <div className="coach-chat-empty">
+                    <PageLoading variant="compact" />
+                    <p>در حال بارگذاری گفتگو…</p>
+                  </div>
+                ) : chronological.length === 0 && isDraftChat ? (
                   <div className="coach-chat-empty">
                     <CoachAvatar size={64} />
                     <p>از {PASHMAK_NAME} بپرسید…</p>
@@ -713,6 +741,10 @@ export default function PirPageClient() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                ) : chronological.length === 0 ? (
+                  <div className="coach-chat-empty">
+                    <p>پیامی در این گفتگو نیست.</p>
                   </div>
                 ) : (
                   chronological.map((m, i) => {
