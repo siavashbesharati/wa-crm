@@ -339,7 +339,6 @@ export default function InboxPage() {
           })
         }).catch(() => undefined);
       }
-      if (!opts?.quiet) window.setTimeout(() => inputRef.current?.focus(), 80);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     } finally {

@@ -2536,6 +2536,34 @@ a.btn.wizard-btn:hover {
   border-radius: 999px;
   background: var(--fill);
 }
+.lead-modal-icon-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--label-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.lead-modal-icon-btn:hover {
+  background: var(--fill);
+  color: var(--label);
+}
+.modal-panel.lead-modal-panel .modal-close-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+}
+.modal-panel.lead-modal-panel .modal-header-actions {
+  gap: 2px;
+}
 .lead-modal-layout {
   display: grid;
   gap: 12px;

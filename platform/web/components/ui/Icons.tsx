@@ -93,6 +93,15 @@ export function IconClose(p: IconProps) {
   );
 }
 
+export function IconEdit(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M12.5 5.5 18.5 11.5" />
+      <path d="M5 19l1.2-5.2L15.5 4.5a1.8 1.8 0 0 1 2.5 0l1.5 1.5a1.8 1.8 0 0 1 0 2.5L10.2 17.8 5 19z" />
+    </svg>
+  );
+}
+
 export function IconSearch(p: IconProps) {
   return (
     <svg {...base(p)}>

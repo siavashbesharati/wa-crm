@@ -30,6 +30,7 @@ import {
   type Member
 } from "./shared";
 import { toEditForm, type EditForm } from "./lead-form";
+import { IconEdit } from "@/components/ui/Icons";
 
 type LeadModalProps = {
   open: boolean;
@@ -47,8 +48,7 @@ function LeadDetailView({
   onApplyStage,
   applyingStage,
   onResumeBot,
-  resumingBot,
-  onEdit
+  resumingBot
 }: {
   lead: Lead;
   assignee: Member | undefined;
@@ -56,7 +56,6 @@ function LeadDetailView({
   applyingStage?: boolean;
   onResumeBot?: () => void;
   resumingBot?: boolean;
-  onEdit?: () => void;
 }) {
   const phone = leadPhone(lead);
   const contactId = leadContactId(lead);
@@ -123,11 +122,6 @@ function LeadDetailView({
         <Link className="btn secondary sm" href={`/inbox?lead=${encodeURIComponent(lead.id)}`}>
           گفتگو
         </Link>
-        {onEdit ? (
-          <Button type="button" size="sm" variant="secondary" onClick={onEdit}>
-            ویرایش
-          </Button>
-        ) : null}
         <Link className="btn secondary sm" href={tasksBoardHref(lead.id)}>
           وظایف
         </Link>
@@ -580,7 +574,15 @@ export function LeadModal({
         onClose={closeAll}
         headerActions={
           mode === "view" ? (
-            <span className="lead-modal-header-tag">جزئیات</span>
+            <button
+              type="button"
+              className="lead-modal-icon-btn"
+              aria-label="ویرایش"
+              title="ویرایش"
+              onClick={() => setMode("edit")}
+            >
+              <IconEdit size={18} />
+            </button>
           ) : null
         }
         footer={
@@ -596,14 +598,7 @@ export function LeadModal({
                 حذف لید
               </Button>
             </>
-          ) : (
-            <>
-              <Button onClick={() => setMode("edit")}>ویرایش</Button>
-              <Button variant="secondary" onClick={closeAll}>
-                بستن
-              </Button>
-            </>
-          )
+          ) : undefined
         }
       >
         {mode === "view" ? (
@@ -616,7 +611,6 @@ export function LeadModal({
                 applyingStage={busy}
                 onResumeBot={() => void resumeBot()}
                 resumingBot={busy}
-                onEdit={() => setMode("edit")}
               />
             </div>
             <aside className="lead-modal-side">

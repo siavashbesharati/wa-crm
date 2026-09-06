@@ -261,7 +261,6 @@ export default function PirPageClient() {
     setActiveTitle("گفتگوی جدید");
     setMessages([]);
     setText("");
-    window.setTimeout(() => inputRef.current?.focus(), 80);
   }
 
   function closeThread() {
@@ -318,7 +317,6 @@ export default function PirPageClient() {
       toast.push(e instanceof Error ? e.message : "خطا در گفتگو", "err");
     } finally {
       setChatBusy(false);
-      window.setTimeout(() => inputRef.current?.focus(), 40);
     }
   }
 
