@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { List, ListItem } from "@/components/ui/List";
 import { PageLoading } from "@/components/ui/Spinner";
+import { IconBack } from "@/components/ui/Icons";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { formatJalali } from "@/lib/jalali";
 
 type TicketRow = {
   id: string;
@@ -44,6 +45,12 @@ const CAT_FA: Record<string, string> = {
   ai: "هوش مصنوعی"
 };
 
+const PRIORITY_FA: Record<string, string> = {
+  low: "کم",
+  normal: "عادی",
+  high: "فوری"
+};
+
 function statusTone(s: string): "accent" | "danger" | "success" | "default" {
   if (s === "resolved") return "success";
   if (s === "closed") return "danger";
@@ -58,6 +65,7 @@ export default function SupportPage() {
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState("");
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -85,6 +93,7 @@ export default function SupportPage() {
       const t = await api<TicketDetail>(`/support/tickets/${id}`);
       setDetail(t);
       setReply("");
+      setComposeOpen(false);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "خطا", "err");
     }
@@ -111,6 +120,7 @@ export default function SupportPage() {
       setBody("");
       setCategory("general");
       setPriority("normal");
+      setComposeOpen(false);
       await load();
       if (res.ticket?.id) await openDetail(res.ticket.id);
     } catch (e) {
@@ -143,184 +153,171 @@ export default function SupportPage() {
   }
 
   return (
-    <Shell title="پشتیبانی" sub="ثبت و پیگیری تیکت با تیم پلتفرم">
+    <Shell
+      title="پشتیبانی"
+      sub="ثبت و پیگیری تیکت با تیم پلتفرم"
+      hideTabBar={!!detail}
+      actions={
+        !detail ? (
+          <Button size="sm" onClick={() => setComposeOpen((v) => !v)}>
+            {composeOpen ? "بستن فرم" : "تیکت جدید"}
+          </Button>
+        ) : undefined
+      }
+    >
       {loading ? (
         <PageLoading />
       ) : (
-        <div className="stack" style={{ display: "grid", gap: 16 }}>
-          <Card
-            title="تیکت جدید"
-            help={{
-              title: "پشتیبانی",
-              body: "برای مشکل پرداخت، کانال‌ها، یا AI یک تیکت بسازید؛ تیم پلتفرم پاسخ می‌دهد."
-            }}
-          >
-            <div style={{ display: "grid", gap: 10 }}>
-              <input
-                placeholder="موضوع"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                disabled={busy}
-              />
-              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  disabled={busy}
-                >
-                  {Object.entries(CAT_FA).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
-                  disabled={busy}
-                >
-                  <option value="low">اولویت کم</option>
-                  <option value="normal">عادی</option>
-                  <option value="high">فوری</option>
-                </select>
+        <div className={`tickets-page${detail ? " tickets-page--detail" : ""}`}>
+          {composeOpen && !detail ? (
+            <Card title="تیکت جدید" className="tickets-compose">
+              <div className="tickets-compose-form">
+                <label>
+                  موضوع
+                  <input
+                    placeholder="مثلاً مشکل اتصال کانال"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    disabled={busy}
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  دسته
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    disabled={busy}
+                  >
+                    {Object.entries(CAT_FA).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  اولویت
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="low">کم</option>
+                    <option value="normal">عادی</option>
+                    <option value="high">فوری</option>
+                  </select>
+                </label>
+                <label className="full">
+                  شرح
+                  <textarea
+                    rows={4}
+                    placeholder="شرح مشکل…"
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    disabled={busy}
+                  />
+                </label>
+                <Button disabled={busy} onClick={createTicket}>
+                  ثبت تیکت
+                </Button>
               </div>
-              <textarea
-                rows={4}
-                placeholder="شرح مشکل…"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                disabled={busy}
-              />
-              <Button disabled={busy} onClick={createTicket}>
-                ثبت تیکت
-              </Button>
-            </div>
-          </Card>
+            </Card>
+          ) : null}
 
-          <div
-            style={{
-              display: "grid",
-              gap: 16,
-              gridTemplateColumns: detail ? "minmax(0, 1fr) minmax(0, 1.1fr)" : "1fr"
-            }}
-          >
-            <Card title={`تیکت‌های من (${rows.length})`}>
+          <div className="tickets-layout">
+            <section className="tickets-list-pane" aria-label="فهرست تیکت‌ها">
+              <div className="tickets-list-head">
+                <h2>تیکت‌های من</h2>
+                <span className="hint">{rows.length.toLocaleString("fa-IR")} مورد</span>
+              </div>
               {!rows.length ? (
                 <EmptyState
                   title="تیکتی ندارید"
-                  text="اولین درخواست پشتیبانی را از فرم بالا ثبت کنید."
+                  text="اولین درخواست پشتیبانی را ثبت کنید."
+                  action={
+                    <Button onClick={() => setComposeOpen(true)}>تیکت جدید</Button>
+                  }
                 />
               ) : (
-                <>
-                  <div className="leads-desktop-only">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>موضوع</th>
-                          <th>وضعیت</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((t) => (
-                          <tr
-                            key={t.id}
-                            style={{
-                              cursor: "pointer",
-                              background:
-                                detail?.id === t.id ? "var(--surface-2, #f1f5f9)" : undefined
-                            }}
-                            onClick={() => openDetail(t.id)}
-                          >
-                            <td>
-                              <strong>{t.subject}</strong>
-                              <div className="hint" style={{ margin: 0 }}>
-                                {CAT_FA[t.category] || t.category}
-                                {typeof t.message_count === "number"
-                                  ? ` · ${t.message_count} پیام`
-                                  : ""}
-                              </div>
-                            </td>
-                            <td>
-                              <Badge tone={statusTone(t.status)}>
-                                {STATUS_FA[t.status] || t.status}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="leads-mobile-only">
-                    <List>
-                      {rows.map((t) => (
-                        <ListItem
-                          key={t.id}
-                          title={t.subject}
-                          subtitle={`${CAT_FA[t.category] || t.category}${
-                            typeof t.message_count === "number"
-                              ? ` · ${t.message_count} پیام`
-                              : ""
-                          }`}
-                          trailing={
+                <ul className="tickets-list">
+                  {rows.map((t) => {
+                    const active = detail?.id === t.id;
+                    return (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          className={`tickets-row${active ? " active" : ""}`}
+                          onClick={() => void openDetail(t.id)}
+                        >
+                          <div className="tickets-row-top">
+                            <strong dir="auto">{t.subject}</strong>
                             <Badge tone={statusTone(t.status)}>
                               {STATUS_FA[t.status] || t.status}
                             </Badge>
-                          }
-                          onClick={() => openDetail(t.id)}
-                        />
-                      ))}
-                    </List>
-                  </div>
-                </>
+                          </div>
+                          <div className="tickets-row-meta">
+                            <span>{CAT_FA[t.category] || t.category}</span>
+                            <span>{PRIORITY_FA[t.priority] || t.priority}</span>
+                            {typeof t.message_count === "number" ? (
+                              <span>{t.message_count.toLocaleString("fa-IR")} پیام</span>
+                            ) : null}
+                            {t.updated_at || t.created_at ? (
+                              <span>{formatJalali(t.updated_at || t.created_at)}</span>
+                            ) : null}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
-            </Card>
+            </section>
 
-            {detail && (
-              <Card
-                title={detail.subject}
-                actions={
-                  <Button variant="secondary" onClick={() => setDetail(null)}>
-                    بستن
-                  </Button>
-                }
-              >
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div className="hint" style={{ margin: 0 }}>
-                    {CAT_FA[detail.category] || detail.category} ·{" "}
-                    <Badge tone={statusTone(detail.status)}>
-                      {STATUS_FA[detail.status] || detail.status}
-                    </Badge>
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      maxHeight: 360,
-                      overflow: "auto"
-                    }}
+            {detail ? (
+              <section className="tickets-detail-pane" aria-label="جزئیات تیکت">
+                <header className="tickets-detail-head">
+                  <button
+                    type="button"
+                    className="tickets-back-btn"
+                    aria-label="بازگشت به فهرست"
+                    onClick={() => setDetail(null)}
                   >
-                    {(detail.messages || []).map((m) => (
-                      <div
-                        key={m.id}
-                        style={{
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          background:
-                            m.sender_side === "platform"
-                              ? "rgba(37, 99, 235, 0.08)"
-                              : "var(--surface-2, #f1f5f9)"
-                        }}
-                      >
-                        <div className="hint" style={{ margin: "0 0 6px" }}>
-                          {m.sender_side === "platform" ? "پشتیبانی پلتفرم" : "شما"}
-                          {m.created_at
-                            ? ` · ${new Date(m.created_at).toLocaleString("fa-IR")}`
-                            : ""}
-                        </div>
-                        <div style={{ whiteSpace: "pre-wrap" }}>{m.body}</div>
-                      </div>
-                    ))}
+                    <IconBack size={20} />
+                  </button>
+                  <div className="tickets-detail-titles">
+                    <h2 dir="auto">{detail.subject}</h2>
+                    <div className="tickets-row-meta">
+                      <span>{CAT_FA[detail.category] || detail.category}</span>
+                      <Badge tone={statusTone(detail.status)}>
+                        {STATUS_FA[detail.status] || detail.status}
+                      </Badge>
+                    </div>
                   </div>
+                </header>
+
+                <div className="tickets-thread">
+                  {(detail.messages || []).map((m) => (
+                    <div
+                      key={m.id}
+                      className={`tickets-bubble${
+                        m.sender_side === "platform" ? " platform" : " mine"
+                      }`}
+                    >
+                      <div className="tickets-bubble-meta">
+                        {m.sender_side === "platform" ? "پشتیبانی پلتفرم" : "شما"}
+                        {m.created_at
+                          ? ` · ${new Date(m.created_at).toLocaleString("fa-IR")}`
+                          : ""}
+                      </div>
+                      <div className="tickets-bubble-body" dir="auto">
+                        {m.body}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="tickets-composer">
                   <textarea
                     rows={3}
                     value={reply}
@@ -335,7 +332,14 @@ export default function SupportPage() {
                     ارسال
                   </Button>
                 </div>
-              </Card>
+              </section>
+            ) : (
+              <aside className="tickets-detail-empty leads-desktop-only">
+                <EmptyState
+                  title="یک تیکت را انتخاب کنید"
+                  text="از فهرست سمت راست جزئیات را ببینید."
+                />
+              </aside>
             )}
           </div>
         </div>

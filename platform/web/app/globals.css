@@ -7249,3 +7249,323 @@ input, select, textarea {
   }
 }
 
+
+/* -- Ticketing: mobile-first list + master/detail -- */
+.tickets-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.tickets-compose-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.tickets-compose-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--label-secondary);
+}
+
+.tickets-compose-form label.full {
+  grid-column: 1 / -1;
+}
+
+.tickets-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.tickets-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.tickets-filter {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  color: var(--label-secondary);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.tickets-filter.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tickets-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  min-height: min(70vh, 640px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface-solid);
+}
+
+.tickets-list-pane,
+.tickets-detail-pane,
+.tickets-detail-empty {
+  min-width: 0;
+  min-height: 0;
+}
+
+.tickets-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tickets-list-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tickets-list-head .hint {
+  font-size: 0.78rem;
+  color: var(--label-secondary);
+}
+
+.tickets-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tickets-row {
+  width: 100%;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tickets-row:active {
+  background: var(--fill);
+}
+
+.tickets-row.active {
+  background: var(--accent-soft);
+}
+
+.tickets-row-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tickets-row-top strong {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.tickets-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--label-secondary);
+}
+
+.tickets-detail-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  min-height: min(70vh, 640px);
+}
+
+.tickets-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-solid);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.tickets-back-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  color: var(--label);
+  cursor: pointer;
+}
+
+.tickets-detail-titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.tickets-detail-titles h2 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.tickets-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-solid);
+}
+
+.tickets-thread {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tickets-bubble {
+  max-width: 92%;
+  border-radius: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+}
+
+.tickets-bubble.mine {
+  align-self: flex-start;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.tickets-bubble.platform {
+  align-self: flex-end;
+  background: var(--surface-elevated);
+}
+
+.tickets-bubble-meta {
+  font-size: 0.72rem;
+  color: var(--label-secondary);
+  margin-bottom: 4px;
+}
+
+.tickets-bubble-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.tickets-composer {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--surface-solid);
+  position: sticky;
+  bottom: 0;
+}
+
+.tickets-composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.tickets-detail-empty {
+  display: none;
+  padding: 24px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile: when detail open, show only detail (single column list otherwise) */
+@media (max-width: 960px) {
+  .tickets-page--detail .tickets-compose,
+  .tickets-page--detail .tickets-filters {
+    display: none;
+  }
+
+  .tickets-page--detail .tickets-list-pane {
+    display: none;
+  }
+
+  .tickets-page--detail .tickets-detail-pane {
+    min-height: calc(100dvh - 140px);
+  }
+
+  .tickets-layout {
+    border-radius: 12px;
+  }
+}
+
+/* Desktop: side-by-side when space allows */
+@media (min-width: 961px) {
+  .tickets-compose-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tickets-layout {
+    grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.15fr);
+    min-height: min(72vh, 720px);
+  }
+
+  .tickets-list {
+    max-height: min(72vh, 720px);
+  }
+
+  .tickets-detail-pane {
+    min-height: min(72vh, 720px);
+    border-inline-start: 1px solid var(--border);
+  }
+
+  .tickets-detail-empty {
+    display: flex;
+    border-inline-start: 1px solid var(--border);
+  }
+
+  .tickets-back-btn {
+    display: none;
+  }
+
+  .tickets-bubble {
+    max-width: 78%;
+  }
+}
