@@ -30,6 +30,7 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: light)", color: "#f5f5f7" },
     { media: "(prefers-color-scheme: dark)", color: "#000000" }
   ],
+  colorScheme: "light dark",
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1
@@ -45,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `if("serviceWorker"in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})})}`
+            __html: `(function(){try{var d=window.matchMedia("(prefers-color-scheme: dark)").matches;var c=d?"#000000":"#f5f5f7";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",c);else{m=document.createElement("meta");m.name="theme-color";m.content=c;document.head.appendChild(m)}document.documentElement.style.colorScheme=d?"dark":"light"}catch(e){}if("serviceWorker"in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister()})})}})()`
           }}
         />
       </head>
