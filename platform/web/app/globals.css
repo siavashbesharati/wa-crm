@@ -7000,6 +7000,108 @@ input, select, textarea {
   color: rgba(17, 27, 33, 0.55);
 }
 
+/* Markdown inside coach / chat bubbles */
+.md-content {
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.md-content > *:first-child {
+  margin-top: 0;
+}
+.md-content > *:last-child {
+  margin-bottom: 0;
+}
+.md-content p {
+  margin: 0 0 0.55em;
+}
+.md-content p:last-child {
+  margin-bottom: 0;
+}
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4 {
+  margin: 0.55em 0 0.35em;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.md-content h1 { font-size: 1.15em; }
+.md-content h2 { font-size: 1.08em; }
+.md-content h3,
+.md-content h4 { font-size: 1.02em; }
+.md-content ul,
+.md-content ol {
+  margin: 0.35em 0 0.55em;
+  padding-inline-start: 1.35em;
+}
+.md-content li {
+  margin: 0.15em 0;
+}
+.md-content li > p {
+  margin: 0;
+}
+.md-content strong {
+  font-weight: 700;
+}
+.md-content em {
+  font-style: italic;
+}
+.md-content code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgba(11, 20, 26, 0.08);
+}
+.md-content pre {
+  margin: 0.45em 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: rgba(11, 20, 26, 0.08);
+  direction: ltr;
+  text-align: left;
+}
+.md-content pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.md-content a {
+  color: var(--wa-teal-deep, #075e54);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-content blockquote {
+  margin: 0.4em 0;
+  padding: 0.25em 0.75em;
+  border-inline-start: 3px solid rgba(0, 128, 105, 0.35);
+  color: var(--wa-meta, #667781);
+}
+.md-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 0.45em 0;
+}
+.md-content th,
+.md-content td {
+  border: 1px solid var(--wa-separator, #e9edef);
+  padding: 4px 6px;
+  text-align: start;
+}
+.md-content th {
+  background: rgba(11, 20, 26, 0.04);
+  font-weight: 700;
+}
+.bubble.in .md-content code,
+.bubble.in .md-content pre {
+  background: rgba(11, 20, 26, 0.06);
+}
+
 @media (prefers-color-scheme: dark) {
   .coach-chat-empty .pir-starter {
     background: var(--wa-in);
@@ -7007,6 +7109,16 @@ input, select, textarea {
   }
   .bubble.out .bubble-time {
     color: rgba(233, 237, 239, 0.55);
+  }
+  .md-content code,
+  .md-content pre {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .md-content a {
+    color: #53bdeb;
+  }
+  .md-content th {
+    background: rgba(255, 255, 255, 0.06);
   }
 }
 

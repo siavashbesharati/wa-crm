@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { PageLoading } from "@/components/ui/Spinner";
 import { IconBack } from "@/components/ui/Icons";
+import { MarkdownContent } from "@/components/ui/MarkdownContent";
 import { PASHMAK_AVATAR, PASHMAK_NAME } from "@/components/AghaPashmakFloat";
 import { api } from "@/lib/api";
 import { useMutation } from "@/lib/useApi";
@@ -723,7 +724,11 @@ export default function PirPageClient() {
                         {showDay ? <div className="chat-day">{dayLabel(m.created_at)}</div> : null}
                         <div className={`bubble-row ${outbound ? "out" : "in"}`}>
                           <div className={`bubble ${outbound ? "out" : "in"}`} dir="auto">
-                            <p className="bubble-text">{m.body}</p>
+                            {outbound ? (
+                              <p className="bubble-text">{m.body}</p>
+                            ) : (
+                              <MarkdownContent text={m.body} className="bubble-md" />
+                            )}
                             <time className="bubble-time">{formatTime(m.created_at)}</time>
                           </div>
                         </div>
