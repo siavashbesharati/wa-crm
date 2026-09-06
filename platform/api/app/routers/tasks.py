@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import AuthContext, get_auth
 from app.models import Task, TaskStatus
-from app.schemas import TaskBoardReorderIn, TaskIn, TaskOut
+from app.schemas import TaskBoardReorderIn, TaskIn, TaskOut, TaskPatchIn
 from app.services.contact_tasks import (
     create_task_for_contact,
     next_board_order,
@@ -135,6 +135,51 @@ def _set_status(db: Session, auth: AuthContext, task_id: str, status: TaskStatus
     except Exception:  # noqa: BLE001
         pass
     return task
+
+
+@router.patch("/{task_id}", response_model=TaskOut)
+def patch_task(
+    task_id: str,
+    body: TaskPatchIn,
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+):
+    task = db.query(Task).filter(Task.id == task_id, Task.org_id == auth.org.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="وظیفه یافت نشد")
+
+    data = body.model_dump(exclude_unset=True)
+    if "title" in data and data["title"] is not None:
+        title = str(data["title"]).strip()
+        if title:
+            task.title = title[:200]
+    if "message" in data and data["message"] is not None:
+        task.message = str(data["message"])
+    if "assignee_id" in data:
+        task.assignee_id = data["assignee_id"] or None
+    if "lead_id" in data:
+        task.lead_id = data["lead_id"] or None
+    if "due_at" in data:
+        task.due_at = data["due_at"]
+    if "status" in data and data["status"] is not None:
+        new_status = parse_task_status(str(data["status"]), task.status)
+        if new_status != task.status:
+            task.board_order = next_board_order(db, auth.org.id, new_status)
+            task.status = new_status
+
+    task.updated_at = datetime.utcnow()
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    try:
+        from app.services.crm_index import ENTITY_TASK, enqueue_crm_index, enqueue_lead_refresh
+
+        enqueue_crm_index(org_id=auth.org.id, entity_type=ENTITY_TASK, entity_id=task.id)
+        if task.lead_id:
+            enqueue_lead_refresh(auth.org.id, task.lead_id)
+    except Exception:  # noqa: BLE001
+        pass
+    return task_to_out(task)
 
 
 @router.post("/{task_id}/done", response_model=TaskOut)

@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
+import { LeadModal } from "@/components/crm/LeadModal";
+import { TaskDetailModal } from "@/components/crm/TaskDetailModal";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { formatJalali } from "@/lib/jalali";
 import {
   TASK_STATUS_LABELS,
-  tasksBoardHref,
   setupTaskHref,
   isSetupChannelTask,
   type CrmTask,
-  type Lead
+  type Lead,
+  type Member
 } from "@/components/crm/shared";
 
 type Me = {
@@ -221,35 +224,58 @@ function Donut({
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [dash, setDash] = useState<Dash | null>(null);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
+  const [detailTask, setDetailTask] = useState<CrmTask | null>(null);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const m = await api<Me>("/auth/me");
-        setMe(m);
-        await api("/kpi/rollup", { method: "POST" }).catch(() => null);
-        const [d, t, l] = await Promise.all([
-          api<Dash>("/kpi/dashboard"),
-          api<CrmTask[]>("/tasks"),
-          api<Lead[]>("/leads")
-        ]);
-        setDash(d);
-        setTasks(t);
-        setLeads(l);
-      } catch (e) {
-        toast.push(e instanceof Error ? e.message : "خطا", "err");
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const m = await api<Me>("/auth/me");
+      setMe(m);
+      await api("/kpi/rollup", { method: "POST" }).catch(() => null);
+      const [d, t, l, mem] = await Promise.all([
+        api<Dash>("/kpi/dashboard"),
+        api<CrmTask[]>("/tasks"),
+        api<Lead[]>("/leads"),
+        api<Member[]>("/orgs/members")
+      ]);
+      setDash(d);
+      setTasks(t);
+      setLeads(l);
+      setMembers(mem);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    } finally {
+      setLoading(false);
+    }
   }, [toast]);
+
+  const refreshCrm = useCallback(async () => {
+    try {
+      const [t, l, mem] = await Promise.all([
+        api<CrmTask[]>("/tasks"),
+        api<Lead[]>("/leads"),
+        api<Member[]>("/orgs/members")
+      ]);
+      setTasks(t);
+      setLeads(l);
+      setMembers(mem);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const m = dash?.metrics || {};
   const funnel = dash?.funnel || [];
@@ -279,6 +305,38 @@ export default function HomePage() {
     for (const l of leads) map.set(l.id, l);
     return map;
   }, [leads]);
+
+  useEffect(() => {
+    setDetailTask((prev) => {
+      if (!prev) return prev;
+      return tasks.find((t) => t.id === prev.id) || null;
+    });
+  }, [tasks]);
+
+  useEffect(() => {
+    setDetailLead((prev) => {
+      if (!prev) return prev;
+      return leadById.get(prev.id) || prev;
+    });
+  }, [leadById]);
+
+  function openTask(t: CrmTask) {
+    const href = setupTaskHref(t);
+    if (href) {
+      router.push(href);
+      return;
+    }
+    if (t.lead_id) {
+      const lead = leadById.get(t.lead_id);
+      if (lead) {
+        setDetailTask(null);
+        setDetailLead(lead);
+        return;
+      }
+    }
+    setDetailLead(null);
+    setDetailTask(t);
+  }
 
   const todayTasks = useMemo(() => {
     const today = dayKey(new Date());
@@ -336,7 +394,7 @@ export default function HomePage() {
             title={`وظایف امروز (${fmt(todayTasks.length)})`}
             help={{
               title: "وظایف امروز",
-              body: "کارهای سررسید امروز و موارد عقب‌افتاده. روی کارت کلیک کنید تا برد وظایف باز شود."
+              body: "کارهای سررسید امروز و موارد عقب‌افتاده. روی کارت کلیک کنید تا جزئیات مخاطب یا وظیفه باز شود."
             }}
             actions={
               <Link className="btn secondary sm" href="/tasks">
@@ -360,9 +418,10 @@ export default function HomePage() {
                   {visibleTodayTasks.map(({ task: t, overdue }) => {
                     const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
                     return (
-                      <Link
+                      <button
                         key={t.id}
-                        href={setupTaskHref(t) || tasksBoardHref(t.lead_id)}
+                        type="button"
+                        onClick={() => openTask(t)}
                         className={`dash-today-card ${overdue ? "overdue" : ""}`}
                       >
                         <strong className="dash-today-title">{t.title}</strong>
@@ -379,7 +438,7 @@ export default function HomePage() {
                         {t.message ? (
                           <span className="hint dash-today-msg">{t.message}</span>
                         ) : null}
-                      </Link>
+                      </button>
                     );
                   })}
                 </div>
@@ -628,6 +687,21 @@ export default function HomePage() {
           </div>
         </div>
       )}
+      <LeadModal
+        open={!!detailLead}
+        lead={detailLead}
+        members={members}
+        onClose={() => setDetailLead(null)}
+        onChanged={refreshCrm}
+      />
+      <TaskDetailModal
+        open={!!detailTask}
+        task={detailTask}
+        members={members}
+        leads={leads}
+        onClose={() => setDetailTask(null)}
+        onChanged={refreshCrm}
+      />
     </Shell>
   );
 }

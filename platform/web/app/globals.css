@@ -4914,6 +4914,10 @@ a.btn.wizard-btn:hover {
   text-decoration: none;
   color: inherit;
   min-width: 0;
+  text-align: start;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .dash-today-card:hover {
@@ -4923,6 +4927,12 @@ a.btn.wizard-btn:hover {
 .dash-today-card.overdue {
   border-color: #fecaca;
   background: #fef2f2;
+}
+tr.clickable-row {
+  cursor: pointer;
+}
+tr.clickable-row:hover {
+  background: var(--surface-2, #f8fafc);
 }
 .dash-today-title {
   font-size: 14px;

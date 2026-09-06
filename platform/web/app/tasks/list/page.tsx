@@ -2,29 +2,32 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, EmptyState } from "@/components/ui/Card";
 import { PageLoading } from "@/components/ui/Spinner";
 import { TaskCreateModal } from "@/components/crm/TaskCreateModal";
+import { TaskDetailModal } from "@/components/crm/TaskDetailModal";
+import { LeadModal } from "@/components/crm/LeadModal";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { formatJalali } from "@/lib/jalali";
 import {
   TaskViewToggle,
   TASK_STATUS_LABELS,
-  leadHref,
   memberLabel,
   tagLabel,
   tasksBoardHref,
   setupTaskHref,
+  leadHref,
   type CrmTask,
   type Lead,
   type Member
 } from "@/components/crm/shared";
 
 export default function TasksListPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const leadFilter = searchParams.get("lead") || "";
   const tagFromUrl = searchParams.get("tag") || "";
@@ -32,6 +35,8 @@ export default function TasksListPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailTask, setDetailTask] = useState<CrmTask | null>(null);
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
   const [doneId, setDoneId] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState(tagFromUrl);
@@ -69,6 +74,38 @@ export default function TasksListPage() {
     for (const l of leads) map.set(l.id, l);
     return map;
   }, [leads]);
+
+  useEffect(() => {
+    setDetailTask((prev) => {
+      if (!prev) return prev;
+      return tasks.find((t) => t.id === prev.id) || null;
+    });
+  }, [tasks]);
+
+  useEffect(() => {
+    setDetailLead((prev) => {
+      if (!prev) return prev;
+      return leadById.get(prev.id) || prev;
+    });
+  }, [leadById]);
+
+  function openTask(t: CrmTask) {
+    const href = setupTaskHref(t);
+    if (href) {
+      router.push(href);
+      return;
+    }
+    if (t.lead_id) {
+      const lead = leadById.get(t.lead_id);
+      if (lead) {
+        setDetailTask(null);
+        setDetailLead(lead);
+        return;
+      }
+    }
+    setDetailLead(null);
+    setDetailTask(t);
+  }
 
   const tagOptions = useMemo(() => {
     const set = new Set<string>();
@@ -185,7 +222,7 @@ export default function TasksListPage() {
             }
             help={{
               title: "فهرست وظایف",
-              body: "روی نام مخاطب کلیک کنید تا کارت همان مخاطب باز شود."
+              body: "روی وظیفه کلیک کنید تا جزئیات مخاطب یا خود وظیفه باز شود."
             }}
             actions={
               <Link
@@ -221,31 +258,25 @@ export default function TasksListPage() {
                         const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
                         const who = members.find((m) => m.user_id === t.assignee_id);
                         return (
-                          <tr key={t.id}>
+                          <tr
+                            key={t.id}
+                            className="clickable-row"
+                            onClick={() => openTask(t)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openTask(t);
+                              }
+                            }}
+                          >
                             <td>
-                              {(() => {
-                                const href = setupTaskHref(t);
-                                return href ? (
-                                  <Link href={href}>
-                                    <strong>{t.title}</strong>
-                                    {t.message ? <div className="hint">{t.message}</div> : null}
-                                  </Link>
-                                ) : (
-                                  <>
-                                    <strong>{t.title}</strong>
-                                    {t.message ? <div className="hint">{t.message}</div> : null}
-                                  </>
-                                );
-                              })()}
+                              <strong>{t.title}</strong>
+                              {t.message ? <div className="hint">{t.message}</div> : null}
                             </td>
                             <td>
-                              {lead ? (
-                                <Link className="lead-task-link" href={leadHref(lead.id)}>
-                                  {lead.name}
-                                </Link>
-                              ) : (
-                                <span className="hint">بدون مخاطب</span>
-                              )}
+                              {lead ? lead.name : <span className="hint">بدون مخاطب</span>}
                             </td>
                             <td>{who ? memberLabel(who) : "—"}</td>
                             <td>{t.due_at ? formatJalali(t.due_at) : "—"}</td>
@@ -262,7 +293,7 @@ export default function TasksListPage() {
                                 {TASK_STATUS_LABELS[t.status] || t.status}
                               </Badge>
                             </td>
-                            <td className="row-actions">
+                            <td className="row-actions" onClick={(e) => e.stopPropagation()}>
                               {t.status === "open" || t.status === "in_progress" ? (
                                 <Button
                                   variant="secondary"
@@ -285,24 +316,27 @@ export default function TasksListPage() {
                     {visible.map((t) => {
                       const lead = t.lead_id ? leadById.get(t.lead_id) : undefined;
                       const who = members.find((m) => m.user_id === t.assignee_id);
-                      const href = setupTaskHref(t);
                       return (
-                        <article key={t.id} className="leads-card">
+                        <article
+                          key={t.id}
+                          className="leads-card"
+                          onClick={() => openTask(t)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openTask(t);
+                            }
+                          }}
+                        >
                           <div className="leads-card-top">
                             <div>
-                              {href ? (
-                                <Link href={href}>
-                                  <h3 className="leads-card-name">{t.title}</h3>
-                                </Link>
-                              ) : (
-                                <h3 className="leads-card-name">{t.title}</h3>
-                              )}
+                              <h3 className="leads-card-name">{t.title}</h3>
                               {t.message ? <div className="hint">{t.message}</div> : null}
                               <div className="leads-card-meta">
                                 {lead ? (
-                                  <Link className="lead-task-link" href={leadHref(lead.id)}>
-                                    {lead.name}
-                                  </Link>
+                                  <span className="lead-task-link">{lead.name}</span>
                                 ) : (
                                   <span className="hint">بدون مخاطب</span>
                                 )}
@@ -326,7 +360,10 @@ export default function TasksListPage() {
                                 variant="secondary"
                                 size="sm"
                                 loading={doneId === t.id}
-                                onClick={() => markDone(t.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void markDone(t.id);
+                                }}
                               >
                                 انجام شد
                               </Button>
@@ -342,6 +379,21 @@ export default function TasksListPage() {
           </Card>
         </>
       )}
+      <LeadModal
+        open={!!detailLead}
+        lead={detailLead}
+        members={members}
+        onClose={() => setDetailLead(null)}
+        onChanged={load}
+      />
+      <TaskDetailModal
+        open={!!detailTask}
+        task={detailTask}
+        members={members}
+        leads={leads}
+        onClose={() => setDetailTask(null)}
+        onChanged={load}
+      />
       <TaskCreateModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}

@@ -311,6 +311,15 @@ class TaskIn(BaseModel):
     conversation_excerpt: str = ""
 
 
+class TaskPatchIn(BaseModel):
+    title: str | None = None
+    message: str | None = None
+    lead_id: str | None = None
+    assignee_id: str | None = None
+    due_at: datetime | None = None
+    status: str | None = None
+
+
 class ContactTaskIn(BaseModel):
     title: str = ""
     message: str = ""

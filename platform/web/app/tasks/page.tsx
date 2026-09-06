@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
-import { Modal } from "@/components/ui/Modal";
 import { TaskCreateModal } from "@/components/crm/TaskCreateModal";
+import { TaskDetailModal } from "@/components/crm/TaskDetailModal";
+import { LeadModal } from "@/components/crm/LeadModal";
 import { PersianDateField } from "@/components/ui/PersianDateField";
 import { PageLoading } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
@@ -24,12 +25,12 @@ import {
   TASK_STATUSES,
   TASK_STATUS_DOT,
   TASK_STATUS_LABELS,
-  leadHref,
   memberLabel,
   initials,
   tagLabel,
   setupTaskHref,
   isSetupChannelTask,
+  leadHref,
   type CrmTask,
   type Lead,
   type Member
@@ -76,9 +77,28 @@ export default function TasksBoardPage() {
   const [overCardId, setOverCardId] = useState<string | null>(null);
   const [dropBefore, setDropBefore] = useState(true);
   const [detailTask, setDetailTask] = useState<CrmTask | null>(null);
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const dragMovedRef = useRef(false);
   const { busy, run } = useMutation();
   const toast = useToast();
+
+  function openTask(t: CrmTask) {
+    const href = setupTaskHref(t);
+    if (href) {
+      router.push(href);
+      return;
+    }
+    if (t.lead_id) {
+      const lead = leadById.get(t.lead_id);
+      if (lead) {
+        setDetailTask(null);
+        setDetailLead(lead);
+        return;
+      }
+    }
+    setDetailLead(null);
+    setDetailTask(t);
+  }
 
   // Mobile default: list view (kanban stays available via toggle with ?layout=board)
   useEffect(() => {
@@ -110,6 +130,21 @@ export default function TasksBoardPage() {
     }
   }, [toast]);
 
+  const refresh = useCallback(async () => {
+    try {
+      const [t, m, l] = await Promise.all([
+        api<CrmTask[]>("/tasks"),
+        api<Member[]>("/orgs/members"),
+        api<Lead[]>("/leads")
+      ]);
+      setTasks(t);
+      setMembers(m);
+      setLeads(l);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "خطا", "err");
+    }
+  }, [toast]);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -122,6 +157,12 @@ export default function TasksBoardPage() {
     setTagFilter(tagFromUrl);
   }, [tagFromUrl]);
 
+  const leadById = useMemo(() => {
+    const map = new Map<string, Lead>();
+    for (const l of leads) map.set(l.id, l);
+    return map;
+  }, [leads]);
+
   useEffect(() => {
     setDetailTask((prev) => {
       if (!prev) return prev;
@@ -129,11 +170,12 @@ export default function TasksBoardPage() {
     });
   }, [tasks]);
 
-  const leadById = useMemo(() => {
-    const map = new Map<string, Lead>();
-    for (const l of leads) map.set(l.id, l);
-    return map;
-  }, [leads]);
+  useEffect(() => {
+    setDetailLead((prev) => {
+      if (!prev) return prev;
+      return leadById.get(prev.id) || prev;
+    });
+  }, [leadById]);
 
   const tagOptions = useMemo(() => {
     const set = new Set<string>();
@@ -376,24 +418,14 @@ export default function TasksBoardPage() {
                           onDragEnd={resetDragState}
                           onClick={() => {
                             if (dragMovedRef.current) return;
-                            const href = setupTaskHref(t);
-                            if (href) {
-                              router.push(href);
-                              return;
-                            }
-                            setDetailTask(t);
+                            openTask(t);
                           }}
                           role="button"
                           tabIndex={0}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              const href = setupTaskHref(t);
-                              if (href) {
-                                router.push(href);
-                                return;
-                              }
-                              setDetailTask(t);
+                              openTask(t);
                             }
                           }}
                         >
@@ -431,65 +463,25 @@ export default function TasksBoardPage() {
         </div>
       )}
 
-      <Modal
+      <LeadModal
+        open={!!detailLead}
+        lead={detailLead}
+        members={members}
+        onClose={() => setDetailLead(null)}
+        onChanged={refresh}
+      />
+      <TaskDetailModal
         open={!!detailTask}
-        title={detailTask?.title || "وظیفه"}
+        task={detailTask}
+        members={members}
+        leads={leads}
         onClose={() => setDetailTask(null)}
-        presentation="sheet"
-        footer={
-          <>
-            {detailTask?.lead_id && leadById.get(detailTask.lead_id) ? (
-              <Link className="btn secondary" href={leadHref(detailTask.lead_id)}>
-                مشاهده مخاطب
-              </Link>
-            ) : null}
-            <Button variant="secondary" onClick={() => setDetailTask(null)}>
-              بستن
-            </Button>
-          </>
-        }
-      >
-        {detailTask ? (
-          <div className="lead-info-tiles">
-            <div className="lead-info-tile">
-              <span className="lead-info-tile-label">وضعیت</span>
-              <span className="lead-info-tile-value">
-                {TASK_STATUS_LABELS[detailTask.status] || detailTask.status}
-              </span>
-            </div>
-            <div className="lead-info-tile">
-              <span className="lead-info-tile-label">ارجاع</span>
-              <span className="lead-info-tile-value">
-                {memberLabel(members.find((m) => m.user_id === detailTask.assignee_id)) || "بدون ارجاع"}
-              </span>
-            </div>
-            <div className="lead-info-tile">
-              <span className="lead-info-tile-label">مخاطب</span>
-              <span className="lead-info-tile-value">
-                {detailTask.lead_id
-                  ? leadById.get(detailTask.lead_id)?.name || "—"
-                  : "بدون مخاطب"}
-              </span>
-            </div>
-            <div className="lead-info-tile">
-              <span className="lead-info-tile-label">سررسید</span>
-              <span className="lead-info-tile-value">
-                {detailTask.due_at ? formatJalali(detailTask.due_at) : "تعیین نشده"}
-              </span>
-            </div>
-            {detailTask.message ? (
-              <div className="lead-info-tile" style={{ gridColumn: "1 / -1" }}>
-                <span className="lead-info-tile-label">توضیح</span>
-                <span className="lead-info-tile-value">{detailTask.message}</span>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </Modal>
+        onChanged={refresh}
+      />
       <TaskCreateModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={load}
+        onCreated={refresh}
         members={members}
         leads={leads}
         defaultLeadId={createLeadId}
