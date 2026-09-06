@@ -538,9 +538,9 @@ button, input, select, textarea {
 .top-search {
   width: min(280px, 40vw);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 10px 16px;
-  min-height: var(--touch);
+  border-radius: 999px;
+  padding: 6px 14px;
+  min-height: 34px;
   background: var(--fill);
   font-size: var(--text-callout);
   font-weight: 500;
@@ -549,7 +549,7 @@ button, input, select, textarea {
   outline: none;
   border-color: rgba(0, 113, 227, 0.45);
   background: var(--surface-solid);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .main {
@@ -850,10 +850,11 @@ button, input, select, textarea {
   cursor: pointer;
   letter-spacing: 0.04em;
   text-align: center;
-  padding: 9px 10px 9px 28px;
+  min-height: 34px;
+  padding: 6px 10px 6px 28px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 4.5L6 8L9.5 4.5' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: left 14px center;
+  background-position: left 12px center;
   background-size: 12px;
 }
 jdp-container {
@@ -878,20 +879,26 @@ jdp-container {
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 11px 13px;
-  min-height: 44px;
+  border-radius: 10px;
+  padding: 6px 10px;
+  min-height: 34px;
   background: rgba(255,255,255,0.7);
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.35;
 }
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: rgba(0, 113, 227, 0.45);
-  box-shadow: 0 0 0 4px var(--accent-soft);
-  /*background: #fff;*/
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
-textarea { min-height: 96px; }
+textarea {
+  min-height: 88px;
+  padding: 8px 10px;
+}
+select {
+  padding-inline-end: 28px;
+}
 
 table { width: 100%; border-collapse: collapse; font-weight: 600; font-size: 13px; }
 th, td {
@@ -922,9 +929,10 @@ th .th-head-label {
 th .th-filter {
   width: 100%;
   min-width: 0;
+  min-height: 28px;
   font-size: 12px;
   font-weight: 600;
-  padding: 5px 7px;
+  padding: 3px 7px;
   margin: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -985,26 +993,30 @@ input.ltr-text {
 .leads-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 12px;
+  gap: 8px 10px;
   align-items: flex-end;
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--bg, #f5f5f7) 88%, transparent);
   border: 1px solid color-mix(in srgb, var(--border, #e5e5ea) 80%, transparent);
 }
 .leads-toolbar-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 120px;
-  font-size: 12px;
+  gap: 3px;
+  min-width: 110px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 600;
 }
 .leads-toolbar-field select,
 .leads-toolbar-field input {
-  min-width: 140px;
+  min-width: 128px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text, #1d1d1f);
 }
@@ -1013,8 +1025,16 @@ input.ltr-text {
 }
 .leads-table-compact td,
 .leads-table-compact th {
-  padding: 10px 12px;
+  padding: 8px 10px;
   vertical-align: middle;
+}
+.leads-table-compact select {
+  min-height: 30px;
+  width: auto;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
 }
 .leads-table-compact th {
   white-space: nowrap;
@@ -2919,13 +2939,13 @@ a.btn.wizard-btn:hover {
 }
 .chat-list-search {
   width: 100%;
-  min-height: 40px;
+  min-height: 36px;
   border: 0;
   border-radius: 8px;
-  padding: 8px 14px;
+  padding: 6px 12px;
   background: #fff;
   color: #111b21;
-  font-size: 14px;
+  font-size: 13.5px;
   font-family: inherit;
 }
 .chat-list-search::placeholder {
@@ -6645,10 +6665,10 @@ input, select, textarea {
 .ui-field-error { font-size: var(--text-caption); font-weight: 700; color: var(--danger); }
 .ui-input {
   width: 100%;
-  min-height: var(--touch);
+  min-height: 34px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
+  border-radius: 10px;
+  padding: 6px 10px;
   background: var(--surface-solid);
   font-size: var(--text-body);
   font-weight: 500;
